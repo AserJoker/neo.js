@@ -94,6 +94,9 @@ struct Code {
     // strict 决定该作用域是否标注 "strict"（脚本默认 sloppy）。
     bool isScriptProgram = false;
     bool strict = false;
+    // [[HasTLA]]：模块顶层含 await / for await（不含嵌套函数）。
+    // 异步模块求值在 SCC 展开前需要静态知道这一点（ADR-064）。
+    bool hasTopLevelAwait = false;
     // 标签模板对象缓存（§13.2.8.2）：pc → 模板对象。同一 Code 的同一调用点
     // 复用同一对象；Value 由 Context 挂到 global scope 作 GC 根。
     mutable std::vector<std::pair<uint32_t, neo::core::Value*>> templateCache;

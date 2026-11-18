@@ -27,7 +27,8 @@ Compiler 也会正常发射 `await` 指令。但运行期 `Context::evaluateModu
 - `Context::createModuleCoroutine(Module*)` 创建协程，`resume` 指向
   `Context::resumeModuleCoroutine`；
 - 首次 resume 执行 `machine.run(evaluatePc)`，之后 `machine.resume(vmState, sent)`；
-- 挂起时把 `VM::snapshot()` 存入 `co->vmState`，完成时标记模块状态。
+- 挂起时把 `VM::snapshot()` 存入 `co->vmState`；完成/失败由
+  `AsyncModuleExecutionFulfilled/Rejected` 统一处理。
 
 模块作用域常驻 global 作用域树，**不做 execScope 孤立化**：VM 栈上的临时值
 由模块作用域（及其子块作用域）跟踪，挂起期间仍是 GC 可达的。协程对象、
@@ -43,32 +44,47 @@ Promise   —— 异步求值中（顶层 await 或异步依赖未完成）
 错误值     —— 求值失败（Exception/Fatal）
 ```
 
-模块新增状态：
+模块按 §16.2.1.6.1.7 持有求值状态机：
 
 ```text
-evaluating          求值中（含异步挂起），循环依赖保护
-evaluationPromise   异步求值 Promise
-evaluationError     失败错误（缓存，不重试）
-evaluationCoroutine 求值协程
-evaluationFailed    已失败
-cycleWaiting        循环依赖方在本模块求值中访问过它
+status                  Linked / Evaluating / EvaluatingAsync / Evaluated
+dfsAncestorIndex        DFS 祖先索引，用于 SCC 检测
+cycleRoot               所属 SCC 的根（非空）
+hasTLA                  [[HasTLA]]：编译期静态标记（见 §5）
+asyncEvaluationOrder    [[AsyncEvaluationOrder]]：UNSET / DONE / 全局单调序号
+asyncParentModules      [[AsyncParentModules]]：依赖本异步模块的父模块
+pendingAsyncDependencies [[PendingAsyncDependencies]]
+topLevelPromise/Resolve/Reject  环根的 [[TopLevelCapability]]
+evaluationError         失败错误（缓存，不重试）
+evaluationCoroutine     求值协程
 ```
 
 失败被缓存：再次 `importModule` 直接返回 `evaluationError`。
 
-### 3. 依赖与传播
+### 3. 依赖与传播：SCC 收缩 + 异步完成 DAG
 
-`evaluateModule` 先按 DFS 后序求值依赖：
+`innerModuleEvaluation` 按规范实现：
 
-- 依赖同步完成 → 继续；
-- 依赖返回 Promise → 收集；
-- 依赖失败 → 当前模块失败。
+1. 设 `Evaluating`、`dfsAncestorIndex = index`、`pendingAsyncDependencies = 0`，
+   入栈后 DFS 求值每个依赖；
+2. 依赖仍为 `Evaluating` → 更新 `dfsAncestorIndex`（环）；
+3. 依赖已异步/已求值 → 解析为 `cycleRoot`，若其有错误则失败；若
+   `asyncEvaluationOrder` 是整数则 `pendingAsyncDependencies++` 并登记到
+   `asyncParentModules`；
+4. 自身 `hasTLA` 或存在异步依赖 → 分配 `asyncEvaluationOrder`；pending 为 0
+   时立即 `ExecuteAsyncModule`；
+5. `dfsAncestorIndex == moduleIndex` 时弹栈收缩 SCC：成员共享 `cycleRoot`，
+   有异步序号的置 `EvaluatingAsync`，否则置 `Evaluated`。
 
-若存在异步依赖，模块进入异步求值：创建 capability 与求值协程，用
-`Promise.all(depPromises).then(onFulfilled, onRejected)` 等待全部依赖：
+异步模块完成时：
 
-- fulfilled → 首次 resume 协程，执行模块体；
-- rejected → 拒绝模块 Promise，缓存错误并标记 `evaluationFailed`。
+- `AsyncModuleExecutionFulfilled`：标记 `Evaluated`/`DONE`；环根结算
+  `TopLevelCapability`；`GatherAvailableAncestors` 递减父模块 pending，归零者
+  进入执行列表，同步父模块继续向上收集；
+- 执行列表按 `asyncEvaluationOrder` 排序：有 TLA 的模块启动协程，否则同步
+  执行模块体后标记完成并结算其环根 capability；
+- `AsyncModuleExecutionRejected`：缓存错误、结算环根、沿
+  `asyncParentModules` 递归拒绝。
 
 模块体自身在 `await` 处挂起时，`driveAsyncCoroutine` 订阅 awaitable；
 恢复时正常值压栈，拒绝以 `Interrupt(Throw)` 注入挂起点，由模块体的
@@ -82,12 +98,21 @@ cycleWaiting        循环依赖方在本模块求值中访问过它
   完成后才 fulfill 命名空间；模块求值拒绝则 reject 同一原因。
 - 原生 loader 模块保持同步惰性加载，不参与异步求值。
 
-### 5. 已知范围外
+### 5. [[HasTLA]] 静态标记
 
-顶层 await 与**循环依赖**组合需要规范的 async parent / pending dependency
-算法。本实现检测到「循环依赖方访问过该模块，且该模块随后变为异步」时，
-显式返回 TypeError（`top-level await in a cyclic module graph is not implemented`），
-而不是给出错误的执行顺序。
+`HasTLA` 必须静态可知：SCC 展开前就要决定成员是 `Evaluated` 还是
+`EvaluatingAsync`。Compiler 用 `functionDepth_` 区分模块顶层与嵌套函数：
+
+- 顶层 `await` 表达式、顶层 `for await...of` 置 `Code::hasTopLevelAwait`；
+- 嵌套函数内的 await 不计入。
+
+`setModuleCompilation` 在 move 编译产物前把该标记写入 `Module::hasTLA`。
+
+### 6. 循环依赖
+
+循环依赖是合法的 SCC，不再报 `not implemented`。规范不检测「互相 await
+值」的死锁，也不把 TLA 环当作 Promise 链自环；环由 SCC 收缩消解，
+`AsyncParentModules` 在收缩后构成 DAG，Promise 仅作为完成信号。
 
 ## 后果
 
@@ -99,10 +124,12 @@ cycleWaiting        循环依赖方在本模块求值中访问过它
 
 ## 实现状态
 
-- `ModuleEntry.h`：异步求值状态字段。
+- `Code.h` / `Compiler`：`hasTopLevelAwait` 静态标记（`functionDepth_`）。
+- `ModuleEntry.h`：`ModuleStatus`、SCC 与异步依赖字段。
 - `Module.cpp`：`createModuleCoroutine`、`resumeModuleCoroutine`、
-  `startModuleBody`、`subscribeModuleAwait`、`startAsyncModuleEvaluation`、
-  三态 `evaluateModule`、动态 import 等待求值 Promise。
+  `innerModuleEvaluation`、`executeAsyncModule`、`executeModuleSync`、
+  `gatherAvailableAncestors`、`asyncModuleExecutionFulfilled/Rejected`、
+  三态 `evaluateModule`、动态 import 等待环根求值 Promise。
 - `AsyncNative`：导出 `driveAsyncCoroutine` 供模块协程复用。
 - `ModuleCompilerTest`：顶层 await 挂起、向 import 方传播、拒绝缓存、
-  动态 import 等待。
+  动态 import 等待，以及循环 TLA（同步成员、双 TLA、非根成员、拒绝传播）。

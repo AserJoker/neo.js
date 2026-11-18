@@ -1005,6 +1005,7 @@ void Compiler::compileForOfStatement(
 
     compileExpression(*node.right);
     if (node.await) {
+        if (functionDepth_ == 0) code_->hasTopLevelAwait = true;
         code_->getAsyncIterator();
     } else {
         code_->getIterator();
@@ -2647,6 +2648,7 @@ void Compiler::compileYieldExpression(const frontend::YieldExpression& node) {
 }
 
 void Compiler::compileAwaitExpression(const frontend::AwaitExpression& node) {
+    if (functionDepth_ == 0) code_->hasTopLevelAwait = true;
     if (node.argument) {
         compileExpression(*node.argument);
     } else {
@@ -3811,6 +3813,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
                                    bool initInstanceElements,
                                    bool hasArguments, bool strict) {
     // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
+    ++functionDepth_;
     const bool savedEvalCompletion = evalCompletion_;
     evalCompletion_ = false;
     const bool savedGlobalCode = globalCode_;
@@ -3883,6 +3886,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         hasArgumentsBinding_ = savedHasArguments;
         strict_ = savedStrict;
         globalCode_ = savedGlobalCode;
+        --functionDepth_;
         return;
     }
 
@@ -3903,6 +3907,7 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     hasArgumentsBinding_ = savedHasArguments;
     strict_ = savedStrict;
     globalCode_ = savedGlobalCode;
+    --functionDepth_;
 }
 
 // —— 声明提升 ——

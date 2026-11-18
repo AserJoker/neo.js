@@ -10,9 +10,23 @@
 
 #include "core/Module.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace neo::core {
+
+// 模块求值状态（ECMA-262 §16.2.1.6.1.7）。
+enum class ModuleStatus : uint8_t {
+    Linked,           // 已链接，未求值
+    Evaluating,       // 在 DFS 栈上求值中
+    EvaluatingAsync,  // 异步求值中（顶层 await 或异步依赖未完成）
+    Evaluated,        // 已求值（成功或失败）
+};
+
+// [[AsyncEvaluationOrder]] 哨兵。
+inline constexpr uint64_t kModuleAsyncOrderUnset = 0;
+inline constexpr uint64_t kModuleAsyncOrderDone = ~uint64_t{0};
 
 struct Module {
     Module();
@@ -26,17 +40,24 @@ struct Module {
     ModuleLoader loader = nullptr;  // 原生 loader（可为空）
     ModuleCompilation compilation;  // 编译产物（可为空：仅占位/原生 loader）
     bool loaded = false;         // loader/编译产物是否已成功执行
-    bool loading = false;        // 循环依赖保护：正在执行中
+    bool loading = false;        // 原生 loader 循环依赖保护：正在执行中
     bool declared = false;       // 符号定义区是否已执行（槽位已建）
     bool declaring = false;      // 循环依赖保护：正在声明
     bool instantiated = false;   // import/export 槽位与函数对象是否已建立
     bool instantiating = false;  // 循环依赖保护：正在实例化
-    bool evaluated = false;      // 模块体是否已求值
-    // —— 顶层 await（ADR-064）——
-    bool evaluating = false;       // 求值中（含异步挂起），循环依赖保护
-    bool evaluationFailed = false; // 求值已失败（错误缓存，不重试）
-    bool cycleWaiting = false;     // 循环依赖方在本模块求值中访问过它
-    Value* evaluationPromise = nullptr;   // 异步求值的 Promise（借用，挂模块 scope）
+
+    // —— 模块求值状态机（ADR-064）——
+    ModuleStatus status = ModuleStatus::Linked;
+    size_t dfsAncestorIndex = 0;
+    Module* cycleRoot = nullptr;      // 所属 SCC 的根（非空）
+    bool hasTLA = false;              // [[HasTLA]]：模块自身含顶层 await
+    uint64_t asyncEvaluationOrder = kModuleAsyncOrderUnset;
+    std::vector<Module*> asyncParentModules;  // 依赖本异步模块的父模块
+    size_t pendingAsyncDependencies = 0;
+    // 环根的顶层求值 capability（借用，挂模块 scope）。
+    Value* topLevelPromise = nullptr;
+    Value* topLevelResolve = nullptr;
+    Value* topLevelReject = nullptr;
     Value* evaluationError = nullptr;     // 失败错误值（借用，挂模块 scope）
     Value* evaluationCoroutine = nullptr; // 顶层求值协程（借用，挂模块 scope）
 };

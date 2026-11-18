@@ -117,6 +117,8 @@ class Context : public IContext {
     std::unordered_map<std::string, std::unique_ptr<Module>> modules_;
     // 正在加载的模块栈（相对 import 的基准）。loader 执行期间压栈，退出时弹栈。
     std::vector<Module*> moduleStack_;
+    // [[AsyncEvaluationOrder]] 全局单调计数（ADR-064）。
+    uint64_t moduleAsyncEvaluationCount_ = 0;
     // 待上报的未处理拒绝（ADR-043 M4）：promise → 是否仍待上报。
     // 这些 promise 作为动态 GC 根持有（pinRef++），移出/上报/析构时归还。
     std::unordered_map<Value*, bool> pendingRejections_;
@@ -363,6 +365,10 @@ public:
     bool hasModule(std::string_view id) const override;
     // 取/创建 id 对应的 Module；失败返回 nullptr。异步模块回调按 id 反查用。
     Module* findModule(std::string_view id);
+    // AsyncModuleExecutionFulfilled / Rejected（§16.2.1.6.1.10/11）。
+    // 异步求值回调按 id 反查模块后调用，故对外可见。
+    void asyncModuleExecutionFulfilled(Module* mod);
+    void asyncModuleExecutionRejected(Module* mod, Value* error);
     ModuleInfo getModule(std::string_view id) override;
     void setModuleLoader(std::string_view id, ModuleLoader loader) override;
     bool setModuleCompilation(std::string_view id,
@@ -548,14 +554,24 @@ private:
     Value* evaluateModule(Module* mod);
     // 在模块 root scope 下执行 code 的某一段。
     Value* runModuleCode(Module* mod, uint32_t entryPc);
-    // 模块顶层 await（ADR-064）：以协程持有 VM 挂起状态。
+    // —— 模块顶层 await（ADR-064）：SCC + 异步依赖调度 ——
+    // 以协程持有 VM 挂起状态。
     Value* createModuleCoroutine(Module* mod);
     static Value* resumeModuleCoroutine(IContext* ctx, Value* coroutine,
                                         Value* sentValue);
-    Value* startModuleBody(Module* mod);
-    Value* startAsyncModuleEvaluation(Module* mod,
-                                      const std::vector<Value*>& depPromises);
-    Value* subscribeModuleAwait(Module* mod, Value* co, Value* res);
+    // InnerModuleEvaluation（§16.2.1.6.1.7）：递归 DFS + SCC 展开。
+    Value* innerModuleEvaluation(Module* mod, std::vector<Module*>& stack,
+                                 size_t& index);
+    // ExecuteAsyncModule：启动模块协程并订阅其完成。
+    void executeAsyncModule(Module* mod);
+    // 同步执行模块体（HasTLA=false 且异步依赖已就绪）。
+    Value* executeModuleSync(Module* mod);
+    // GatherAvailableAncestors（§16.2.1.6.1.9）。
+    void gatherAvailableAncestors(Module* mod, std::vector<Module*>& execList);
+    // 环根 TopLevelCapability 的创建/结算。
+    Value* ensureTopLevelCapability(Module* mod);
+    void resolveTopLevelCapability(Module* mod);
+    void rejectTopLevelCapability(Module* mod, Value* error);
 };
 
 }  // namespace neo::core

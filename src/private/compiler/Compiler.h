@@ -297,6 +297,8 @@ private:
     // 当前代码是否是脚本全局代码：var/函数声明落到 global object 属性，
     // let/const 需检查不可配置全局属性冲突（§9.1.1.4）。
     bool globalCode_ = false;
+    // 函数体嵌套深度：0 表示模块/脚本顶层，用于静态标记 [[HasTLA]]。
+    size_t functionDepth_ = 0;
     // eval 完成值保存槽/循环 V 槽的唯一编号（惰性定义在运行时作用域）。
     int completionSlotCounter_ = 0;
     std::string newCompletionSlot(std::string_view prefix);

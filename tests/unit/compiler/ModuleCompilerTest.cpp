@@ -478,3 +478,79 @@ TEST(ModuleCompilerTest, DynamicImportWaitsForTopLevelAwait) {
     ASSERT_NE(g_dynamicNamespace, nullptr);
     EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), g_dynamicNamespace, "v")), 9.0);
 }
+
+// —— 循环依赖 + 顶层 await（SCC 求值状态机，ADR-064）——
+
+TEST(ModuleCompilerTest, CyclicTlaWithSyncMemberEvaluates) {
+    // A 有 TLA，B 同步：B 先同步求值，A 异步完成。
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "import { b } from './b.js';\n"
+                          "export let a = 0;\n"
+                          "await Promise.resolve();\n"
+                          "a = b + 1;\n"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import { a } from './a.js';\n"
+                          "export const b = 1;\n"));
+    Value* ns = f.ctx->importModule("/a.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "a")), 2.0);
+}
+
+TEST(ModuleCompilerTest, CyclicTlaBothMembersAwait) {
+    // A、B 都有 TLA：B 先完成，A 等 B 后完成。
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "import { b } from './b.js';\n"
+                          "export let a = 0;\n"
+                          "await Promise.resolve();\n"
+                          "a = b + 1;\n"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import { a } from './a.js';\n"
+                          "export const b = await Promise.resolve(10);\n"));
+    Value* ns = f.ctx->importModule("/a.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "a")), 11.0);
+}
+
+TEST(ModuleCompilerTest, ImporterOfNonRootMemberWaitsForCycleRoot) {
+    // D 同时 import 环根 A 与非根成员 B：B 的依赖解析为 CycleRoot(A)，
+    // D 必须等 A 完成才能求值。
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "import { b } from './b.js';\n"
+                          "export let a = 0;\n"
+                          "await Promise.resolve();\n"
+                          "a = 1;\n"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import { a } from './a.js';\n"
+                          "export const b = 2;\n"));
+    ASSERT_TRUE(addModule(f, "/d.js",
+                          "import { a } from './a.js';\n"
+                          "import { b } from './b.js';\n"
+                          "export const d = a + b;\n"));
+    Value* ns = f.ctx->importModule("/d.js");
+    ASSERT_FALSE(isErrorValue(ns)) << errorText(f.ctx.get(), ns);
+    drainMicrotasks(f.ctx.get());
+    EXPECT_DOUBLE_EQ(number(get(f.ctx.get(), ns, "d")), 3.0);
+}
+
+TEST(ModuleCompilerTest, CyclicTlaRejectionPropagatesToParent) {
+    // 环根 A 的顶层 await 拒绝沿 AsyncParentModules 传播到 B。
+    Fixture f;
+    ASSERT_TRUE(addModule(f, "/a.js",
+                          "import { b } from './b.js';\n"
+                          "export let a = 0;\n"
+                          "await Promise.reject(new Error('cycle boom'));\n"));
+    ASSERT_TRUE(addModule(f, "/b.js",
+                          "import { a } from './a.js';\n"
+                          "export const b = 1;\n"));
+    Value* ns = f.ctx->importModule("/b.js");
+    ASSERT_FALSE(isErrorValue(ns));
+    drainMicrotasks(f.ctx.get());
+    Value* err = f.ctx->importModule("/b.js");
+    ASSERT_TRUE(isErrorValue(err));
+    EXPECT_EQ(errorText(f.ctx.get(), err), "cycle boom");
+}
