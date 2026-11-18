@@ -59,6 +59,9 @@ add_executable(core_unit_test
     MathBuiltinsTest.cpp
     GlobalFunctionTest.cpp
     StringMethodsTest.cpp
+    NumberBuiltinsTest.cpp
+    ObjectStaticsTest.cpp
+    IteratorHelpersTest.cpp
     BigIntTypeTest.cpp
     BigIntBuiltinsTest.cpp
     GeneratorTest.cpp

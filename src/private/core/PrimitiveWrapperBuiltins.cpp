@@ -23,6 +23,7 @@
 
 #include "core/BigIntOps.h"
 #include "core/IContext.h"
+#include "core/NumberBuiltins.h"
 #include "core/StringBuiltins.h"
 #include "core/IType.h"
 #include "core/Scope.h"
@@ -297,10 +298,12 @@ bool registerPrimitiveWrapperBuiltins(IContext* ctx) {
                              booleanValueOf, booleanToString, "Boolean")) {
         return false;
     }
+    Value* numberFn = nullptr;
     if (!registerWrapperCtor(ctx, "Number", numberCtor, numberConstruct, numberProto,
-                             numberValueOf, numberToStringFn, "Number")) {
+                             numberValueOf, numberToStringFn, "Number", &numberFn)) {
         return false;
     }
+    if (!registerNumberBuiltins(ctx, numberFn, numberProto)) return false;
     Value* stringFn = nullptr;
     if (!registerWrapperCtor(ctx, "String", stringCtor, stringConstruct,
                              stringProto, stringValueOf, stringToStringFn,

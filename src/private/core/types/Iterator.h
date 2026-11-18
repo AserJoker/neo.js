@@ -138,9 +138,35 @@ public:
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };
 
+class IteratorHelperType : public IteratorObjectType {
+public:
+    IteratorHelperType() : IteratorObjectType(TypeKind::IteratorHelper) {}
+    const char* name() const override { return "iterator helper"; }
+};
+
+// Iterator 辅助方法的惰性迭代器负载（ES2025 §27.1.3.3）。
+// underlying/nextMethod 是被消费的迭代器记录；callback 是 mapper/predicate；
+// counter 用于 take 的剩余量与 drop 的待丢弃量。
+class IteratorHelperData : public ObjectData {
+public:
+    Value* underlying = nullptr;  // [[Iterator]]
+    Value* nextMethod = nullptr;  // [[NextMethod]]
+    Value* callback = nullptr;    // mapper / predicate
+    IteratorHelperKind kind = IteratorHelperKind::Map;
+    double counter = 0.0;         // take: 剩余；drop: 待丢弃
+    bool done = false;
+    // flatMap 的当前内层迭代器
+    Value* innerIterator = nullptr;
+    Value* innerNext = nullptr;
+
+    void enumerateChildren(IGCVisitor* visitor) override;
+    IData* clone(neo::infra::IAllocator* alloc) const override;
+};
+
 // 内部槽访问（非对应类型返回 nullptr）
 Value* arrayIteratorIteratedObject(Value* v);
 IteratorWrapperData* asIteratorWrapper(Value* v);
+IteratorHelperData* asIteratorHelper(Value* v);
 
 }  // namespace neo::core
 

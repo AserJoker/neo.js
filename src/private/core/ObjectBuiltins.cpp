@@ -656,6 +656,62 @@ Value* objectGetOwnPropertyNames(IContext* ctx, Value* /*self*/, size_t /*argc*/
     return keysToArray(ctx, keys);
 }
 
+// Object.is(a, b)：SameValue（ES2024 §20.1.2.12）
+Value* objectIs(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    return ctx->createBoolean(detail::sameValue(argv[0], argv[1]));
+}
+
+// Object.hasOwn(O, P)：ToObject 后查自有属性（ES2024 §20.1.2.13.1）
+Value* objectHasOwn(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    Value* target = toObjectOrThrow(ctx, argv[0]);
+    if (detail::isErrorValue(target)) return target;
+    if (argc < 2) return ctx->createBoolean(false);
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, argv[1], pk)) return err;
+    Property desc;
+    bool exists = false;
+    if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, desc))
+        return err;
+    return ctx->createBoolean(exists);
+}
+
+// Object.getOwnPropertySymbols(obj)：自有 symbol 键（ES2024 §20.1.2.10）
+Value* objectGetOwnPropertySymbols(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                                   Value* argv[]) {
+    Value* target = toObjectOrThrow(ctx, argv[0]);
+    if (detail::isErrorValue(target)) return target;
+    std::vector<Value*> keys;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, true, keys)) return err;
+    std::vector<Value*> symbols;
+    for (Value* key : keys) {
+        if (key->type()->kind() == TypeKind::Symbol) symbols.push_back(key);
+    }
+    return keysToArray(ctx, symbols);
+}
+
+// Object.fromEntries(iterable)：ES2024 §20.1.2.7
+Value* objectFromEntries(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
+    TypeKind k = argv[0]->type()->kind();
+    if (k == TypeKind::Undefined || k == TypeKind::Null) {
+        return detail::typeError(ctx, "Object.fromEntries requires an iterable");
+    }
+    std::vector<Value*> entries;
+    if (Value* err = detail::iterableToList(ctx, argv[0], entries)) return err;
+    Value* result = ctx->createObject();
+    if (result == ctx->oomValue()) return result;
+    for (Value* entry : entries) {
+        Value* pair = toObjectOrThrow(ctx, entry);
+        if (detail::isErrorValue(pair)) return pair;
+        Value* key = ctx->getProperty(pair, "0");
+        if (detail::isErrorValue(key)) return key;
+        Value* value = ctx->getProperty(pair, "1");
+        if (detail::isErrorValue(value)) return value;
+        if (Value* err = ctx->defineProperty(result, key, value, true, true, true))
+            if (detail::isErrorValue(err)) return err;
+    }
+    return result;
+}
+
 // 把值定义为 global object 属性（全局环境记录的对象记录）。
 void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
     ctx->defineGlobal(name, v, true, false, true);
@@ -797,6 +853,12 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "isFrozen", objectIsFrozen, 1)) return false;
     if (!defineStatic(ctx, objectFn, "getOwnPropertyNames", objectGetOwnPropertyNames, 1))
         return false;
+    if (!defineStatic(ctx, objectFn, "getOwnPropertySymbols",
+                      objectGetOwnPropertySymbols, 1))
+        return false;
+    if (!defineStatic(ctx, objectFn, "is", objectIs, 2)) return false;
+    if (!defineStatic(ctx, objectFn, "hasOwn", objectHasOwn, 2)) return false;
+    if (!defineStatic(ctx, objectFn, "fromEntries", objectFromEntries, 1)) return false;
 
     // —— 8. 注册到 global ——
     bindGlobal(ctx, "Object", objectFn);

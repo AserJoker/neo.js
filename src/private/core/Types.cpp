@@ -119,6 +119,11 @@ IType* getIteratorWrapperType() {
     return &inst;
 }
 
+IType* getIteratorHelperType() {
+    static IteratorHelperType inst;
+    return &inst;
+}
+
 IType* getErrorType() {
     static ErrorType inst;
     return &inst;
@@ -185,6 +190,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::ArrayIterator:    return getArrayIteratorType();
         case TypeKind::StringIterator:   return getStringIteratorType();
         case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
+        case TypeKind::IteratorHelper:   return getIteratorHelperType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();
         case TypeKind::Interrupt:        return getInterruptType();

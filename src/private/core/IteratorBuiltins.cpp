@@ -36,6 +36,7 @@
 
 #include "unicode/Utf8.h"
 
+#include <cmath>
 #include <string>
 
 namespace neo::core {
@@ -252,6 +253,466 @@ Value* iteratorFrom(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
     return ctx->createIteratorWrapper(obj, nextMethod);
 }
 
+// —— Iterator 辅助方法（ES2025 §27.1.3.3）——
+
+Value* requireIteratorObject(IContext* ctx, Value* self, const char* method) {
+    if (self == nullptr || !detail::isObjectKind(self->type()->kind())) {
+        return detail::typeError(ctx, std::string("Iterator.prototype.") + method +
+                                          " called on non-object");
+    }
+    return nullptr;
+}
+
+// GetIteratorDirect：取 next 方法；错误返回错误值，成功返回 nullptr。
+Value* directNextMethod(IContext* ctx, Value* obj, Value*& nextMethod) {
+    nextMethod = ctx->getProperty(obj, "next");
+    if (detail::isErrorValue(nextMethod)) return nextMethod;
+    return nullptr;
+}
+
+// IteratorStepValue：done 置 true 并返回 nullptr；错误写入 err；否则返回 value。
+Value* stepValue(IContext* ctx, Value* iterator, Value* nextMethod, bool& done,
+                 Value*& err) {
+    done = false;
+    err = nullptr;
+    Value* result = ctx->call(nextMethod, iterator, 0, nullptr);
+    if (detail::isErrorValue(result)) {
+        err = result;
+        return nullptr;
+    }
+    if (!detail::isObjectKind(result->type()->kind())) {
+        err = detail::typeError(ctx, "Iterator result is not an object");
+        return nullptr;
+    }
+    Value* doneValue = ctx->getProperty(result, "done");
+    if (detail::isErrorValue(doneValue)) {
+        err = doneValue;
+        return nullptr;
+    }
+    if (detail::toBoolean(doneValue)) {
+        done = true;
+        return nullptr;
+    }
+    Value* value = ctx->getProperty(result, "value");
+    if (detail::isErrorValue(value)) {
+        err = value;
+        return nullptr;
+    }
+    return value;
+}
+
+Value* helperFinish(IContext* ctx, IteratorHelperData* d) {
+    d->done = true;
+    d->underlying = nullptr;
+    d->nextMethod = nullptr;
+    d->innerIterator = nullptr;
+    d->innerNext = nullptr;
+    return createIterResult(ctx, ctx->createUndefined(), true);
+}
+
+// 辅助迭代器内部出错：关闭底层迭代器后返回原错误。
+Value* helperFail(IContext* ctx, IteratorHelperData* d, Value* error) {
+    d->done = true;
+    if (d->innerIterator != nullptr) {
+        detail::iteratorClose(ctx, d->innerIterator, nullptr);
+        d->innerIterator = nullptr;
+        d->innerNext = nullptr;
+    }
+    if (d->underlying != nullptr) {
+        detail::iteratorClose(ctx, d->underlying, error);
+    }
+    return error;
+}
+
+Value* iteratorHelperCreate(IContext* ctx, Value* self, IteratorHelperKind kind,
+                            Value* callback, double counter) {
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    return ctx->createIteratorHelper(self, nextMethod, kind, callback, counter);
+}
+
+Value* iteratorMap(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "map")) return err;
+    Value* mapper = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(mapper)) {
+        return detail::typeError(ctx, "Iterator.prototype.map mapper must be callable");
+    }
+    return iteratorHelperCreate(ctx, self, IteratorHelperKind::Map, mapper, 0.0);
+}
+
+Value* iteratorFilter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "filter")) return err;
+    Value* predicate = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(predicate)) {
+        return detail::typeError(ctx, "Iterator.prototype.filter predicate must be callable");
+    }
+    return iteratorHelperCreate(ctx, self, IteratorHelperKind::Filter, predicate, 0.0);
+}
+
+Value* iteratorFlatMap(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "flatMap")) return err;
+    Value* mapper = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(mapper)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.flatMap mapper must be callable");
+    }
+    return iteratorHelperCreate(ctx, self, IteratorHelperKind::FlatMap, mapper, 0.0);
+}
+
+// take/drop 的 limit：ToNumber → NaN/负数抛 RangeError（并关闭迭代器）。
+Value* iteratorLimit(IContext* ctx, Value* self, size_t argc, Value* argv[],
+                     const char* method, double& limit) {
+    Value* num = detail::toNumberValue(
+        ctx, argc > 0 ? argv[0] : ctx->createUndefined());
+    if (detail::isErrorValue(num)) return detail::iteratorClose(ctx, self, num);
+    const double n = static_cast<NumberData*>(num->data())->value;
+    if (std::isnan(n) || n < 0.0) {
+        Value* err = detail::rangeError(
+            ctx, std::string("Iterator.prototype.") + method +
+                     " limit must be a non-negative number");
+        return detail::iteratorClose(ctx, self, err);
+    }
+    limit = std::isinf(n) ? n : std::trunc(n);
+    return nullptr;
+}
+
+Value* iteratorTake(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "take")) return err;
+    double limit = 0.0;
+    if (Value* err = iteratorLimit(ctx, self, argc, argv, "take", limit)) return err;
+    return iteratorHelperCreate(ctx, self, IteratorHelperKind::Take, nullptr, limit);
+}
+
+Value* iteratorDrop(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "drop")) return err;
+    double limit = 0.0;
+    if (Value* err = iteratorLimit(ctx, self, argc, argv, "drop", limit)) return err;
+    return iteratorHelperCreate(ctx, self, IteratorHelperKind::Drop, nullptr, limit);
+}
+
+Value* iteratorHelperNext(IContext* ctx, Value* self, size_t /*argc*/,
+                          Value* /*argv*/[]) {
+    IteratorHelperData* d = asIteratorHelper(self);
+    if (d == nullptr) {
+        return detail::typeError(ctx, "next method called on incompatible receiver");
+    }
+    if (d->done) return createIterResult(ctx, ctx->createUndefined(), true);
+
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        switch (d->kind) {
+            case IteratorHelperKind::Map: {
+                Value* value = stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                if (err != nullptr) return helperFail(ctx, d, err);
+                if (done) return helperFinish(ctx, d);
+                Value* args[2] = {value, ctx->createNumber(d->counter)};
+                Value* mapped =
+                    ctx->call(d->callback, ctx->createUndefined(), 2, args);
+                if (detail::isErrorValue(mapped)) return helperFail(ctx, d, mapped);
+                d->counter += 1.0;
+                return createIterResult(ctx, mapped, false);
+            }
+            case IteratorHelperKind::Filter: {
+                Value* value = stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                if (err != nullptr) return helperFail(ctx, d, err);
+                if (done) return helperFinish(ctx, d);
+                Value* args[2] = {value, ctx->createNumber(d->counter)};
+                Value* selected =
+                    ctx->call(d->callback, ctx->createUndefined(), 2, args);
+                if (detail::isErrorValue(selected)) return helperFail(ctx, d, selected);
+                d->counter += 1.0;
+                if (detail::toBoolean(selected)) {
+                    return createIterResult(ctx, value, false);
+                }
+                continue;
+            }
+            case IteratorHelperKind::Take: {
+                if (d->counter == 0.0) {
+                    d->done = true;
+                    if (Value* closeErr =
+                            detail::iteratorClose(ctx, d->underlying, nullptr)) {
+                        return closeErr;
+                    }
+                    d->underlying = nullptr;
+                    d->nextMethod = nullptr;
+                    return createIterResult(ctx, ctx->createUndefined(), true);
+                }
+                if (!std::isinf(d->counter)) d->counter -= 1.0;
+                Value* value = stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                if (err != nullptr) return helperFail(ctx, d, err);
+                if (done) return helperFinish(ctx, d);
+                return createIterResult(ctx, value, false);
+            }
+            case IteratorHelperKind::Drop: {
+                while (d->counter > 0.0) {
+                    if (!std::isinf(d->counter)) d->counter -= 1.0;
+                    stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                    if (err != nullptr) return helperFail(ctx, d, err);
+                    if (done) return helperFinish(ctx, d);
+                }
+                Value* value = stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                if (err != nullptr) return helperFail(ctx, d, err);
+                if (done) return helperFinish(ctx, d);
+                return createIterResult(ctx, value, false);
+            }
+            case IteratorHelperKind::FlatMap: {
+                if (d->innerIterator != nullptr) {
+                    Value* innerValue = stepValue(ctx, d->innerIterator, d->innerNext,
+                                                  done, err);
+                    if (err != nullptr) return helperFail(ctx, d, err);
+                    if (!done) return createIterResult(ctx, innerValue, false);
+                    d->innerIterator = nullptr;
+                    d->innerNext = nullptr;
+                }
+                Value* value = stepValue(ctx, d->underlying, d->nextMethod, done, err);
+                if (err != nullptr) return helperFail(ctx, d, err);
+                if (done) return helperFinish(ctx, d);
+                Value* args[2] = {value, ctx->createNumber(d->counter)};
+                Value* mapped =
+                    ctx->call(d->callback, ctx->createUndefined(), 2, args);
+                if (detail::isErrorValue(mapped)) return helperFail(ctx, d, mapped);
+                d->counter += 1.0;
+                if (!detail::isObjectKind(mapped->type()->kind())) {
+                    return helperFail(
+                        ctx, d,
+                        detail::typeError(ctx,
+                                          "Iterator.prototype.flatMap mapper must "
+                                          "return an object"));
+                }
+                Value* method = ctx->getProperty(
+                    mapped, ctx->getWellKnownSymbol(WellKnownSymbol::Iterator));
+                if (detail::isErrorValue(method)) return helperFail(ctx, d, method);
+                if (!detail::isCallable(method)) {
+                    return helperFail(
+                        ctx, d,
+                        detail::typeError(ctx,
+                                          "Iterator.prototype.flatMap mapper result "
+                                          "is not iterable"));
+                }
+                Value* inner = ctx->call(method, mapped, 0, nullptr);
+                if (detail::isErrorValue(inner)) return helperFail(ctx, d, inner);
+                if (!detail::isObjectKind(inner->type()->kind())) {
+                    return helperFail(
+                        ctx, d,
+                        detail::typeError(ctx,
+                                          "Iterator.prototype.flatMap @@iterator did "
+                                          "not return an object"));
+                }
+                Value* innerNext = ctx->getProperty(inner, "next");
+                if (detail::isErrorValue(innerNext)) return helperFail(ctx, d, innerNext);
+                d->innerIterator = inner;
+                d->innerNext = innerNext;
+                continue;
+            }
+        }
+    }
+}
+
+Value* iteratorHelperReturn(IContext* ctx, Value* self, size_t /*argc*/,
+                            Value* /*argv*/[]) {
+    IteratorHelperData* d = asIteratorHelper(self);
+    if (d == nullptr) {
+        return detail::typeError(ctx, "return method called on incompatible receiver");
+    }
+    if (d->done) return createIterResult(ctx, ctx->createUndefined(), true);
+    d->done = true;
+    if (d->innerIterator != nullptr) {
+        if (Value* err = detail::iteratorClose(ctx, d->innerIterator, nullptr))
+            return err;
+        d->innerIterator = nullptr;
+        d->innerNext = nullptr;
+    }
+    if (d->underlying != nullptr) {
+        if (Value* err = detail::iteratorClose(ctx, d->underlying, nullptr)) return err;
+    }
+    d->underlying = nullptr;
+    d->nextMethod = nullptr;
+    return createIterResult(ctx, ctx->createUndefined(), true);
+}
+
+// —— 立即消费的方法 ——
+
+Value* iteratorForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "forEach")) return err;
+    Value* procedure = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(procedure)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.forEach procedure must be callable");
+    }
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    double counter = 0.0;
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return ctx->createUndefined();
+        Value* args[2] = {value, ctx->createNumber(counter)};
+        Value* result = ctx->call(procedure, ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, self, result);
+        }
+        counter += 1.0;
+    }
+}
+
+Value* iteratorSome(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "some")) return err;
+    Value* predicate = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(predicate)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.some predicate must be callable");
+    }
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    double counter = 0.0;
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return ctx->createBoolean(false);
+        Value* args[2] = {value, ctx->createNumber(counter)};
+        Value* result = ctx->call(predicate, ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, self, result);
+        }
+        if (detail::toBoolean(result)) {
+            if (Value* closeErr = detail::iteratorClose(ctx, self, nullptr)) {
+                return closeErr;
+            }
+            return ctx->createBoolean(true);
+        }
+        counter += 1.0;
+    }
+}
+
+Value* iteratorEvery(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "every")) return err;
+    Value* predicate = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(predicate)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.every predicate must be callable");
+    }
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    double counter = 0.0;
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return ctx->createBoolean(true);
+        Value* args[2] = {value, ctx->createNumber(counter)};
+        Value* result = ctx->call(predicate, ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, self, result);
+        }
+        if (!detail::toBoolean(result)) {
+            if (Value* closeErr = detail::iteratorClose(ctx, self, nullptr)) {
+                return closeErr;
+            }
+            return ctx->createBoolean(false);
+        }
+        counter += 1.0;
+    }
+}
+
+Value* iteratorFind(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "find")) return err;
+    Value* predicate = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(predicate)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.find predicate must be callable");
+    }
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    double counter = 0.0;
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return ctx->createUndefined();
+        Value* args[2] = {value, ctx->createNumber(counter)};
+        Value* result = ctx->call(predicate, ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, self, result);
+        }
+        if (detail::toBoolean(result)) {
+            if (Value* closeErr = detail::iteratorClose(ctx, self, nullptr)) {
+                return closeErr;
+            }
+            return value;
+        }
+        counter += 1.0;
+    }
+}
+
+Value* iteratorReduce(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "reduce")) return err;
+    Value* reducer = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (!detail::isCallable(reducer)) {
+        return detail::typeError(ctx,
+                                 "Iterator.prototype.reduce reducer must be callable");
+    }
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+
+    Value* accumulator = nullptr;
+    double counter = 0.0;
+    if (argc > 1) {
+        accumulator = argv[1];
+    } else {
+        bool done = false;
+        Value* err = nullptr;
+        accumulator = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) {
+            return detail::typeError(
+                ctx, "Reduce of empty iterator with no initial value");
+        }
+        counter = 1.0;
+    }
+
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return accumulator;
+        Value* args[3] = {accumulator, value, ctx->createNumber(counter)};
+        Value* result = ctx->call(reducer, ctx->createUndefined(), 3, args);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, self, result);
+        }
+        accumulator = result;
+        counter += 1.0;
+    }
+}
+
+Value* iteratorToArray(IContext* ctx, Value* self, size_t /*argc*/,
+                       Value* /*argv*/[]) {
+    if (Value* err = requireIteratorObject(ctx, self, "toArray")) return err;
+    Value* nextMethod = nullptr;
+    if (Value* err = directNextMethod(ctx, self, nextMethod)) return err;
+    Value* array = ctx->createArray();
+    if (array == ctx->oomValue()) return array;
+    auto* data = static_cast<ArrayData*>(array->data());
+    uint32_t index = 0;
+    for (;;) {
+        bool done = false;
+        Value* err = nullptr;
+        Value* value = stepValue(ctx, self, nextMethod, done, err);
+        if (err != nullptr) return err;
+        if (done) return array;
+        data->setElement(index, value);
+        ++index;
+    }
+}
+
 // —— Iterator.prototype 上的访问器与方法 ——
 
 // constructor 访问器 getter：返回 Iterator 构造函数
@@ -393,9 +854,17 @@ bool registerIteratorBuiltins(IContext* ctx) {
     ok &= ctx->setPrototype(wrapperProto, iteratorProto)->type()->kind() !=
           TypeKind::Exception;
 
-    // —— 5. 原型就绪：此后 createArrayIterator / createIteratorWrapper 自动挂链 ——
+    // —— 4b. %IteratorHelperPrototype%（原型 = %Iterator.prototype%）——
+    Value* helperProto = ctx->createObject();
+    ok &= helperProto != ctx->oomValue();
+    if (!ok) return false;
+    ok &= ctx->setPrototype(helperProto, iteratorProto)->type()->kind() !=
+          TypeKind::Exception;
+
+    // —— 5. 原型就绪：此后各迭代器工厂自动挂链 ——
     ctx->setIteratorBuiltins(iteratorProto, iteratorFn, arrayIterProto,
                              stringIterProto, wrapperProto);
+    ctx->setIteratorHelperPrototype(helperProto);
 
     // —— 6. Iterator.prototype 成员 ——
     // constructor 访问器（ES2025 §27.1.3.1）：getter 返回 Iterator，setter 建自有属性
@@ -427,6 +896,19 @@ bool registerIteratorBuiltins(IContext* ctx) {
     ok &= defineSymbolMethod(ctx, iteratorProto, WellKnownSymbol::Dispose,
                              "[Symbol.dispose]", iteratorProtoDispose, 0);
 
+    // Iterator.prototype 辅助方法（§27.1.3.3）
+    ok &= defineMethod(ctx, iteratorProto, "map", iteratorMap, 1);
+    ok &= defineMethod(ctx, iteratorProto, "filter", iteratorFilter, 1);
+    ok &= defineMethod(ctx, iteratorProto, "take", iteratorTake, 1);
+    ok &= defineMethod(ctx, iteratorProto, "drop", iteratorDrop, 1);
+    ok &= defineMethod(ctx, iteratorProto, "flatMap", iteratorFlatMap, 1);
+    ok &= defineMethod(ctx, iteratorProto, "reduce", iteratorReduce, 1);
+    ok &= defineMethod(ctx, iteratorProto, "toArray", iteratorToArray, 0);
+    ok &= defineMethod(ctx, iteratorProto, "forEach", iteratorForEach, 1);
+    ok &= defineMethod(ctx, iteratorProto, "some", iteratorSome, 1);
+    ok &= defineMethod(ctx, iteratorProto, "every", iteratorEvery, 1);
+    ok &= defineMethod(ctx, iteratorProto, "find", iteratorFind, 1);
+
     // Iterator.from（§27.1.4.2）
     ok &= defineMethod(ctx, iteratorFn, "from", iteratorFrom, 1);
 
@@ -448,6 +930,14 @@ bool registerIteratorBuiltins(IContext* ctx) {
     // —— 8. %WrapForValidIteratorPrototype% 成员 ——
     ok &= defineMethod(ctx, wrapperProto, "next", wrapForValidIteratorNext, 0);
     ok &= defineMethod(ctx, wrapperProto, "return", wrapForValidIteratorReturn, 0);
+
+    // —— 8b. %IteratorHelperPrototype% 成员 ——
+    ok &= defineMethod(ctx, helperProto, "next", iteratorHelperNext, 0);
+    ok &= defineMethod(ctx, helperProto, "return", iteratorHelperReturn, 0);
+    ok &= ctx->defineProperty(helperProto,
+                              ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+                              ctx->createString("Iterator Helper"), false, false, true)
+              ->type()->kind() != TypeKind::Exception;
 
     // —— 9. Array.prototype 迭代器方法 ——
     Value* arrayProto = ctx->arrayPrototype();

@@ -592,6 +592,20 @@ public:
     virtual Value* createStringIterator(Value* string,
                                         std::string_view bindName = {}) = 0;
 
+    // createIteratorHelper: 创建 Iterator 辅助方法的惰性迭代器
+    // （ES2025 §27.1.3.3）。underlying/nextMethod 是被消费的迭代器记录，
+    // callback 是 mapper/predicate，counter 用于 take 剩余量 / drop 待丢弃量。
+    // 原型自动挂 %IteratorHelperPrototype%；bootstrap 期间未就绪时跳过。
+    virtual Value* createIteratorHelper(Value* underlying, Value* nextMethod,
+                                        IteratorHelperKind kind, Value* callback,
+                                        double counter,
+                                        std::string_view bindName = {}) = 0;
+
+    // setIteratorHelperPrototype / iteratorHelperPrototype:
+    // %IteratorHelperPrototype%（原型是 %Iterator.prototype%）。
+    virtual void setIteratorHelperPrototype(Value* proto) = 0;
+    virtual Value* iteratorHelperPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

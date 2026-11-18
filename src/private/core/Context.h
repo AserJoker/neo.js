@@ -84,6 +84,7 @@ class Context : public IContext {
     Value* arrayIteratorPrototype_ = nullptr;
     Value* stringIteratorPrototype_ = nullptr;
     Value* iteratorWrapperPrototype_ = nullptr;
+    Value* iteratorHelperPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -322,6 +323,10 @@ public:
                                  std::string_view bindName = {}) override;
     Value* createStringIterator(Value* string,
                                 std::string_view bindName = {}) override;
+    Value* createIteratorHelper(Value* underlying, Value* nextMethod,
+                                IteratorHelperKind kind, Value* callback,
+                                double counter,
+                                std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -421,6 +426,12 @@ public:
     }
     Value* iteratorPrototype() const override { return iteratorPrototype_; }
     Value* iteratorCtor() const override { return iteratorCtor_; }
+    void setIteratorHelperPrototype(Value* proto) override {
+        iteratorHelperPrototype_ = proto;
+    }
+    Value* iteratorHelperPrototype() const override {
+        return iteratorHelperPrototype_;
+    }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
     void setAsyncIteratorPrototype(Value* proto) override {

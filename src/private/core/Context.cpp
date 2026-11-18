@@ -2050,6 +2050,23 @@ Value* Context::createIteratorWrapper(Value* iterated, Value* nextMethod,
     return wrapper;
 }
 
+Value* Context::createIteratorHelper(Value* underlying, Value* nextMethod,
+                                     IteratorHelperKind kind, Value* callback,
+                                     double counter, std::string_view bindName) {
+    auto* d = gc_->allocData<IteratorHelperData>();
+    if (d == nullptr) return oomValue_;
+    d->underlying = underlying;
+    d->nextMethod = nextMethod;
+    d->callback = callback;
+    d->kind = kind;
+    d->counter = counter;
+    Value* helper = createTracked(getIteratorHelperType(), d, bindName);
+    if (helper != oomValue_ && iteratorHelperPrototype_ != nullptr) {
+        static_cast<ObjectData*>(helper->data())->prototype = iteratorHelperPrototype_;
+    }
+    return helper;
+}
+
 // —— Error 对象（ADR-038）——
 
 namespace {

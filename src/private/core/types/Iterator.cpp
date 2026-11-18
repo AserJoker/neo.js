@@ -26,6 +26,11 @@ IteratorWrapperData* asIteratorWrapper(Value* v) {
     return static_cast<IteratorWrapperData*>(v->data());
 }
 
+IteratorHelperData* asIteratorHelper(Value* v) {
+    if (v == nullptr || v->type()->kind() != TypeKind::IteratorHelper) return nullptr;
+    return static_cast<IteratorHelperData*>(v->data());
+}
+
 // —— IteratorObjectType ——
 
 Value* IteratorObjectType::add(IContext* ctx, Value* a, Value* b) {
@@ -141,6 +146,23 @@ void IteratorWrapperData::enumerateChildren(IGCVisitor* visitor) {
 
 IData* IteratorWrapperData::clone(neo::infra::IAllocator* /*alloc*/) const {
     auto* self = const_cast<IteratorWrapperData*>(this);
+    self->refInc();
+    return self;
+}
+
+// —— IteratorHelperData ——
+
+void IteratorHelperData::enumerateChildren(IGCVisitor* visitor) {
+    ObjectData::enumerateChildren(visitor);
+    if (underlying != nullptr) visitor->visit(underlying);
+    if (nextMethod != nullptr) visitor->visit(nextMethod);
+    if (callback != nullptr) visitor->visit(callback);
+    if (innerIterator != nullptr) visitor->visit(innerIterator);
+    if (innerNext != nullptr) visitor->visit(innerNext);
+}
+
+IData* IteratorHelperData::clone(neo::infra::IAllocator* /*alloc*/) const {
+    auto* self = const_cast<IteratorHelperData*>(this);
     self->refInc();
     return self;
 }

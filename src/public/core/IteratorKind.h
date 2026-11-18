@@ -19,6 +19,15 @@ enum class ArrayIterationKind : uint8_t {
     KeyAndValue,  // Array.prototype.entries —— 产出 [index, value]
 };
 
+// Iterator.prototype 惰性辅助方法种类（ES2025 §27.1.3.3）。
+enum class IteratorHelperKind : uint8_t {
+    Map,
+    Filter,
+    Take,
+    Drop,
+    FlatMap,
+};
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_ITERATOR_KIND_H
