@@ -209,6 +209,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::DeclareGlobalVar: return "declare_global_var";
         case OpCode::DeclareGlobalFunction: return "declare_global_function";
         case OpCode::CheckGlobalLexical: return "check_global_lexical";
+        case OpCode::DefineGlobalLexical: return "define_global_lexical";
         case OpCode::DirectEval:    return "direct_eval";
         case OpCode::DirectEvalSpread: return "direct_eval_spread";
     }
@@ -357,6 +358,7 @@ const VM::Handler* VM::handlers() {
         &VM::opDeclareGlobalVar,
         &VM::opDeclareGlobalFunction,
         &VM::opCheckGlobalLexical,
+        &VM::opDefineGlobalLexical,
         &VM::opDirectEval,
         &VM::opDirectEvalSpread,
     };
@@ -2161,6 +2163,28 @@ Value* VM::opCheckGlobalLexical() {
     }
     Value* result = ctx_->checkGlobalLexical(*name);
     if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opDefineGlobalLexical() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 8) {
+        return badBytecode("define_global_lexical: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    uint32_t flags = readU32(bytes.data() + pc_ + 4);
+    pc_ += 8;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("define_global_lexical: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("define_global_lexical: operand stack underflow");
+    }
+    Value* result = ctx_->defineGlobalLexical(
+        *name, pop(), (flags & kDefineMutable) != 0,
+        (flags & kDefineInitialized) != 0);
+    if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
 

@@ -66,9 +66,9 @@ TEST(ContextTest, ThreeLevelScopeReadyAfterCreation) {
     EXPECT_NE(ctx->root(), nullptr);
     EXPECT_EQ(ctx->current(), ctx->root());  // current 初始 = root
 
-    EXPECT_EQ(ctx->global()->parent(), nullptr);     // global 是根
-    EXPECT_EQ(ctx->root()->parent(), ctx->global()); // root 的 parent = global
-    EXPECT_EQ(ctx->global()->childCount(), 1u);     // global 持有 root
+    EXPECT_EQ(ctx->global()->parent(), nullptr);  // global 是根
+    EXPECT_EQ(ctx->root(), ctx->global());        // 脚本顶层直接使用 GlobalScope
+    EXPECT_EQ(ctx->global()->childCount(), 0u);   // 不再有独立 scriptRoot_ 层
     // ctx 析构：销毁 global（递归 root）→ 销毁 GC
 }
 
@@ -122,7 +122,7 @@ TEST(ContextTest, PopRootIsNoop) {
     // pop 栈底 root：无操作，current 仍是 root
     ctx->popScope();
     EXPECT_EQ(ctx->current(), ctx->root());
-    EXPECT_EQ(ctx->root()->parent(), ctx->global());
+    EXPECT_EQ(ctx->root(), ctx->global());
 }
 
 TEST(ContextTest, DestroyReleasesScopeTreeThenGC) {
@@ -189,15 +189,17 @@ TEST(ContextTest, LookupChainAcrossScopes) {
     auto* gv = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
     auto* rv = gc->createValue(dummyType(), gc->allocData<NumberData>(2.0));
 
+    // 脚本顶层就是 global；另建一个子作用域模拟内层模块/函数根。
+    Scope* child = ctx->pushNewScope(ctx->global());
     ctx->global()->add(gv);
     ctx->global()->bind("g", gv);
-    ctx->root()->add(rv);
-    ctx->root()->bind("r", rv);
+    child->add(rv);
+    child->bind("r", rv);
 
-    // root 沿链查到 global 的 g
-    EXPECT_EQ(ctx->root()->lookupChain("g"), gv);
-    EXPECT_EQ(ctx->root()->lookupChain("r"), rv);
-    // global 查不到 root 的 r
+    // child 沿链查到 global 的 g
+    EXPECT_EQ(child->lookupChain("g"), gv);
+    EXPECT_EQ(child->lookupChain("r"), rv);
+    // global 查不到 child 的 r
     EXPECT_EQ(ctx->global()->lookupChain("r"), nullptr);
     // ctx 析构：销毁 global（递归 root）→ 销毁 GC
 }
@@ -290,10 +292,10 @@ TEST(ContextTest, CreateWithoutNameDoesNotBind) {
     size_t before = ctx->current()->valueCount();
     auto* v = ctx->createNumber(42.0);
     ASSERT_NE(v, nullptr);
-    // 无名字，lookup 返回 nullptr
-    EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
-    // 但 Value 仍被 current scope 登记（可达性由 GC 标记）
+    // Value 仍被 current scope 登记（可达性由 GC 标记）
     EXPECT_EQ(ctx->current()->valueCount(), before + 1);
+    // 无名字，lookup 返回 nullptr（GlobalScope 回退会临时创建键字符串）
+    EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
     EXPECT_EQ(v->pinRef(), 0);
 }
 

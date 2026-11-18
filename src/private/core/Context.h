@@ -40,9 +40,9 @@ class Context : public IContext {
     Scope* global_ = nullptr;              // Context 创建，析构时销毁（递归销毁整棵树）
     // 全局对象（GlobalScope 的对象记录）：全局 var/函数声明与内建都落在它上面。
     Value* globalObject_ = nullptr;
-    Scope* root_ = nullptr;                // 当前模块根作用域（可被 setRootScope 切换）
-    // 脚本顶层环境（构造时创建，永不切换）：间接 eval 的词法环境入口。
-    Scope* scriptRoot_ = nullptr;
+    // 当前模块根作用域（可被 setRootScope 切换）。脚本顶层直接是 global_：
+    // GlobalScope 同时承载对象记录与全局声明记录（B2）。
+    Scope* root_ = nullptr;
     Scope* current_ = nullptr;             // 当前作用域（Scope 的 parent 链即作用域栈）
     // 当前函数环境（ADR-047）：this / new.target 的宿主 ArgumentScope。
     // invoke 保存/恢复；顶层指向模块根作用域。
@@ -465,9 +465,12 @@ public:
 
     // eval（§19.2.1）
     Value* declareVar(std::string_view name) override;
-    // 全局环境记录（§9.1.1.4）：对象记录落在 globalObject_，声明记录落在 scriptRoot_。
+    // 全局环境记录（§9.1.1.4）：对象记录落在 globalObject_，声明记录落在 global_。
     bool defineGlobal(std::string_view name, Value* value, bool writable,
                       bool enumerable, bool configurable) override;
+    Value* defineGlobalLexical(std::string_view name, Value* value,
+                               bool mutableBinding = true,
+                               bool initialized = true) override;
     Value* declareGlobalVar(std::string_view name, bool configurable) override;
     Value* declareGlobalFunction(std::string_view name,
                                  bool configurable) override;

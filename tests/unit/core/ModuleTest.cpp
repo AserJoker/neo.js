@@ -298,12 +298,11 @@ TEST(ModuleTest, ExportsPrototypeIsNull) {
     EXPECT_EQ(proto->type()->kind(), TypeKind::Null);
 }
 
-TEST(ModuleTest, ModuleScopeIsChildOfGlobalLexicalRecord) {
+TEST(ModuleTest, ModuleScopeIsChildOfGlobal) {
     Fixture f;
     ModuleInfo info = f.ctx->getModule("/a.js");
-    // 模块 root 挂在脚本全局声明记录下，再经其 parent 到达 GlobalScope 对象记录。
-    EXPECT_EQ(info.scope->parent(), f.ctx->root());
-    EXPECT_EQ(info.scope->parent()->parent(), f.ctx->global());
+    // 模块 root 直接挂在 GlobalScope（对象记录 + 全局声明记录）下。
+    EXPECT_EQ(info.scope->parent(), f.ctx->global());
 }
 
 TEST(ModuleTest, ImportWithoutLoaderReturnsExports) {

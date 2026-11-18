@@ -60,12 +60,10 @@ private:
 MarkSweepGC::MarkSweepGC(infra::IAllocator* alloc) : alloc_(alloc) {}
 
 MarkSweepGC::~MarkSweepGC() {
-    // 0. 销毁根作用域树（ADR-044：所有权在本类）。销毁后 rootScope_ 为空，
-    //    所有 Value 都不可达，下面的 collect 才能把它们全部回收。
-    if (rootScope_ != nullptr) {
-        rootScope_->destroySelf();
-        rootScope_ = nullptr;
-    }
+    // 0. 先清空根作用域树跟踪的 Value（不释放作用域内存），使所有 Value 不可达。
+    //    不能先销毁作用域树：FunctionData 析构会沿 Environment 闭包的 parent 链
+    //    解 pin，若作用域已释放会访问悬垂指针。因此保持作用域存活到 collect 收敛后。
+    if (rootScope_ != nullptr) rootScope_->clearTrackedValuesRecursive();
     // 析构时反复 collect 直到收敛。
     //
     // 关键点（ADR-036）：sweep 阶段销毁 data 可能连带销毁其持有的作用域
@@ -77,6 +75,11 @@ MarkSweepGC::~MarkSweepGC() {
         size_t before = collectedCount_;
         collect();
         if (collectedCount_ == before) break;  // 本轮零进展：收敛，残留即泄漏
+    }
+    // 1. Value 全部回收后销毁根作用域树（ADR-044：所有权在本类）。
+    if (rootScope_ != nullptr) {
+        rootScope_->destroySelf();
+        rootScope_ = nullptr;
     }
     // 收敛后仍有 Value 存活 = 内存泄漏（scope 未销毁，或 GC 标记/回收逻辑错误）。
     if (!values_.empty()) {

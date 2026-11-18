@@ -425,6 +425,14 @@ public:
 
     // 遍历本作用域直接跟踪的 Value（供 GC 标记访问器使用）
     const std::vector<Value*>& values() const { return values_; }
+
+    // 清空整棵子树的 Value 跟踪（不触碰引用计数，不释放 Scope 内存）。
+    // GC 析构时先调用：让所有 Value 不可达，同时保持作用域内存存活，
+    // 避免 FunctionData 析构沿 parent 链访问已释放的作用域。
+    void clearTrackedValuesRecursive() {
+        values_.clear();
+        for (Scope* child : children_) child->clearTrackedValuesRecursive();
+    }
 };
 
 // 全局作用域（ES2024 §9.1.1.4 Global Environment Records 的对象记录部分）：

@@ -716,6 +716,13 @@ public:
                               bool writable = true, bool enumerable = false,
                               bool configurable = true) = 0;
 
+    // defineGlobalLexical: 在全局声明记录（GlobalScope）定义 let/const/class。
+    // 与 define 的区别是目标固定为全局声明记录，不随 current() 变化。
+    // 成功返回值槽；重复声明返回 SyntaxError。
+    virtual Value* defineGlobalLexical(std::string_view name, Value* value,
+                                       bool mutableBinding = true,
+                                       bool initialized = true) = 0;
+
     // defineAccessor: 定义访问器属性（getter/setter 须为 Function 或 null）。
     // 成功返回 obj，失败返回 Exception。
     virtual Value* defineAccessor(Value* obj, Value* key, Value* getter, Value* setter,

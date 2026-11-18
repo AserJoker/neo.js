@@ -219,6 +219,16 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    // 全局声明记录（GlobalScope）定义 let/const/class，flags 与 define 相同。
+    uint32_t defineGlobalLexical(std::string_view name, bool mutableBinding,
+                                 bool initialized) {
+        uint32_t pc = emitOp(OpCode::DefineGlobalLexical);
+        emitU32(addString(std::string(name)));
+        uint32_t flags = (mutableBinding ? kDefineMutable : 0u) |
+                         (initialized ? kDefineInitialized : 0u);
+        emitU32(flags);
+        return pc;
+    }
     uint32_t initialize(std::string_view name) {
         uint32_t pc = emitOp(OpCode::Initialize);
         emitU32(addString(std::string(name)));

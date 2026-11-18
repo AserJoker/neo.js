@@ -520,9 +520,12 @@ Compiler 在 `typeof` + `Identifier` 时发射 `load_soft`，其余表达式保�
 | `declare_global_var u32 nameIndex` | `d → d` | CreateGlobalVarBinding：属性已存在则 no-op，否则定义 undefined 数据属性 |
 | `declare_global_function u32 nameIndex` | `d → d` | CreateGlobalFunctionBinding：重配置/替换已有属性，非法重定义报 TypeError |
 | `check_global_lexical u32 nameIndex` | `d → d` | HasRestrictedGlobalProperty：不可配置全局属性与 let/const 冲突报 SyntaxError |
+| `define_global_lexical u32 nameIndex, u32 flags` | `[v] → []` | 在 GlobalScope 的声明记录定义 let/const/class（固定目标，不随 current 变化） |
 
 - `declare_global_var`/`declare_global_function` 由 `hoistVarSlots` 与
   `hoistSlots` 在 `globalCode_ && varScope` 时发射；模块与函数体不进入该模式。
-- `check_global_lexical` 由 `hoistLexicalSlots` 在全局词法声明 define 前发射。
+- `check_global_lexical` 由 `hoistLexicalSlots` 在全局词法声明 define 前发射；
+  随后用 `define_global_lexical` 把绑定写入 `GlobalScope` 的声明记录（B2）。
 - 运行时分别调用 `IContext::declareGlobalVar` / `declareGlobalFunction` /
-  `checkGlobalLexical`，由 `Context` 在 `globalObject_` 上执行属性算法。
+  `checkGlobalLexical` / `defineGlobalLexical`，由 `Context` 在 `globalObject_`
+  与 `GlobalScope` 声明记录上执行属性/绑定算法。

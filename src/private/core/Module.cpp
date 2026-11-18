@@ -129,12 +129,12 @@ ModuleInfo Context::getModule(std::string_view id) {
         return ModuleInfo{it->second->scope, it->second->exports};
     }
 
-    // 惰性创建模块 root scope（全局声明记录的子作用域，生命周期随作用域树）。
-    // 外层是 scriptRoot_（全局声明记录），再经其 parent 到达 GlobalScope 对象记录。
+    // 惰性创建模块 root scope（GlobalScope 的子作用域，生命周期随作用域树）。
+    // 模块有自己的声明记录；外层直接是 GlobalScope（对象记录 + 全局声明记录）。
     void* p = alloc_->alloc(sizeof(Scope));
     if (p == nullptr) return ModuleInfo{};
-    Scope* scope = new (p) Scope(scriptRoot_, alloc_, this);
-    scriptRoot_->addChild(scope);
+    Scope* scope = new (p) Scope(global_, alloc_, this);
+    global_->addChild(scope);
 
     // 导出对象必须在模块 scope 下创建，才能被作用域树跟踪。
     // 它是模块命名空间 exotic 对象（原型 null、导出属性为活绑定）。
@@ -146,7 +146,7 @@ ModuleInfo Context::getModule(std::string_view id) {
     current_ = savedCurrent;
 
     if (moduleThis == oomValue_ || exports == oomValue_) {
-        // 创建失败：销毁刚建的作用域（从 scriptRoot_ 摘除并释放内存）。
+        // 创建失败：销毁刚建的作用域（从 global_ 摘除并释放内存）。
         scope->destroySelf();
         return ModuleInfo{};
     }

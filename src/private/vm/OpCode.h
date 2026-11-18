@@ -326,6 +326,8 @@ enum class OpCode : uint16_t {
     DeclareGlobalFunction,
     // u32 nameIndex：[] → []：全局 let/const 与不可配置全局属性冲突检查。
     CheckGlobalLexical,
+    // u32 nameIndex, u32 flags：[value] → []：在全局声明记录定义 let/const/class。
+    DefineGlobalLexical,
     // u32 argc：[callee, args...] → [result]：直接 eval 调用点。
     DirectEval,
     // [callee, argsArray] → [result]：带展开的直接 eval 调用点。

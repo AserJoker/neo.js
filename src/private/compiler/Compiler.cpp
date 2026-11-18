@@ -4009,9 +4009,13 @@ void Compiler::hoistLexicalSlots(const frontend::NodeList& body,
             if (klass.id && klass.id->kind() == NodeKind::Identifier) {
                 const std::string& name =
                     static_cast<const frontend::Identifier&>(*klass.id).name;
-                if (globalLexical) code_->checkGlobalLexical(name);
                 code_->pushUninitialized();
-                code_->define(name, true, false);
+                if (globalLexical) {
+                    code_->checkGlobalLexical(name);
+                    code_->defineGlobalLexical(name, true, false);
+                } else {
+                    code_->define(name, true, false);
+                }
             }
             continue;
         }
@@ -4035,9 +4039,13 @@ void Compiler::hoistLexicalSlots(const frontend::NodeList& body,
             std::vector<std::string> names;
             collectPatternNames(*decl.id, names);
             for (const std::string& name : names) {
-                if (globalLexical) code_->checkGlobalLexical(name);
                 code_->pushUninitialized();
-                code_->define(name, mutableBinding, false);
+                if (globalLexical) {
+                    code_->checkGlobalLexical(name);
+                    code_->defineGlobalLexical(name, mutableBinding, false);
+                } else {
+                    code_->define(name, mutableBinding, false);
+                }
             }
         }
     }

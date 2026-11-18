@@ -94,16 +94,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     globalObject_ = createObject();
     if (globalObject_ == oomValue_) std::abort();
     static_cast<GlobalScope*>(global_)->setGlobalObject(globalObject_);
-    // 5. 创建 root scope（parent=global），作为 global 的子
-    void* rp = alloc_->alloc(sizeof(Scope));
-    root_ = new (rp) Scope(global_, alloc_, this);
-    global_->addChild(root_);
-    // 6. current 初始 = root；顶层函数环境也指向 root（this/new.target 由 VM 入口绑定）
+    // 5. 脚本顶层直接使用 GlobalScope：它同时是对象记录（global object 属性）
+    //    与全局声明记录（顶层 let/const/class）。不再保留独立 scriptRoot_ 层。
+    root_ = global_;
+    // 6. current 初始 = global；顶层函数环境也指向它（this/new.target 由 VM 入口绑定）
     current_ = root_;
     currentFunctionEnv_ = root_;
-    // 脚本顶层环境固定为构造时的 root：间接 eval 从它进入，能看到脚本
-    // 顶层 var/let/const，同时经 parent 链到达 global 内建。
-    scriptRoot_ = root_;
     // 7. global 默认标注 strict（保持默认严格模式，后续由模块/函数体标注覆盖）
     global_->setFlag("strict");
     // 8. 全局 this = global object（§9.1.1.4 [[GlobalThisValue]]）。
@@ -2649,7 +2645,7 @@ Value* Context::declareVar(std::string_view name) {
         // 变量环境已有 var 绑定：复用。
         if (existing->varBinding) return nullptr;
         // 全局变量环境：同名词法声明是早期错误（§19.2.1.3 step 3.a）。
-        if (target == scriptRoot_) {
+        if (target == global_) {
             std::string msg = "Identifier '" + std::string(name) +
                               "' has already been declared";
             return detail::errorOf(this, ErrorKind::SyntaxError, msg);
@@ -2660,7 +2656,7 @@ Value* Context::declareVar(std::string_view name) {
     }
     // 全局变量环境是对象记录：var 声明落到 global object 属性上，
     // 已存在的属性（如内建 Math）不重复定义（§9.1.1.4.16 CreateGlobalVarBinding）。
-    if (target == scriptRoot_) return declareGlobalVar(name, true);
+    if (target == global_) return declareGlobalVar(name, true);
     Value* value = createUndefined();
     if (value == oomValue_) return value;
     if (!target->define(name, value, true, true, true)) {
@@ -2679,9 +2675,21 @@ bool Context::defineGlobal(std::string_view name, Value* value, bool writable,
     return !detail::isErrorValue(r);
 }
 
+Value* Context::defineGlobalLexical(std::string_view name, Value* value,
+                                    bool mutableBinding, bool initialized) {
+    if (isErrorValue(value)) return value;
+    // 全局声明记录固定是 global_，不随 current() 变化（模块/函数体不走这里）。
+    if (global_->bindingKind(name) != Scope::BindingKind::None) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    return defineCloned(global_, name, value, mutableBinding, initialized, false);
+}
+
 Value* Context::declareGlobalVar(std::string_view name, bool configurable) {
-    // 声明记录（scriptRoot_ 的 let/const/class）与 var 同名是早期错误。
-    if (scriptRoot_->lookupBinding(name) != nullptr) {
+    // 声明记录（global_ 的 let/const/class）与 var 同名是早期错误。
+    if (global_->lookupBinding(name) != nullptr) {
         std::string msg = "Identifier '" + std::string(name) +
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
@@ -2711,7 +2719,7 @@ Value* Context::declareGlobalVar(std::string_view name, bool configurable) {
 }
 
 Value* Context::declareGlobalFunction(std::string_view name, bool configurable) {
-    if (scriptRoot_->lookupBinding(name) != nullptr) {
+    if (global_->lookupBinding(name) != nullptr) {
         std::string msg = "Identifier '" + std::string(name) +
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);

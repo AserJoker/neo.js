@@ -2,7 +2,7 @@
 //
 // 直接 eval：Compiler 在 `eval(...)` 调用点发射 DirectEval；VM 确认被调函数
 // 是内建 %eval% 后，把调用方当前作用域作为词法环境交给 evalSource。
-// 间接 eval：普通调用内建函数，在脚本顶层环境（scriptRoot_）执行。
+// 间接 eval：普通调用内建函数，在脚本顶层环境（global_）执行。
 //
 // 作用域模型：
 //   - 词法环境：直接 eval 取调用方 current，间接 eval 取脚本顶层环境；
@@ -168,10 +168,9 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
 
     // 3. 在目标作用域执行。var 环境按严格性分派：
     //    sloppy 直接 eval → 调用方变量环境；其余 → eval 自己的词法作用域。
-    // 间接 eval 在脚本全局环境执行：入口取固定的脚本顶层作用域，
-    // 沿 parent 链继续到 global（内建）。不能取 global_ 本身，否则看不到
-    // 脚本顶层 var/let/const（它们落在 root 作用域）。
-    Scope* entry = direct && callerScope != nullptr ? callerScope : scriptRoot_;
+    // 间接 eval 在脚本全局环境执行：GlobalScope 同时承载对象记录与声明记录，
+    // 顶层 var 在 global object、let/const 在 global_ 的声明记录。
+    Scope* entry = direct && callerScope != nullptr ? callerScope : global_;
     Scope* savedCurrent = current_;
     Scope* savedRoot = root_;
     Scope* savedFunctionEnv = currentFunctionEnv_;
@@ -185,13 +184,12 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
         evalVarScope_ = direct ? (currentFunctionEnv_ != nullptr
                                       ? currentFunctionEnv_
                                       : root_)
-                               : scriptRoot_;
+                               : global_;
     }
     if (direct) entry->markDynamic();
     current_ = entry;
-    // 间接 eval 在全局环境中执行：新建函数的模块根取脚本全局声明记录，
-    // 其 parent 再回退到 GlobalScope 的对象记录。
-    if (!direct) root_ = scriptRoot_;
+    // 间接 eval 在全局环境中执行：新建函数的模块根取 GlobalScope。
+    if (!direct) root_ = global_;
 
     // eval 内创建的函数可能逃逸并长期引用 Code，故 Code 由 Context 持有。
     vm::Code* code = compiled.code.release();

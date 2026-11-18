@@ -227,7 +227,7 @@ SyntaxError。
   返回 SyntaxError。这样 `function f(){var x; eval('var x=2')}` 与
   `let x; eval('var x')` 分别得到复用与早期错误。
 
-### 全局环境记录：对象记录 + 声明记录（B1，2026-11-18）
+### 全局环境记录：对象记录 + 声明记录（B1/B2，2026-11-18）
 
 此前全局内建通过 `Scope::bind` 落在 `global_`，脚本顶层 `var` 落在
 `scriptRoot_`，`var Math` 会在 `scriptRoot_` 建 undefined 遮蔽绑定，违反
@@ -246,16 +246,27 @@ SyntaxError。
   发射 `declare_global_function`（CreateGlobalFunctionBinding：重配置/替换）。
   顶层 let/const 在定义前发射 `check_global_lexical`
   （HasRestrictedGlobalProperty）。
-- **模块根**：模块 root 的 parent 改为 `scriptRoot_`（全局声明记录），再经其
-  parent 到达 GlobalScope；模块顶层 `this` 显式设为 `undefined`。
+- **模块根**：模块 root 直接以 `GlobalScope` 为父；模块顶层 `this` 显式设为
+  `undefined`。
 - **闭包捕获**：全局对象属性没有 `Binding` 条目，`setClosure` 不再捕获其当前
   值快照（否则会永久指向函数声明的 undefined 占位），改为运行时沿作用域链
   动态读取。
 
-B2（后续优化，未实施）：让 `GlobalScope` 同时持有声明记录，所有 root scope
-直接以 `GlobalScope` 为父；脚本顶层 let/const 用 `DefineGlobalLexical` 定义到
-`GlobalScope`，删除独立的 `scriptRoot_` 层。B1 保留该层是为了不引入新的
-全局词法定义指令，改动面更小。
+B2 收口（同日）：删除独立的 `scriptRoot_` 层，`GlobalScope` 同时承载对象记录
+（global object 属性）与全局声明记录（基类 `namedValues_`）：
+
+- **脚本顶层**：`root_ = current_ = currentFunctionEnv_ = global_`，不再创建
+  scriptRoot 子作用域。顶层 `var`/函数仍经全局声明指令落到 global object；
+  顶层 let/const/class 经 `define_global_lexical` 定义到 `GlobalScope` 的声明
+  记录，查找时声明记录优先于对象记录。
+- **所有 root scope**：脚本、模块、间接 eval 的根直接是 `GlobalScope`；模块
+  与 eval 仍各自 `pushScope` 建自己的词法作用域。
+- **声明冲突**：`declareGlobalVar`/`declareGlobalFunction` 检查
+  `global_->lookupBinding`（声明记录）；`check_global_lexical` 检查 global
+  object 上不可配置属性。
+- **GC 析构顺序**：先 `clearTrackedValuesRecursive()` 清空根树跟踪值（保持
+  Scope 内存存活），待 collect 收敛后再销毁根树。否则 FunctionData 析构沿
+  Environment 闭包 parent 链解 pin 时会访问已释放的作用域。
 
 ### arguments 复用（2026-11-18）
 

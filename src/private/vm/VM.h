@@ -137,6 +137,7 @@ private:
     neo::core::Value* opDeclareGlobalVar();
     neo::core::Value* opDeclareGlobalFunction();
     neo::core::Value* opCheckGlobalLexical();
+    neo::core::Value* opDefineGlobalLexical();
     neo::core::Value* opDirectEval();
     neo::core::Value* opDirectEvalSpread();
     neo::core::Value* opPop();
