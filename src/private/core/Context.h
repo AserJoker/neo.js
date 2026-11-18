@@ -92,6 +92,7 @@ class Context : public IContext {
     Value* weakSetPrototype_ = nullptr;
     Value* mapIteratorPrototype_ = nullptr;
     Value* setIteratorPrototype_ = nullptr;
+    Value* datePrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -339,6 +340,7 @@ public:
     Value* createCollectionIterator(Value* collection,
                                     CollectionIterationKind kind,
                                     std::string_view bindName = {}) override;
+    Value* createDate(double timeValue, std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -455,6 +457,8 @@ public:
         mapIteratorPrototype_ = mapIteratorProto;
         setIteratorPrototype_ = setIteratorProto;
     }
+    void setDatePrototype(Value* proto) override { datePrototype_ = proto; }
+    Value* datePrototype() const override { return datePrototype_; }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
     void setAsyncIteratorPrototype(Value* proto) override {

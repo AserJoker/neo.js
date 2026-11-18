@@ -63,6 +63,8 @@ add_executable(core_unit_test
     ObjectStaticsTest.cpp
     IteratorHelpersTest.cpp
     CollectionTest.cpp
+    ConsoleBuiltinsTest.cpp
+    DateBuiltinsTest.cpp
     BigIntTypeTest.cpp
     BigIntBuiltinsTest.cpp
     GeneratorTest.cpp

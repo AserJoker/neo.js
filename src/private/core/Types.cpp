@@ -13,6 +13,7 @@
 #include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
 #include "core/types/Collection.h"
+#include "core/types/Date.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
 #include "core/types/Exception.h"
@@ -135,6 +136,11 @@ IType* getCollectionIteratorType() {
     return &inst;
 }
 
+IType* getDateType() {
+    static DateType inst;
+    return &inst;
+}
+
 IType* getErrorType() {
     static ErrorType inst;
     return &inst;
@@ -204,6 +210,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IteratorHelper:   return getIteratorHelperType();
         case TypeKind::Collection:       return getCollectionType();
         case TypeKind::CollectionIterator: return getCollectionIteratorType();
+        case TypeKind::Date:             return getDateType();
         case TypeKind::Error:            return getErrorType();
         case TypeKind::Promise:          return getPromiseType();
         case TypeKind::Interrupt:        return getInterruptType();

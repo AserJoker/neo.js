@@ -624,6 +624,15 @@ public:
                                          Value* mapIteratorProto,
                                          Value* setIteratorProto) = 0;
 
+    // createDate: 创建 Date 对象（ES2024 §21.4.2.1），timeValue 为毫秒时间值
+    // （NaN 表示 Invalid Date）。原型自动挂 datePrototype()。
+    virtual Value* createDate(double timeValue,
+                              std::string_view bindName = {}) = 0;
+
+    // setDatePrototype / datePrototype: %Date.prototype%。
+    virtual void setDatePrototype(Value* proto) = 0;
+    virtual Value* datePrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

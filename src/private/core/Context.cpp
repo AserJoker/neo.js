@@ -18,6 +18,8 @@
 #include "core/AsyncGeneratorBuiltins.h"
 #include "core/BigIntBuiltins.h"
 #include "core/CollectionBuiltins.h"
+#include "core/ConsoleBuiltins.h"
+#include "core/DateBuiltins.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
@@ -40,6 +42,7 @@
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
 #include "core/types/Collection.h"
+#include "core/types/Date.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -205,6 +208,16 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11. 注册 Iterator 抽象类与数组迭代器内建（ES2024 §23.1.5 / ES2025 §27.1）。
     //     依赖 Object.prototype / Function.prototype / Array.prototype 已就绪。
     if (!registerIteratorBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 Date（ES2024 §21.4）。依赖 Object.prototype 已就绪。
+    if (!registerDateBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a0. 注册宿主侧 console 与 queueMicrotask。
+    if (!registerConsoleBuiltins(this)) {
         std::abort();
     }
 
@@ -2113,6 +2126,17 @@ Value* Context::createCollectionIterator(Value* collection,
         static_cast<ObjectData*>(iterator->data())->prototype = proto;
     }
     return iterator;
+}
+
+Value* Context::createDate(double timeValue, std::string_view bindName) {
+    auto* d = gc_->allocData<DateData>();
+    if (d == nullptr) return oomValue_;
+    d->timeValue = timeValue;
+    Value* date = createTracked(getDateType(), d, bindName);
+    if (date != oomValue_ && datePrototype_ != nullptr) {
+        static_cast<ObjectData*>(date->data())->prototype = datePrototype_;
+    }
+    return date;
 }
 
 // —— Error 对象（ADR-038）——

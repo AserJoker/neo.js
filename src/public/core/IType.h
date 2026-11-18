@@ -101,6 +101,8 @@ enum class TypeKind : uint8_t {
     Collection,
     // 集合迭代器（ES2024 §24.1.5 / §24.2.5）：Map/Set 的 keys/values/entries。
     CollectionIterator,
+    // Date 对象（ES2024 §21.4）：普通对象 + [[DateValue]]（毫秒时间值，NaN = Invalid Date）。
+    Date,
     // Error 对象（ES2024 §20.5）：普通对象 + [[ErrorData]] 内部槽。
     // 内部槽是标记性的（无状态），用于类型判定（Object.prototype.toString 的 tag、
     // 后续 Error.isError）。TypeError/RangeError 等子类共用本 kind，只差原型与 name。
@@ -310,6 +312,7 @@ IType* getIteratorWrapperType();
 IType* getIteratorHelperType();
 IType* getCollectionType();
 IType* getCollectionIteratorType();
+IType* getDateType();
 IType* getErrorType();
 IType* getPromiseType();
 IType* getInterruptType();
