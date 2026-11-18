@@ -13,6 +13,7 @@
 #define NEOJS_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,119 @@ typedef enum {
 
 // M0 占位：返回版本字符串
 const char* NJS_Version(void);
+
+// ---------------------------------------------------------------------------
+// Intl 后端（宿主注入）
+//
+// core 不链接 ICU，也不内置 locale 数据。宿主通过 NJS_IntlBackend 提供
+// locale 数据与格式化原语；不提供时 core 使用内置的最小实现（en/UTC/latn）。
+// 后端只负责“数据 + 格式化”，Intl 对象模型、选项校验、locale 协商、
+// formatToParts 的 JS 对象组装全部在 core 内完成。
+// ---------------------------------------------------------------------------
+
+#define NJS_INTL_ABI_VERSION 1u
+
+typedef enum {
+    NJS_INTL_OK = 0,
+    NJS_INTL_UNSUPPORTED = 1,
+    NJS_INTL_INVALID_OPTION = 2,
+    NJS_INTL_INTERNAL = 3
+} NJS_IntlStatus;
+
+// 后端能力位图。未置位的能力由 core 按规范抛错或退化。
+typedef enum {
+    NJS_INTL_CAP_NUMBER = 1u << 0,
+    NJS_INTL_CAP_DATETIME = 1u << 1,
+    NJS_INTL_CAP_COLLATOR = 1u << 2,
+    NJS_INTL_CAP_PLURAL = 1u << 3,
+    NJS_INTL_CAP_SEGMENTER = 1u << 4,
+    NJS_INTL_CAP_LIST = 1u << 5,
+    NJS_INTL_CAP_RELATIVE = 1u << 6,
+    NJS_INTL_CAP_DISPLAY_NAMES = 1u << 7,
+    NJS_INTL_CAP_FORMAT_TO_PARTS = 1u << 8,
+    NJS_INTL_CAP_COMPACT = 1u << 9,
+    NJS_INTL_CAP_UNIT = 1u << 10
+} NJS_IntlCapability;
+
+// formatToParts 的字段类型（ECMA-402 PartitionNumberPattern 等）。
+typedef enum {
+    NJS_INTL_PART_LITERAL = 0,
+    NJS_INTL_PART_INTEGER = 1,
+    NJS_INTL_PART_GROUP = 2,
+    NJS_INTL_PART_DECIMAL = 3,
+    NJS_INTL_PART_FRACTION = 4,
+    NJS_INTL_PART_CURRENCY = 5,
+    NJS_INTL_PART_UNIT = 6,
+    NJS_INTL_PART_PERCENT = 7,
+    NJS_INTL_PART_MINUS_SIGN = 8,
+    NJS_INTL_PART_PLUS_SIGN = 9,
+    NJS_INTL_PART_YEAR = 10,
+    NJS_INTL_PART_MONTH = 11,
+    NJS_INTL_PART_DAY = 12,
+    NJS_INTL_PART_HOUR = 13,
+    NJS_INTL_PART_MINUTE = 14,
+    NJS_INTL_PART_SECOND = 15,
+    NJS_INTL_PART_DAY_PERIOD = 16,
+    NJS_INTL_PART_TIME_ZONE_NAME = 17
+} NJS_IntlPartType;
+
+typedef struct {
+    NJS_IntlPartType type;
+    const char* text;   // UTF-8，formatter 持有，下次 format/destroy 前有效
+    size_t length;
+} NJS_IntlPart;
+
+typedef struct {
+    const char* key;    // UTF-8
+    const char* value;  // UTF-8
+} NJS_IntlOption;
+
+// 后端归一化后的 resolvedOptions 字段（NUL 结尾）。
+typedef struct {
+    char locale[128];
+    char numbering_system[32];
+    char calendar[32];
+    char time_zone[64];
+} NJS_IntlResolved;
+
+typedef struct NJS_IntlFormatter NJS_IntlFormatter;
+typedef struct NJS_IntlBackend NJS_IntlBackend;
+
+struct NJS_IntlBackend {
+    uint32_t abi_version;
+    uint32_t struct_size;
+    uint64_t capabilities;
+    void* user_data;
+
+    // 两段式字符串输出：out 为 NULL 或 *out_len 不足时，写入所需长度（含 NUL）
+    // 并返回 NJS_INTL_OK；否则写入 NUL 结尾字符串并更新 *out_len。
+    NJS_IntlStatus (*canonicalize_locale)(void* user_data, const char* tag,
+                                          size_t tag_len, char* out,
+                                          size_t* out_len);
+    // 返回以 NULL 结尾的 locale 字符串数组；数组与字符串由后端持有。
+    const char* const* (*available_locales)(void* user_data, size_t* count);
+    NJS_IntlStatus (*default_locale)(void* user_data, char* out, size_t* out_len);
+    NJS_IntlStatus (*default_time_zone)(void* user_data, char* out, size_t* out_len);
+
+    // 创建数字格式化器。opts 为 UTF-8 key/value 列表；resolved 可为 NULL。
+    // 失败返回 NULL，并通过 status 报告原因。
+    NJS_IntlFormatter* (*number_format_create)(void* user_data, const char* locale,
+                                               const NJS_IntlOption* opts,
+                                               size_t nopts,
+                                               NJS_IntlResolved* resolved,
+                                               NJS_IntlStatus* status);
+    // 格式化 value。parts 为 NULL 或 *count 不足时，写入所需数量并返回 OK；
+    // 否则填充 parts 并更新 *count。
+    NJS_IntlStatus (*number_format_format)(NJS_IntlFormatter* formatter, double value,
+                                           NJS_IntlPart* parts, size_t* count);
+    void (*formatter_destroy)(NJS_IntlFormatter* formatter);
+
+    // 可选：返回最近一次错误的静态字符串（UTF-8），无错误返回 NULL。
+    const char* (*last_error)(void* user_data);
+};
+
+// core 内置的最小后端（en / latn / gregory / UTC）。始终可用。
+const NJS_IntlBackend* NJS_MinimalIntlBackend(void);
 
 #ifdef __cplusplus
 }  // extern "C"

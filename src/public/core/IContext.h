@@ -40,6 +40,7 @@
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
 #include "infra/IClock.h"
+#include "neojs.h"
 
 #include <cstddef>
 #include <memory>
@@ -660,6 +661,20 @@ public:
     virtual void setTypedArrayPrototype(TypedArrayKind kind, Value* proto) = 0;
     virtual Value* typedArrayPrototype(TypedArrayKind kind) const = 0;
 
+    // intlBackend: 宿主注入的 Intl 后端；未注入时为内置最小后端。
+    virtual const NJS_IntlBackend* intlBackend() const = 0;
+
+    // createIntlNumberFormat: 创建 Intl.NumberFormat 实例（ECMA-402 §15）。
+    // formatter 的所有权转移给 Data，Data 析构时调用 backend->formatter_destroy。
+    virtual Value* createIntlNumberFormat(const NJS_IntlBackend* backend,
+                                          NJS_IntlFormatter* formatter,
+                                          std::string_view locale,
+                                          std::string_view bindName = {}) = 0;
+
+    // setIntlNumberFormatPrototype / intlNumberFormatPrototype: bootstrap 专用。
+    virtual void setIntlNumberFormatPrototype(Value* proto) = 0;
+    virtual Value* intlNumberFormatPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。
@@ -1199,9 +1214,12 @@ public:
 // 工厂：创建 Context，注入 IAllocator/Console/IClock（无所有权，外部销毁）。
 // Context 内部用 IAllocator 创建 GC（持有所有权）+ global/root scope。
 // clock 为 nullptr 时使用进程级默认时钟（infra::defaultClock()）。
+// intl 为宿主 Intl 后端（无所有权，生命周期必须覆盖 Context）；nullptr 或
+// ABI 不兼容时使用内置最小后端（NJS_MinimalIntlBackend）。
 std::unique_ptr<IContext> createContext(infra::IAllocator* alloc,
                                          infra::Console* console,
-                                         infra::IClock* clock = nullptr);
+                                         infra::IClock* clock = nullptr,
+                                         const NJS_IntlBackend* intl = nullptr);
 
 }  // namespace neo::core
 

@@ -98,6 +98,9 @@ class Context : public IContext {
     // %Int8Array.prototype% … %BigUint64Array.prototype%，
     // 每种元素类型一个（下标即 TypedArrayKind）。
     Value* typedArrayPrototypes_[11] = {};
+    // 宿主注入的 Intl 后端；nullptr 时使用内置最小后端。
+    const NJS_IntlBackend* intlBackend_ = nullptr;
+    Value* intlNumberFormatPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -145,12 +148,20 @@ class Context : public IContext {
 
 public:
     Context(infra::IAllocator* alloc, infra::Console* console,
-            infra::IClock* clock = nullptr);
+            infra::IClock* clock = nullptr,
+            const NJS_IntlBackend* intl = nullptr);
     ~Context() override;
 
     infra::IAllocator* allocator() const override { return alloc_; }
     IGCEngine* gc() const override { return gc_.get(); }
     infra::Console* console() const override { return console_; }
+    const NJS_IntlBackend* intlBackend() const override { return intlBackend_; }
+    void setIntlNumberFormatPrototype(Value* proto) override {
+        intlNumberFormatPrototype_ = proto;
+    }
+    Value* intlNumberFormatPrototype() const override {
+        return intlNumberFormatPrototype_;
+    }
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
@@ -353,6 +364,10 @@ public:
     Value* createTypedArray(Value* buffer, size_t byteOffset, size_t length,
                             TypedArrayKind kind,
                             std::string_view bindName = {}) override;
+    Value* createIntlNumberFormat(const NJS_IntlBackend* backend,
+                                  NJS_IntlFormatter* formatter,
+                                  std::string_view locale,
+                                  std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(

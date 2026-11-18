@@ -471,10 +471,24 @@ Value* numberToStringRadix(IContext* ctx, Value* self, size_t argc, Value* argv[
     return ctx->createString(out);
 }
 
-Value* numberToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
-                            Value* /*argv*/[]) {
+Value* numberToLocaleString(IContext* ctx, Value* self, size_t argc,
+                            Value* argv[]) {
     Value* p = unwrapNumber(ctx, self, "toLocaleString");
     if (detail::isErrorValue(p)) return p;
+
+    // 有 Intl 时委托给 %NumberFormat%（ECMA-402 §19.2.1）；否则退化为 toString。
+    Value* intl = ctx->global()->lookup("Intl");
+    if (intl != nullptr && detail::isObjectKind(intl->type()->kind())) {
+        Value* ctor = ctx->getProperty(intl, "NumberFormat");
+        if (!detail::isErrorValue(ctor) && detail::isCallable(ctor)) {
+            Value* formatter = ctx->construct(ctor, argc, argv);
+            if (detail::isErrorValue(formatter)) return formatter;
+            Value* format = ctx->getProperty(formatter, "format");
+            if (detail::isErrorValue(format)) return format;
+            Value* args[1] = {p};
+            return ctx->call(format, formatter, 1, args);
+        }
+    }
     return ctx->createString(detail::numberToString(numberValue(p)));
 }
 

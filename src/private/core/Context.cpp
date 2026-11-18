@@ -22,6 +22,8 @@
 #include "core/DateBuiltins.h"
 #include "core/ArrayBufferBuiltins.h"
 #include "core/TypedArrayBuiltins.h"
+#include "core/IntlBuiltins.h"
+#include "core/intl/MinimalIntlBackend.h"
 #include "core/FunctionInvoke.h"
 #include "core/ErrorBuiltins.h"
 #include "core/EvalBuiltins.h"
@@ -48,6 +50,7 @@
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
 #include "core/types/TypedArray.h"
+#include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
 #include "core/types/Error.h"
@@ -81,9 +84,13 @@
 namespace neo::core {
 
 Context::Context(infra::IAllocator* alloc, infra::Console* console,
-                 infra::IClock* clock)
+                 infra::IClock* clock, const NJS_IntlBackend* intl)
     : alloc_(alloc), gc_(createGcEngine(alloc)), console_(console),
-      clock_(clock != nullptr ? clock : infra::defaultClock()) {
+      clock_(clock != nullptr ? clock : infra::defaultClock()),
+      intlBackend_((intl != nullptr && intl->abi_version == NJS_INTL_ABI_VERSION &&
+                    intl->struct_size >= sizeof(NJS_IntlBackend))
+                       ? intl
+                       : minimalIntlBackend()) {
     // 1. 创建 global scope（根，parent=nullptr）。
     //    所有权移交 GC（ADR-044）：GC 从它出发标记可达性，并在自身析构时销毁整棵树。
     //    GlobalScope 同时是全局环境记录的对象记录门面（§9.1.1.4）：查找链末端
@@ -224,6 +231,12 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11a. 注册 TypedArray（ES2024 §25.2）。依赖 Object.prototype 与
     //      %Iterator.prototype%（迭代器复用 createArrayIterator）。
     if (!registerTypedArrayBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 Intl（ECMA-402）。依赖 Object.prototype / Array.prototype；
+    //      locale 数据来自宿主注入的 NJS_IntlBackend（缺省为内置最小后端）。
+    if (!registerIntlBuiltins(this)) {
         std::abort();
     }
 
@@ -2202,6 +2215,29 @@ Value* Context::createTypedArray(Value* buffer, size_t byteOffset, size_t length
     return view;
 }
 
+Value* Context::createIntlNumberFormat(const NJS_IntlBackend* backend,
+                                       NJS_IntlFormatter* formatter,
+                                       std::string_view locale,
+                                       std::string_view bindName) {
+    auto* d = gc_->allocData<IntlNumberFormatData>();
+    if (d == nullptr) {
+        if (formatter != nullptr && backend != nullptr &&
+            backend->formatter_destroy != nullptr) {
+            backend->formatter_destroy(formatter);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->formatter = formatter;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlNumberFormatType(), d, bindName);
+    if (object != oomValue_ && intlNumberFormatPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlNumberFormatPrototype_;
+    }
+    return object;
+}
+
 // —— Error 对象（ADR-038）——
 
 namespace {
@@ -3316,6 +3352,7 @@ void Context::reportUnhandledRejections() {
 }  // namespace neo::core
 
 std::unique_ptr<neo::core::IContext> neo::core::createContext(
-    infra::IAllocator* alloc, infra::Console* console, infra::IClock* clock) {
-    return std::make_unique<Context>(alloc, console, clock);
+    infra::IAllocator* alloc, infra::Console* console, infra::IClock* clock,
+    const NJS_IntlBackend* intl) {
+    return std::make_unique<Context>(alloc, console, clock, intl);
 }
