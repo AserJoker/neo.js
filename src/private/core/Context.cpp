@@ -50,6 +50,7 @@
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
 #include "core/types/TypedArray.h"
+#include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2234,6 +2235,29 @@ Value* Context::createIntlNumberFormat(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlNumberFormatPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlNumberFormatPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlDateTimeFormat(const NJS_IntlBackend* backend,
+                                         NJS_IntlFormatter* formatter,
+                                         std::string_view locale,
+                                         std::string_view bindName) {
+    auto* d = gc_->allocData<IntlDateTimeFormatData>();
+    if (d == nullptr) {
+        if (formatter != nullptr && backend != nullptr &&
+            backend->formatter_destroy != nullptr) {
+            backend->formatter_destroy(formatter);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->formatter = formatter;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlDateTimeFormatType(), d, bindName);
+    if (object != oomValue_ && intlDateTimeFormatPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlDateTimeFormatPrototype_;
     }
     return object;
 }

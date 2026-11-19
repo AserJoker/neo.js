@@ -153,17 +153,43 @@ struct Part {
 
 // C ABI 的不透明格式化器。定义在全局作用域以匹配 C 的 struct tag。
 struct NJS_IntlFormatter {
+    enum class Kind { Number, DateTime };
+
+    Kind kind = Kind::Number;
     std::string locale;
+    std::string numbering_system = "latn";
+    std::vector<Part> last_parts;
+
+    // —— Number ——
     std::string style = "decimal";
     std::string currency;
     std::string currency_display = "symbol";
     std::string sign_display = "auto";
-    std::string numbering_system = "latn";
     bool use_grouping = true;
     int min_int = 1;
     int min_frac = 0;
     int max_frac = 3;
-    std::vector<Part> last_parts;
+
+    // —— DateTime ——
+    std::string date_style;
+    std::string time_style;
+    std::string time_zone = "UTC";
+    std::string hour_cycle;
+    std::string time_zone_name;
+    bool hour12 = false;
+    bool has_year = false;
+    bool has_month = false;
+    bool has_day = false;
+    bool has_hour = false;
+    bool has_minute = false;
+    bool has_second = false;
+    bool year_2digit = false;
+    bool month_2digit = false;
+    bool day_2digit = false;
+    bool hour_2digit = false;
+    bool minute_2digit = false;
+    bool second_2digit = false;
+    int fractional_second_digits = -1;
 };
 
 namespace {
@@ -487,6 +513,339 @@ NJS_IntlStatus numberFormatFormat(NJS_IntlFormatter* formatter, double value,
     return NJS_INTL_OK;
 }
 
+// —— DateTimeFormat ——
+
+// Howard Hinnant civil-from-days（proleptic Gregorian）。
+void civilFromDays(int64_t z, int& y, unsigned& m, unsigned& d) {
+    z += 719468;
+    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);
+    const unsigned yoe =
+        (doe - doe / 1460u + doe / 36524u - doe / 146096u) / 365u;
+    y = static_cast<int>(yoe) + static_cast<int>(era) * 400;
+    const unsigned doy = doe - (365u * yoe + yoe / 4u - yoe / 100u);
+    const unsigned mp = (5u * doy + 2u) / 153u;
+    d = doy - (153u * mp + 2u) / 5u + 1u;
+    m = mp < 10u ? mp + 3u : mp - 9u;
+    y += m <= 2 ? 1 : 0;
+}
+
+std::string pad(int value, int width) {
+    std::string text = std::to_string(value);
+    if (static_cast<int>(text.size()) < width) {
+        text.insert(0, static_cast<size_t>(width) - text.size(), '0');
+    }
+    return text;
+}
+
+bool parseDateStyle(const char* value, std::string& out) {
+    if (value == nullptr) return true;
+    if (equals(value, "full") || equals(value, "long") || equals(value, "medium") ||
+        equals(value, "short")) {
+        out = value;
+        return true;
+    }
+    return false;
+}
+
+NJS_IntlFormatter* dateTimeFormatCreate(void* /*ud*/, const char* locale,
+                                        const NJS_IntlOption* opts, size_t nopts,
+                                        NJS_IntlResolved* resolved,
+                                        NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlFormatter* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* f = new (std::nothrow) NJS_IntlFormatter();
+    if (f == nullptr) return fail(NJS_INTL_INTERNAL);
+    f->kind = NJS_IntlFormatter::Kind::DateTime;
+    f->locale = locale;
+
+    if (!parseDateStyle(findOption(opts, nopts, "dateStyle"), f->date_style)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!parseDateStyle(findOption(opts, nopts, "timeStyle"), f->time_style)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+
+    const char* time_zone = findOption(opts, nopts, "timeZone");
+    if (time_zone != nullptr) {
+        if (!equals(time_zone, "UTC") && !equals(time_zone, "Etc/UTC") &&
+            !equals(time_zone, "Etc/GMT")) {
+            delete f;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+        f->time_zone = "UTC";
+    }
+
+    const char* calendar = findOption(opts, nopts, "calendar");
+    if (calendar != nullptr && !equals(calendar, "gregory")) {
+        delete f;
+        return fail(NJS_INTL_UNSUPPORTED);
+    }
+    const char* numbering = findOption(opts, nopts, "numberingSystem");
+    if (numbering != nullptr) {
+        if (!equals(numbering, "latn")) {
+            delete f;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+        f->numbering_system = numbering;
+    }
+
+    const char* hour12 = findOption(opts, nopts, "hour12");
+    if (hour12 != nullptr && !parseBool(hour12, f->hour12)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* hour_cycle = findOption(opts, nopts, "hourCycle");
+    if (hour_cycle != nullptr) {
+        if (!equals(hour_cycle, "h11") && !equals(hour_cycle, "h12") &&
+            !equals(hour_cycle, "h23") && !equals(hour_cycle, "h24")) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        f->hour_cycle = hour_cycle;
+        f->hour12 = equals(hour_cycle, "h11") || equals(hour_cycle, "h12");
+    }
+
+    auto component = [&](const char* key, bool& present, bool& two_digit) -> bool {
+        const char* value = findOption(opts, nopts, key);
+        if (value == nullptr) return true;
+        if (equals(value, "numeric")) {
+            present = true;
+            two_digit = false;
+            return true;
+        }
+        if (equals(value, "2-digit")) {
+            present = true;
+            two_digit = true;
+            return true;
+        }
+        return false;
+    };
+
+    bool any_component = false;
+    auto mark = [&](bool present) { any_component = any_component || present; };
+    if (!component("year", f->has_year, f->year_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!component("month", f->has_month, f->month_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!component("day", f->has_day, f->day_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!component("hour", f->has_hour, f->hour_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!component("minute", f->has_minute, f->minute_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!component("second", f->has_second, f->second_2digit)) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    mark(f->has_year);
+    mark(f->has_month);
+    mark(f->has_day);
+    mark(f->has_hour);
+    mark(f->has_minute);
+    mark(f->has_second);
+
+    const char* fractional = findOption(opts, nopts, "fractionalSecondDigits");
+    if (fractional != nullptr) {
+        if (!parseInt(fractional, 0, 3, f->fractional_second_digits)) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        any_component = true;
+    }
+
+    const char* tz_name = findOption(opts, nopts, "timeZoneName");
+    if (tz_name != nullptr) {
+        if (!equals(tz_name, "short") && !equals(tz_name, "long")) {
+            delete f;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+        f->time_zone_name = tz_name;
+        any_component = true;
+    }
+
+    // 最小后端不支持 weekday / era / 长月份名等；显式报错。
+    static const char* kUnsupported[] = {"weekday", "era"};
+    for (const char* key : kUnsupported) {
+        if (findOption(opts, nopts, key) != nullptr) {
+            delete f;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+    }
+    const char* month = findOption(opts, nopts, "month");
+    if (month != nullptr && (equals(month, "long") || equals(month, "short") ||
+                             equals(month, "narrow"))) {
+        delete f;
+        return fail(NJS_INTL_UNSUPPORTED);
+    }
+
+    const bool has_style = !f->date_style.empty() || !f->time_style.empty();
+    if (has_style && any_component) {
+        delete f;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!has_style && !any_component) {
+        f->has_year = true;
+        f->has_month = true;
+        f->has_day = true;
+    }
+    if (!f->date_style.empty()) {
+        f->has_year = true;
+        f->has_month = true;
+        f->has_day = true;
+        f->month_2digit = true;
+        f->day_2digit = true;
+    }
+    if (!f->time_style.empty()) {
+        f->has_hour = true;
+        f->has_minute = true;
+        f->has_second = true;
+        f->hour_2digit = true;
+        f->minute_2digit = true;
+        f->second_2digit = true;
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, f->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  f->numbering_system.c_str());
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, f->time_zone.c_str());
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return f;
+}
+
+NJS_IntlStatus dateTimeFormatFormat(NJS_IntlFormatter* f, double time,
+                                    NJS_IntlPart* parts, size_t* count) {
+    if (f == nullptr || count == nullptr) return NJS_INTL_INTERNAL;
+    if (std::isnan(time)) return NJS_INTL_INVALID_VALUE;
+
+    std::vector<Part> built;
+    const double day_ms = 86400000.0;
+    const double days_d = std::floor(time / day_ms);
+    double ms_of_day = time - days_d * day_ms;
+    if (ms_of_day < 0.0) ms_of_day += day_ms;
+    int year = 1970;
+    unsigned month = 1;
+    unsigned day = 1;
+    civilFromDays(static_cast<int64_t>(days_d), year, month, day);
+
+    const int ms = static_cast<int>(ms_of_day);
+    int hour = ms / 3600000;
+    const int minute = (ms / 60000) % 60;
+    const int second = (ms / 1000) % 60;
+    const int millis = ms % 1000;
+
+    const bool has_date = f->has_year || f->has_month || f->has_day;
+    const bool has_time = f->has_hour || f->has_minute || f->has_second ||
+                          f->fractional_second_digits >= 0;
+
+    if (has_date) {
+        bool first = true;
+        if (f->has_year) {
+            const int display_year = f->year_2digit ? year % 100 : year;
+            built.push_back(Part{NJS_INTL_PART_YEAR,
+                                 pad(display_year, f->year_2digit ? 2 : 4)});
+            first = false;
+        }
+        if (f->has_month) {
+            if (!first) built.push_back(Part{NJS_INTL_PART_LITERAL, "-"});
+            built.push_back(Part{NJS_INTL_PART_MONTH,
+                                 pad(static_cast<int>(month),
+                                     f->month_2digit ? 2 : 1)});
+            first = false;
+        }
+        if (f->has_day) {
+            if (!first) built.push_back(Part{NJS_INTL_PART_LITERAL, "-"});
+            built.push_back(Part{NJS_INTL_PART_DAY,
+                                 pad(static_cast<int>(day), f->day_2digit ? 2 : 1)});
+        }
+    }
+
+    if (has_date && has_time) {
+        built.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+    }
+
+    if (has_time) {
+        bool first = true;
+        if (f->has_hour) {
+            int display_hour = hour;
+            if (f->hour12) {
+                display_hour = hour % 12;
+                if (display_hour == 0) display_hour = 12;
+            }
+            built.push_back(Part{NJS_INTL_PART_HOUR,
+                                 pad(display_hour, f->hour_2digit ? 2 : 1)});
+            first = false;
+        }
+        if (f->has_minute) {
+            if (!first) built.push_back(Part{NJS_INTL_PART_LITERAL, ":"});
+            built.push_back(Part{NJS_INTL_PART_MINUTE, pad(minute, 2)});
+            first = false;
+        }
+        if (f->has_second) {
+            if (!first) built.push_back(Part{NJS_INTL_PART_LITERAL, ":"});
+            built.push_back(Part{NJS_INTL_PART_SECOND, pad(second, 2)});
+            first = false;
+        }
+        if (f->fractional_second_digits > 0) {
+            const int digits = f->fractional_second_digits;
+            int divisor = 1;
+            for (int i = digits; i < 3; ++i) divisor *= 10;
+            built.push_back(Part{NJS_INTL_PART_LITERAL, "."});
+            built.push_back(Part{NJS_INTL_PART_FRACTION,
+                                 pad(millis / divisor, digits)});
+            first = false;
+        }
+        if (f->hour12) {
+            built.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+            built.push_back(Part{NJS_INTL_PART_DAY_PERIOD, hour < 12 ? "AM" : "PM"});
+        }
+        if (!f->time_zone_name.empty()) {
+            built.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+            built.push_back(Part{NJS_INTL_PART_TIME_ZONE_NAME, "UTC"});
+        }
+    } else if (!f->time_zone_name.empty()) {
+        built.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+        built.push_back(Part{NJS_INTL_PART_TIME_ZONE_NAME, "UTC"});
+    }
+
+    f->last_parts = std::move(built);
+    const size_t required = f->last_parts.size();
+    if (parts == nullptr || *count < required) {
+        *count = required;
+        return NJS_INTL_OK;
+    }
+    for (size_t i = 0; i < required; ++i) {
+        parts[i].type = f->last_parts[i].type;
+        parts[i].text = f->last_parts[i].text.c_str();
+        parts[i].length = f->last_parts[i].text.size();
+    }
+    *count = required;
+    return NJS_INTL_OK;
+}
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -494,7 +853,7 @@ const char* lastError(void* /*ud*/) { return nullptr; }
 const NJS_IntlBackend kMinimalBackend = {
     NJS_INTL_ABI_VERSION,
     sizeof(NJS_IntlBackend),
-    NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_FORMAT_TO_PARTS,
+    NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -504,6 +863,8 @@ const NJS_IntlBackend kMinimalBackend = {
     numberFormatFormat,
     formatterDestroy,
     lastError,
+    dateTimeFormatCreate,
+    dateTimeFormatFormat,
 };
 
 }  // namespace

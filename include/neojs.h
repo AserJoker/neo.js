@@ -43,13 +43,15 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 1u
+#define NJS_INTL_ABI_VERSION 2u
 
 typedef enum {
     NJS_INTL_OK = 0,
     NJS_INTL_UNSUPPORTED = 1,
     NJS_INTL_INVALID_OPTION = 2,
-    NJS_INTL_INTERNAL = 3
+    NJS_INTL_INTERNAL = 3,
+    // 值本身无效（如 DateTimeFormat 的 NaN 时间值），core 映射为 RangeError。
+    NJS_INTL_INVALID_VALUE = 4
 } NJS_IntlStatus;
 
 // 后端能力位图。未置位的能力由 core 按规范抛错或退化。
@@ -142,6 +144,18 @@ struct NJS_IntlBackend {
 
     // 可选：返回最近一次错误的静态字符串（UTF-8），无错误返回 NULL。
     const char* (*last_error)(void* user_data);
+
+    // —— ABI v2 追加 ——
+    // 创建日期时间格式化器。time 为毫秒时间值（NaN 表示 Invalid Date）。
+    NJS_IntlFormatter* (*date_time_format_create)(void* user_data,
+                                                  const char* locale,
+                                                  const NJS_IntlOption* opts,
+                                                  size_t nopts,
+                                                  NJS_IntlResolved* resolved,
+                                                  NJS_IntlStatus* status);
+    NJS_IntlStatus (*date_time_format_format)(NJS_IntlFormatter* formatter,
+                                              double time, NJS_IntlPart* parts,
+                                              size_t* count);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

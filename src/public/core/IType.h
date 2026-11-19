@@ -144,6 +144,8 @@ enum class TypeKind : uint8_t {
     // Intl.NumberFormat 实例（ECMA-402 §15）：普通对象 + 宿主后端格式化器句柄。
     // 格式化器由 Data 析构时归还后端；其余对象行为与普通对象一致。
     IntlNumberFormat,
+    // Intl.DateTimeFormat 实例（ECMA-402 §15）：普通对象 + 宿主后端格式化器句柄。
+    IntlDateTimeFormat,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -335,6 +337,7 @@ IType* getProxyType();
 IType* getRegExpType();
 IType* getRegExpStringIteratorType();
 IType* getIntlNumberFormatType();
+IType* getIntlDateTimeFormatType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

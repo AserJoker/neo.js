@@ -675,6 +675,15 @@ public:
     virtual void setIntlNumberFormatPrototype(Value* proto) = 0;
     virtual Value* intlNumberFormatPrototype() const = 0;
 
+    // createIntlDateTimeFormat: 创建 Intl.DateTimeFormat 实例（ECMA-402 §15）。
+    // formatter 所有权转移给 Data。
+    virtual Value* createIntlDateTimeFormat(const NJS_IntlBackend* backend,
+                                            NJS_IntlFormatter* formatter,
+                                            std::string_view locale,
+                                            std::string_view bindName = {}) = 0;
+    virtual void setIntlDateTimeFormatPrototype(Value* proto) = 0;
+    virtual Value* intlDateTimeFormatPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

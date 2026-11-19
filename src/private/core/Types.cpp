@@ -23,6 +23,7 @@
 #include "core/types/Fatal.h"
 #include "core/types/Function.h"
 #include "core/types/Interrupt.h"
+#include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
@@ -205,6 +206,11 @@ IType* getIntlNumberFormatType() {
     return &inst;
 }
 
+IType* getIntlDateTimeFormatType() {
+    static IntlDateTimeFormatType inst;
+    return &inst;
+}
+
 IType* getRegExpStringIteratorType() {
     static RegExpStringIteratorType inst;
     return &inst;
@@ -250,6 +256,7 @@ IType* getTypeByKind(TypeKind k) {
             return getRegExpStringIteratorType();
         case TypeKind::Arguments:        return getArgumentsType();
         case TypeKind::IntlNumberFormat: return getIntlNumberFormatType();
+        case TypeKind::IntlDateTimeFormat: return getIntlDateTimeFormatType();
     }
     return nullptr;
 }

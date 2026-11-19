@@ -101,6 +101,7 @@ class Context : public IContext {
     // 宿主注入的 Intl 后端；nullptr 时使用内置最小后端。
     const NJS_IntlBackend* intlBackend_ = nullptr;
     Value* intlNumberFormatPrototype_ = nullptr;
+    Value* intlDateTimeFormatPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -161,6 +162,12 @@ public:
     }
     Value* intlNumberFormatPrototype() const override {
         return intlNumberFormatPrototype_;
+    }
+    void setIntlDateTimeFormatPrototype(Value* proto) override {
+        intlDateTimeFormatPrototype_ = proto;
+    }
+    Value* intlDateTimeFormatPrototype() const override {
+        return intlDateTimeFormatPrototype_;
     }
 
     Scope* global() const override { return global_; }
@@ -368,6 +375,10 @@ public:
                                   NJS_IntlFormatter* formatter,
                                   std::string_view locale,
                                   std::string_view bindName = {}) override;
+    Value* createIntlDateTimeFormat(const NJS_IntlBackend* backend,
+                                    NJS_IntlFormatter* formatter,
+                                    std::string_view locale,
+                                    std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(

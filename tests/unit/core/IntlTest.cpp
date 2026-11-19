@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -54,6 +55,11 @@ struct Fixture {
 
     Value* numberFormat(size_t argc = 0, Value* argv[] = nullptr) {
         Value* ctor = ctx->getProperty(intl(), "NumberFormat");
+        return ctx->construct(ctor, argc, argv);
+    }
+
+    Value* dateTimeFormat(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "DateTimeFormat");
         return ctx->construct(ctor, argc, argv);
     }
 
@@ -177,6 +183,8 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
 };
 
 }  // namespace
@@ -341,6 +349,110 @@ TEST(IntlTest, NumberToLocaleStringDelegatesToIntl) {
     Value* formatter = f.ctx->call(ctor, f.ctx->createUndefined(), 0, nullptr);
     ASSERT_FALSE(isError(formatter));
     EXPECT_EQ(strOf(formatOf(f, formatter, 1234.5)), "1,234.5");
+}
+
+TEST(IntlTest, DateTimeFormatBasics) {
+    Fixture f;
+    Value* formatter = f.dateTimeFormat();
+    ASSERT_FALSE(isError(formatter));
+    // 默认 year/month/day 为 numeric（最小后端使用 ISO 风格分隔符）。
+    EXPECT_EQ(strOf(formatOf(f, formatter, 0.0)), "1970-1-1");
+
+    Value* opts = f.ctx->createObject();
+    f.ctx->defineProperty(opts, "year", f.ctx->createString("numeric"));
+    f.ctx->defineProperty(opts, "month", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(opts, "day", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(opts, "hour", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(opts, "minute", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(opts, "second", f.ctx->createString("2-digit"));
+    Value* args[2] = {f.ctx->createUndefined(), opts};
+    Value* formatter2 = f.dateTimeFormat(2, args);
+    ASSERT_FALSE(isError(formatter2));
+    EXPECT_EQ(strOf(formatOf(f, formatter2, 0.0)), "1970-01-01 00:00:00");
+
+    Value* hour12Opts = f.ctx->createObject();
+    f.ctx->defineProperty(hour12Opts, "hour", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(hour12Opts, "minute", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(hour12Opts, "second", f.ctx->createString("2-digit"));
+    f.ctx->defineProperty(hour12Opts, "hour12", f.ctx->createBoolean(true));
+    Value* hour12Args[2] = {f.ctx->createUndefined(), hour12Opts};
+    Value* formatter3 = f.dateTimeFormat(2, hour12Args);
+    ASSERT_FALSE(isError(formatter3));
+    EXPECT_EQ(strOf(formatOf(f, formatter3, 0.0)), "12:00:00 AM");
+}
+
+TEST(IntlTest, DateTimeFormatStylesAndParts) {
+    Fixture f;
+    Value* dateOpts = f.ctx->createObject();
+    f.ctx->defineProperty(dateOpts, "dateStyle", f.ctx->createString("short"));
+    Value* dateArgs[2] = {f.ctx->createUndefined(), dateOpts};
+    Value* dateFormatter = f.dateTimeFormat(2, dateArgs);
+    ASSERT_FALSE(isError(dateFormatter));
+    EXPECT_EQ(strOf(formatOf(f, dateFormatter, 0.0)), "1970-01-01");
+
+    Value* timeOpts = f.ctx->createObject();
+    f.ctx->defineProperty(timeOpts, "timeStyle", f.ctx->createString("medium"));
+    Value* timeArgs[2] = {f.ctx->createUndefined(), timeOpts};
+    Value* timeFormatter = f.dateTimeFormat(2, timeArgs);
+    ASSERT_FALSE(isError(timeFormatter));
+    EXPECT_EQ(strOf(formatOf(f, timeFormatter, 0.0)), "00:00:00");
+
+    Value* parts = f.call1(dateFormatter, "formatToParts", f.ctx->createNumber(0));
+    ASSERT_FALSE(isError(parts));
+    ASSERT_GT(numOf(f.ctx->getProperty(parts, "length")), 0.0);
+    Value* first = f.ctx->getProperty(parts, "0");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "type")), "year");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "value")), "1970");
+
+    Value* resolved = f.call(dateFormatter, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "locale")), "en");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "calendar")), "gregory");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "timeZone")), "UTC");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "dateStyle")), "short");
+}
+
+TEST(IntlTest, DateTimeFormatErrors) {
+    Fixture f;
+    Value* formatter = f.dateTimeFormat();
+    ASSERT_FALSE(isError(formatter));
+    EXPECT_TRUE(isError(formatOf(f, formatter, std::nan(""))));
+
+    Value* bothOpts = f.ctx->createObject();
+    f.ctx->defineProperty(bothOpts, "dateStyle", f.ctx->createString("short"));
+    f.ctx->defineProperty(bothOpts, "year", f.ctx->createString("numeric"));
+    Value* bothArgs[2] = {f.ctx->createUndefined(), bothOpts};
+    EXPECT_TRUE(isError(f.dateTimeFormat(2, bothArgs)));
+
+    Value* tzOpts = f.ctx->createObject();
+    f.ctx->defineProperty(tzOpts, "timeZone",
+                          f.ctx->createString("America/New_York"));
+    Value* tzArgs[2] = {f.ctx->createUndefined(), tzOpts};
+    EXPECT_TRUE(isError(f.dateTimeFormat(2, tzArgs)));
+}
+
+TEST(IntlTest, DateToLocaleStringDelegatesToIntl) {
+    Fixture f;
+    Value* dateCtor = f.ctx->global()->lookup("Date");
+    Value* args[1] = {f.ctx->createNumber(0.0)};
+    Value* date = f.ctx->construct(dateCtor, 1, args);
+    ASSERT_FALSE(isError(date));
+
+    Value* fn = f.ctx->getProperty(date, "toLocaleString");
+    ASSERT_FALSE(isError(fn));
+    Value* text = f.ctx->call(fn, date, 0, nullptr);
+    ASSERT_FALSE(isError(text));
+    EXPECT_EQ(strOf(text), "1970-1-1 0:00:00");
+
+    Value* dateFn = f.ctx->getProperty(date, "toLocaleDateString");
+    Value* dateText = f.ctx->call(dateFn, date, 0, nullptr);
+    ASSERT_FALSE(isError(dateText));
+    EXPECT_EQ(strOf(dateText), "1970-1-1");
+
+    Value* timeFn = f.ctx->getProperty(date, "toLocaleTimeString");
+    Value* timeText = f.ctx->call(timeFn, date, 0, nullptr);
+    ASSERT_FALSE(isError(timeText));
+    EXPECT_EQ(strOf(timeText), "0:00:00");
 }
 
 TEST(IntlTest, ErrorCases) {

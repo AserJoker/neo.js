@@ -13,6 +13,7 @@
 
 #include "core/IContext.h"
 #include "core/IType.h"
+#include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Date.h"
 #include "core/types/Number.h"
@@ -559,6 +560,69 @@ Value* dateToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/
     return ctx->createString(text);
 }
 
+Value* dateToDateString(IContext* ctx, Value* self, size_t argc, Value* argv[]);
+Value* dateToTimeString(IContext* ctx, Value* self, size_t argc, Value* argv[]);
+
+// locale 形式：有 Intl 时委托给 %DateTimeFormat%（ECMA-402 §21.4.4.38 等），
+// 否则退化为对应的非 locale 形式。
+Value* dateLocaleFormat(IContext* ctx, Value* self, size_t argc, Value* argv[],
+                        const char* const* defaultKeys, size_t defaultCount,
+                        NativeFn fallback) {
+    if (asDate(self) == nullptr) {
+        return detail::typeError(ctx, "this is not a Date object");
+    }
+    Value* intl = ctx->global()->lookup("Intl");
+    if (intl != nullptr && detail::isObjectKind(intl->type()->kind())) {
+        Value* ctor = ctx->getProperty(intl, "DateTimeFormat");
+        if (!detail::isErrorValue(ctor) && detail::isCallable(ctor)) {
+            Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+            Value* options = argc > 1 ? argv[1] : ctx->createUndefined();
+            if (options->type()->kind() == TypeKind::Undefined) {
+                Value* defaults = ctx->createObject();
+                if (detail::isErrorValue(defaults)) return defaults;
+                for (size_t i = 0; i < defaultCount; ++i) {
+                    Value* r = ctx->defineProperty(defaults, defaultKeys[i],
+                                                   ctx->createString("numeric"),
+                                                   true, true, true);
+                    if (detail::isErrorValue(r)) return r;
+                }
+                options = defaults;
+            }
+            Value* args[2] = {locales, options};
+            Value* formatter = ctx->construct(ctor, 2, args);
+            if (detail::isErrorValue(formatter)) return formatter;
+            Value* format = ctx->getProperty(formatter, "format");
+            if (detail::isErrorValue(format)) return format;
+            Value* timeValue = ctx->createNumber(dateValueOf(self));
+            Value* formatArgs[1] = {timeValue};
+            return ctx->call(format, formatter, 1, formatArgs);
+        }
+    }
+    return fallback(ctx, self, argc, argv);
+}
+
+const char* const kLocaleDateTimeKeys[] = {"year", "month", "day",
+                                           "hour", "minute", "second"};
+const char* const kLocaleDateKeys[] = {"year", "month", "day"};
+const char* const kLocaleTimeKeys[] = {"hour", "minute", "second"};
+
+Value* dateToLocaleString(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return dateLocaleFormat(ctx, self, argc, argv, kLocaleDateTimeKeys, 6,
+                            dateToString);
+}
+
+Value* dateToLocaleDateString(IContext* ctx, Value* self, size_t argc,
+                              Value* argv[]) {
+    return dateLocaleFormat(ctx, self, argc, argv, kLocaleDateKeys, 3,
+                            dateToDateString);
+}
+
+Value* dateToLocaleTimeString(IContext* ctx, Value* self, size_t argc,
+                              Value* argv[]) {
+    return dateLocaleFormat(ctx, self, argc, argv, kLocaleTimeKeys, 3,
+                            dateToTimeString);
+}
+
 Value* dateToIsoString(IContext* ctx, Value* self, size_t /*argc*/,
                        Value* /*argv*/[]) {
     if (asDate(self) == nullptr) {
@@ -741,11 +805,11 @@ bool registerDateBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, proto, "toGMTString", dateToUtcString, 0)) return false;
     if (!defineMethod(ctx, proto, "toDateString", dateToDateString, 0)) return false;
     if (!defineMethod(ctx, proto, "toTimeString", dateToTimeString, 0)) return false;
-    // 无 Intl：locale 形式退化为对应的非 locale 形式。
-    if (!defineMethod(ctx, proto, "toLocaleString", dateToString, 0)) return false;
-    if (!defineMethod(ctx, proto, "toLocaleDateString", dateToDateString, 0))
+    // locale 形式：有 Intl 时委托给 %DateTimeFormat%，否则退化为非 locale 形式。
+    if (!defineMethod(ctx, proto, "toLocaleString", dateToLocaleString, 0)) return false;
+    if (!defineMethod(ctx, proto, "toLocaleDateString", dateToLocaleDateString, 0))
         return false;
-    if (!defineMethod(ctx, proto, "toLocaleTimeString", dateToTimeString, 0))
+    if (!defineMethod(ctx, proto, "toLocaleTimeString", dateToLocaleTimeString, 0))
         return false;
     if (!defineSymbolMethod(ctx, proto, WellKnownSymbol::ToPrimitive,
                             "[Symbol.toPrimitive]", dateToPrimitive, 0)) {
