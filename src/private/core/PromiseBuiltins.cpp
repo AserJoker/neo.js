@@ -92,23 +92,34 @@ Value* promiseJobRunner(IContext* ctx, Value* task) {
 // 把一个 reaction 打包成内部 job 函数并排进微任务队列。
 // capability 为空（仅未处理拒绝跟踪）时也照常投递，job 内会直接返回。
 void enqueueReactionJob(IContext* ctx, const PromiseReaction& r, Value* argument) {
+    // reaction 已从 promise 的 reactions 列表移出，在捕获进 job 之前这些值
+    // 没有任何 GC 根；期间创建 job/捕获值可能触发 GC，须先临时钉住。
+    Value* roots[5] = {r.handler, argument, r.capability.promise,
+                       r.capability.resolve, r.capability.reject};
+    for (Value* v : roots) {
+        if (v != nullptr) v->pinRefInc();
+    }
     Value* job = ctx->createNativeFunction(reactionJob, 0);
-    if (job == ctx->oomValue()) return;
-    ctx->captureValue(job, "__handler",
-                      r.handler != nullptr ? r.handler : ctx->createUndefined());
-    ctx->captureValue(job, "__type",
-                      ctx->createBoolean(r.type == PromiseReactionType::Reject));
-    ctx->captureValue(job, "__argument", argument);
-    ctx->captureValue(job, "__capPromise",
-                      r.capability.promise != nullptr ? r.capability.promise
-                                                      : ctx->createUndefined());
-    ctx->captureValue(job, "__capResolve",
-                      r.capability.resolve != nullptr ? r.capability.resolve
-                                                      : ctx->createUndefined());
-    ctx->captureValue(job, "__capReject",
-                      r.capability.reject != nullptr ? r.capability.reject
-                                                     : ctx->createUndefined());
-    ctx->postMicrotask(job, promiseJobRunner);
+    if (job != ctx->oomValue()) {
+        ctx->captureValue(job, "__handler",
+                          r.handler != nullptr ? r.handler : ctx->createUndefined());
+        ctx->captureValue(job, "__type",
+                          ctx->createBoolean(r.type == PromiseReactionType::Reject));
+        ctx->captureValue(job, "__argument", argument);
+        ctx->captureValue(job, "__capPromise",
+                          r.capability.promise != nullptr ? r.capability.promise
+                                                          : ctx->createUndefined());
+        ctx->captureValue(job, "__capResolve",
+                          r.capability.resolve != nullptr ? r.capability.resolve
+                                                          : ctx->createUndefined());
+        ctx->captureValue(job, "__capReject",
+                          r.capability.reject != nullptr ? r.capability.reject
+                                                         : ctx->createUndefined());
+        ctx->postMicrotask(job, promiseJobRunner);
+    }
+    for (Value* v : roots) {
+        if (v != nullptr) v->pinRefDec();
+    }
 }
 
 // —— 状态迁移（§27.2.1.4 FulfillPromise / §27.2.1.7 RejectPromise）——
