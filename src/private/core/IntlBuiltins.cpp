@@ -2756,6 +2756,30 @@ void setLocaleKeyword(LocaleRecord& r, const std::string& key,
     if (!type.empty()) r.keywords.emplace_back(key, type);
 }
 
+// WeekdayToUValue（§15.5.15）：数字字符串映射为 Unicode First Day 标识符。
+std::string weekdayToUValue(const std::string& fw) {
+    if (fw == "0" || fw == "7") return "sun";
+    if (fw == "1") return "mon";
+    if (fw == "2") return "tue";
+    if (fw == "3") return "wed";
+    if (fw == "4") return "thu";
+    if (fw == "5") return "fri";
+    if (fw == "6") return "sat";
+    return fw;
+}
+
+// WeekdayUValueToNumber（§15.5.16）：标识符映射为 ISO 8601 星期序号。
+int weekdayUValueToNumber(const std::string& fw) {
+    if (fw == "mon") return 1;
+    if (fw == "tue") return 2;
+    if (fw == "wed") return 3;
+    if (fw == "thu") return 4;
+    if (fw == "fri") return 5;
+    if (fw == "sat") return 6;
+    if (fw == "sun") return 7;
+    return 0;  // undefined
+}
+
 struct LikelySubtag {
     const char* language;
     const char* script;
@@ -2825,6 +2849,25 @@ Value* applyLocaleKeywordOption(IContext* ctx, Value* options, const char* name,
     return nullptr;
 }
 
+// 枚举型 unicode 关键字选项（hourCycle / caseFirst）。
+Value* applyLocaleEnumOption(IContext* ctx, Value* options, const char* name,
+                             const char* const* values, size_t valueCount,
+                             const char* key, LocaleRecord& rec) {
+    Value* value = nullptr;
+    if (Value* err = readOption(ctx, options, name, value)) return err;
+    if (value->type()->kind() == TypeKind::Undefined) return nullptr;
+    Value* str = detail::toStringValue(ctx, value);
+    if (detail::isErrorValue(str)) return str;
+    const std::string text = static_cast<StringData*>(str->data())->value;
+    for (size_t i = 0; i < valueCount; ++i) {
+        if (text == values[i]) {
+            setLocaleKeyword(rec, key, text);
+            return nullptr;
+        }
+    }
+    return detail::rangeError(ctx, std::string("Invalid value for option ") + name);
+}
+
 Value* localeCall(IContext* ctx, Value* /*self*/, size_t /*argc*/,
                   Value* /*argv*/[]) {
     return detail::typeError(ctx, "Constructor Intl.Locale requires 'new'");
@@ -2833,18 +2876,34 @@ Value* localeCall(IContext* ctx, Value* /*self*/, size_t /*argc*/,
 Value* localeConstruct(IContext* ctx, Value* /*self*/, size_t argc,
                        Value* argv[]) {
     Value* tagArg = argc > 0 ? argv[0] : ctx->createUndefined();
-    Value* tagValue = detail::toStringValue(ctx, tagArg);
-    if (detail::isErrorValue(tagValue)) return tagValue;
-    const std::string tag = static_cast<StringData*>(tagValue->data())->value;
+    std::string tag;
+    if (IntlLocaleData* existing = asIntlLocale(tagArg)) {
+        // tag 是 Intl.Locale 实例：直接取 [[Locale]]（§15.1.1 第 8 步）。
+        tag = existing->localeName;
+    } else {
+        const TypeKind kind = tagArg->type()->kind();
+        if (kind != TypeKind::String && !detail::isObjectKind(kind)) {
+            return detail::typeError(
+                ctx, "Intl.Locale tag must be a string or an object");
+        }
+        Value* tagValue = detail::toStringValue(ctx, tagArg);
+        if (detail::isErrorValue(tagValue)) return tagValue;
+        tag = static_cast<StringData*>(tagValue->data())->value;
+    }
 
     LocaleRecord rec;
     if (!parseLocaleTag(tag, rec)) {
         return detail::rangeError(ctx, "Incorrect locale information provided");
     }
 
+    // CoerceOptionsToObject（§9.2.10）：undefined → 空对象；null → TypeError；
+    // 其它值（含原始值）按对象读取属性。
     Value* options = nullptr;
     Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
-    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+    if (optionsArg->type()->kind() == TypeKind::Null) {
+        return detail::typeError(ctx, "Options must not be null");
+    }
+    if (optionsArg->type()->kind() != TypeKind::Undefined) options = optionsArg;
 
     if (options != nullptr) {
         if (Value* err = applyLocaleTagOption(ctx, options, "language",
@@ -2867,17 +2926,59 @@ Value* localeConstruct(IContext* ctx, Value* /*self*/, size_t argc,
                 applyLocaleKeywordOption(ctx, options, "collation", "co", rec)) {
             return err;
         }
-        if (Value* err =
-                applyLocaleKeywordOption(ctx, options, "hourCycle", "hc", rec)) {
+        // firstDayOfWeek：数字字符串先映射为 Unicode First Day 标识符。
+        Value* fwValue = nullptr;
+        if (Value* err = readOption(ctx, options, "firstDayOfWeek", fwValue)) {
             return err;
         }
-        if (Value* err =
-                applyLocaleKeywordOption(ctx, options, "caseFirst", "kf", rec)) {
+        if (fwValue->type()->kind() != TypeKind::Undefined) {
+            Value* fwStr = detail::toStringValue(ctx, fwValue);
+            if (detail::isErrorValue(fwStr)) return fwStr;
+            const std::string fw =
+                weekdayToUValue(static_cast<StringData*>(fwStr->data())->value);
+            if (!(fw.size() >= 3 && fw.size() <= 8 && localeAll(fw, localeIsAlnum))) {
+                return detail::rangeError(
+                    ctx, "Invalid value for option firstDayOfWeek");
+            }
+            setLocaleKeyword(rec, "fw", localeLower(fw));
+        }
+        static const char* const kHourCycles[] = {"h11", "h12", "h23", "h24"};
+        if (Value* err = applyLocaleEnumOption(ctx, options, "hourCycle", kHourCycles,
+                                               4, "hc", rec)) {
+            return err;
+        }
+        static const char* const kCaseFirst[] = {"upper", "lower", "false"};
+        if (Value* err = applyLocaleEnumOption(ctx, options, "caseFirst", kCaseFirst,
+                                               3, "kf", rec)) {
             return err;
         }
         if (Value* err = applyLocaleKeywordOption(ctx, options, "numberingSystem",
                                                   "nu", rec)) {
             return err;
+        }
+        // variants：整串替换基础名中的 variant 子标签。
+        Value* variantsValue = nullptr;
+        if (Value* err = readOption(ctx, options, "variants", variantsValue)) {
+            return err;
+        }
+        if (variantsValue->type()->kind() != TypeKind::Undefined) {
+            Value* variantsStr = detail::toStringValue(ctx, variantsValue);
+            if (detail::isErrorValue(variantsStr)) return variantsStr;
+            const std::string text =
+                static_cast<StringData*>(variantsStr->data())->value;
+            if (text.empty()) {
+                return detail::rangeError(ctx, "Invalid value for option variants");
+            }
+            std::vector<std::string> parsed;
+            for (const std::string& v : splitLocaleTag(localeLower(text))) {
+                if (!validVariantSubtag(v) ||
+                    std::find(parsed.begin(), parsed.end(), v) != parsed.end()) {
+                    return detail::rangeError(
+                        ctx, "Invalid value for option variants");
+                }
+                parsed.push_back(v);
+            }
+            rec.variants = std::move(parsed);
         }
         Value* numeric = nullptr;
         if (Value* err = readOption(ctx, options, "numeric", numeric)) return err;
@@ -2964,6 +3065,23 @@ Value* localeCaseFirst(IContext* ctx, Value* self, size_t, Value*[]) {
 Value* localeNumberingSystem(IContext* ctx, Value* self, size_t, Value*[]) {
     return localeKeywordGetter(ctx, self, "nu");
 }
+Value* localeFirstDayOfWeek(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "fw");
+}
+
+Value* localeVariants(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    if (rec.variants.empty()) return ctx->createUndefined();
+    std::string joined;
+    for (const std::string& v : rec.variants) {
+        if (!joined.empty()) joined += '-';
+        joined += v;
+    }
+    return ctx->createString(joined);
+}
 
 Value* localeNumeric(IContext* ctx, Value* self, size_t, Value*[]) {
     IntlLocaleData* d = nullptr;
@@ -2986,6 +3104,132 @@ Value* localeToString(IContext* ctx, Value* self, size_t, Value*[]) {
     IntlLocaleData* d = nullptr;
     if (Value* err = requireLocale(ctx, self, d)) return err;
     return ctx->createString(d->localeName);
+}
+
+Value* localeStringArray(IContext* ctx, const std::vector<std::string>& items) {
+    Value* array = ctx->createArray();
+    if (detail::isErrorValue(array)) return array;
+    auto* arrayData = static_cast<ArrayData*>(array->data());
+    for (size_t i = 0; i < items.size(); ++i) {
+        arrayData->setElement(static_cast<uint32_t>(i), ctx->createString(items[i]));
+    }
+    return array;
+}
+
+// CalendarsOfLocale（§15.5.9）：最小实现无区域偏好数据，回退 gregory。
+Value* localeGetCalendars(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* ca = localeKeyword(rec, "ca");
+    if (ca != nullptr && !ca->empty()) return localeStringArray(ctx, {*ca});
+    return localeStringArray(ctx, {"gregory"});
+}
+
+// CollationsOfLocale（§15.5.10）：无排序数据时回退 root 的 emoji/eor。
+Value* localeGetCollations(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* co = localeKeyword(rec, "co");
+    if (co != nullptr && !co->empty()) return localeStringArray(ctx, {*co});
+    return localeStringArray(ctx, {"emoji", "eor"});
+}
+
+// HourCyclesOfLocale（§15.5.11）：无时间数据时回退 h23。
+Value* localeGetHourCycles(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* hc = localeKeyword(rec, "hc");
+    if (hc != nullptr && !hc->empty()) return localeStringArray(ctx, {*hc});
+    return localeStringArray(ctx, {"h23"});
+}
+
+// NumberingSystemsOfLocale（§15.5.12）：无 locale 数据时回退 latn。
+Value* localeGetNumberingSystems(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* nu = localeKeyword(rec, "nu");
+    if (nu != nullptr && !nu->empty()) return localeStringArray(ctx, {*nu});
+    return localeStringArray(ctx, {"latn"});
+}
+
+// TimeZonesOfLocale（§15.5.13）：无区域时区数据，返回空列表。
+Value* localeGetTimeZones(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    if (rec.region.empty()) return ctx->createUndefined();
+    return localeStringArray(ctx, {});
+}
+
+// TextDirectionOfLocale（§15.5.14）：按脚本判断书写方向。
+Value* localeGetTextInfo(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    std::string script = rec.script;
+    if (script.empty()) {
+        LocaleRecord maximal = rec;
+        maximizeLocale(maximal);
+        script = maximal.script;
+    }
+    Value* info = ctx->createObject();
+    if (detail::isErrorValue(info)) return info;
+    static const char* const kRtlScripts[] = {
+        "Adlm", "Arab", "Hebr", "Nkoo", "Syrc", "Thaa", "Yezi"};
+    bool rtl = false;
+    for (const char* candidate : kRtlScripts) {
+        if (script == candidate) {
+            rtl = true;
+            break;
+        }
+    }
+    Value* direction = script.empty() ? ctx->createUndefined()
+                                      : ctx->createString(rtl ? "rtl" : "ltr");
+    Value* defined =
+        ctx->defineProperty(info, "direction", direction, true, true, true);
+    if (detail::isErrorValue(defined)) return defined;
+    return info;
+}
+
+// WeekInfoOfLocale（§15.5.17）：无 CLDR 区域数据时的最小回退。
+Value* localeGetWeekInfo(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+
+    int firstDay = rec.region == "US" ? 7 : 1;
+    const std::string* fw = localeKeyword(rec, "fw");
+    if (fw != nullptr && !fw->empty()) {
+        const int override = weekdayUValueToNumber(*fw);
+        if (override != 0) firstDay = override;
+    }
+
+    Value* info = ctx->createObject();
+    if (detail::isErrorValue(info)) return info;
+    Value* firstDayValue = ctx->createNumber(static_cast<double>(firstDay));
+    Value* firstDayResult =
+        ctx->defineProperty(info, "firstDay", firstDayValue, true, true, true);
+    if (detail::isErrorValue(firstDayResult)) return firstDayResult;
+    Value* weekend = ctx->createArray();
+    if (detail::isErrorValue(weekend)) return weekend;
+    auto* weekendData = static_cast<ArrayData*>(weekend->data());
+    weekendData->setElement(0, ctx->createNumber(6.0));
+    weekendData->setElement(1, ctx->createNumber(7.0));
+    Value* weekendResult =
+        ctx->defineProperty(info, "weekend", weekend, true, true, true);
+    if (detail::isErrorValue(weekendResult)) return weekendResult;
+    return info;
 }
 
 Value* localeMaximize(IContext* ctx, Value* self, size_t, Value*[]) {
@@ -3379,6 +3623,9 @@ bool registerIntlBuiltins(IContext* ctx) {
     if (!defineGetter(ctx, localeProto, "calendar", localeCalendar)) return false;
     if (!defineGetter(ctx, localeProto, "caseFirst", localeCaseFirst)) return false;
     if (!defineGetter(ctx, localeProto, "collation", localeCollation)) return false;
+    if (!defineGetter(ctx, localeProto, "firstDayOfWeek", localeFirstDayOfWeek)) {
+        return false;
+    }
     if (!defineGetter(ctx, localeProto, "hourCycle", localeHourCycle)) return false;
     if (!defineGetter(ctx, localeProto, "language", localeLanguage)) return false;
     if (!defineGetter(ctx, localeProto, "numberingSystem", localeNumberingSystem)) {
@@ -3388,9 +3635,32 @@ bool registerIntlBuiltins(IContext* ctx) {
     if (!defineGetter(ctx, localeProto, "region", localeRegion)) return false;
     if (!defineGetter(ctx, localeProto, "script", localeScript)) return false;
     if (!defineGetter(ctx, localeProto, "timeZone", localeTimeZone)) return false;
+    if (!defineGetter(ctx, localeProto, "variants", localeVariants)) return false;
     if (!defineMethod(ctx, localeProto, "maximize", localeMaximize, 0)) return false;
     if (!defineMethod(ctx, localeProto, "minimize", localeMinimize, 0)) return false;
     if (!defineMethod(ctx, localeProto, "toString", localeToString, 0)) return false;
+    if (!defineMethod(ctx, localeProto, "getCalendars", localeGetCalendars, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getCollations", localeGetCollations, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getHourCycles", localeGetHourCycles, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getNumberingSystems",
+                      localeGetNumberingSystems, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getTimeZones", localeGetTimeZones, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getTextInfo", localeGetTextInfo, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, localeProto, "getWeekInfo", localeGetWeekInfo, 0)) {
+        return false;
+    }
     if (!defineTag(ctx, localeProto, "Intl.Locale")) return false;
 
     Value* localeCtor = ctx->createNativeFunction(localeCall, 0);

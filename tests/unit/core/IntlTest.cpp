@@ -1010,6 +1010,97 @@ TEST(IntlTest, LocaleMaximizeAndMinimize) {
     EXPECT_EQ(strOf(f.call(f.call(zh, "minimize"), "toString")), "zh");
 }
 
+TEST(IntlTest, LocaleFirstDayAndVariants) {
+    Fixture f;
+    Value* options = f.ctx->createObject();
+    f.ctx->defineProperty(options, "firstDayOfWeek",
+                          f.ctx->createString("mon"));
+    f.ctx->defineProperty(options, "variants", f.ctx->createString("1996"));
+    Value* args[2] = {f.ctx->createString("en"), options};
+    Value* loc = f.locale(2, args);
+    ASSERT_FALSE(isError(loc));
+
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "firstDayOfWeek")), "mon");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "variants")), "1996");
+    EXPECT_EQ(strOf(f.call(loc, "toString")), "en-1996-u-fw-mon");
+
+    // 数字星期字符串映射为 Unicode First Day 标识符
+    Value* numeric = f.ctx->createObject();
+    f.ctx->defineProperty(numeric, "firstDayOfWeek", f.ctx->createString("0"));
+    Value* numericArgs[2] = {f.ctx->createString("en"), numeric};
+    Value* numericLoc = f.locale(2, numericArgs);
+    ASSERT_FALSE(isError(numericLoc));
+    EXPECT_EQ(strOf(f.ctx->getProperty(numericLoc, "firstDayOfWeek")), "sun");
+}
+
+TEST(IntlTest, LocaleGetMethods) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createString("en")};
+    Value* loc = f.locale(1, args);
+    ASSERT_FALSE(isError(loc));
+
+    auto arrayAt = [&](Value* array, uint32_t index) {
+        return static_cast<ArrayData*>(array->data())->elementAt(index);
+    };
+
+    Value* calendars = f.call(loc, "getCalendars");
+    ASSERT_FALSE(isError(calendars));
+    ASSERT_EQ(static_cast<ArrayData*>(calendars->data())->length(), 1u);
+    EXPECT_EQ(strOf(arrayAt(calendars, 0)), "gregory");
+
+    Value* hourCycles = f.call(loc, "getHourCycles");
+    ASSERT_FALSE(isError(hourCycles));
+    ASSERT_EQ(static_cast<ArrayData*>(hourCycles->data())->length(), 1u);
+    EXPECT_EQ(strOf(arrayAt(hourCycles, 0)), "h23");
+
+    Value* numbering = f.call(loc, "getNumberingSystems");
+    ASSERT_FALSE(isError(numbering));
+    ASSERT_EQ(static_cast<ArrayData*>(numbering->data())->length(), 1u);
+    EXPECT_EQ(strOf(arrayAt(numbering, 0)), "latn");
+
+    Value* collations = f.call(loc, "getCollations");
+    ASSERT_FALSE(isError(collations));
+    ASSERT_EQ(static_cast<ArrayData*>(collations->data())->length(), 2u);
+    EXPECT_EQ(strOf(arrayAt(collations, 0)), "emoji");
+    EXPECT_EQ(strOf(arrayAt(collations, 1)), "eor");
+
+    // 无 region → undefined；有 region → 数组（最小实现为空）
+    EXPECT_EQ(f.call(loc, "getTimeZones")->type()->kind(), TypeKind::Undefined);
+    Value* usArgs[1] = {f.ctx->createString("en-US")};
+    Value* us = f.locale(1, usArgs);
+    ASSERT_FALSE(isError(us));
+    Value* zones = f.call(us, "getTimeZones");
+    ASSERT_FALSE(isError(zones));
+    EXPECT_EQ(static_cast<ArrayData*>(zones->data())->length(), 0u);
+
+    Value* textInfo = f.call(loc, "getTextInfo");
+    ASSERT_FALSE(isError(textInfo));
+    EXPECT_EQ(strOf(f.ctx->getProperty(textInfo, "direction")), "ltr");
+
+    Value* weekInfo = f.call(loc, "getWeekInfo");
+    ASSERT_FALSE(isError(weekInfo));
+    EXPECT_DOUBLE_EQ(numOf(f.ctx->getProperty(weekInfo, "firstDay")), 1.0);
+    Value* weekend = f.ctx->getProperty(weekInfo, "weekend");
+    ASSERT_EQ(static_cast<ArrayData*>(weekend->data())->length(), 2u);
+    EXPECT_DOUBLE_EQ(numOf(arrayAt(weekend, 0)), 6.0);
+    EXPECT_DOUBLE_EQ(numOf(arrayAt(weekend, 1)), 7.0);
+
+    Value* usWeek = f.call(us, "getWeekInfo");
+    ASSERT_FALSE(isError(usWeek));
+    EXPECT_DOUBLE_EQ(numOf(f.ctx->getProperty(usWeek, "firstDay")), 7.0);
+}
+
+TEST(IntlTest, LocaleAcceptsLocaleInstanceAsTag) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createString("EN-us")};
+    Value* first = f.locale(1, args);
+    ASSERT_FALSE(isError(first));
+    Value* secondArgs[1] = {first};
+    Value* second = f.locale(1, secondArgs);
+    ASSERT_FALSE(isError(second));
+    EXPECT_EQ(strOf(f.call(second, "toString")), "en-US");
+}
+
 TEST(IntlTest, LocaleErrors) {
     Fixture f;
     Value* ctor = f.ctx->getProperty(f.intl(), "Locale");
@@ -1034,6 +1125,35 @@ TEST(IntlTest, LocaleErrors) {
     f.ctx->defineProperty(badKeyword, "calendar", f.ctx->createString("x"));
     Value* badKeywordArgs[2] = {f.ctx->createString("en"), badKeyword};
     EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badKeywordArgs)),
+              "RangeError");
+
+    // tag 既非 String 也非 Object → TypeError
+    Value* numberTag[1] = {f.ctx->createNumber(1)};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 1, numberTag)), "TypeError");
+
+    // options 为 null → TypeError
+    Value* nullOptions[2] = {f.ctx->createString("en"), f.ctx->createNull()};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, nullOptions)), "TypeError");
+
+    // hourCycle 不在枚举内 → RangeError
+    Value* badHour = f.ctx->createObject();
+    f.ctx->defineProperty(badHour, "hourCycle", f.ctx->createString("h25"));
+    Value* badHourArgs[2] = {f.ctx->createString("en"), badHour};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badHourArgs)), "RangeError");
+
+    // variants 为空串 → RangeError
+    Value* badVariants = f.ctx->createObject();
+    f.ctx->defineProperty(badVariants, "variants", f.ctx->createString(""));
+    Value* badVariantsArgs[2] = {f.ctx->createString("en"), badVariants};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badVariantsArgs)),
+              "RangeError");
+
+    // firstDayOfWeek 非法 → RangeError
+    Value* badFirstDay = f.ctx->createObject();
+    f.ctx->defineProperty(badFirstDay, "firstDayOfWeek",
+                          f.ctx->createString("8"));
+    Value* badFirstDayArgs[2] = {f.ctx->createString("en"), badFirstDay};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badFirstDayArgs)),
               "RangeError");
 
     // 非 Locale 接收者 → TypeError
