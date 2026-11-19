@@ -1720,6 +1720,57 @@ NJS_IntlStatus displayNamesOf(NJS_IntlDisplayNames* d, const char* code,
 
 void displayNamesDestroy(NJS_IntlDisplayNames* names) { delete names; }
 
+// —— supportedValuesOf ——
+
+NJS_IntlStatus supportedValues(void* /*ud*/, const char* key,
+                               const char* const** values, size_t* count) {
+    static const char* const kCalendar[] = {"buddhist", "chinese", "gregory",
+                                            "islamic",  "japanese", "roc"};
+    static const char* const kCollation[] = {"emoji",   "eor",    "phonebk",
+                                             "pinyin",  "search", "stroke",
+                                             "trad"};
+    static const char* const kCurrency[] = {
+        "AUD", "BRL", "CAD", "CHF", "CNY", "EUR", "GBP", "INR",
+        "JPY", "KRW", "RUB", "USD"};
+    static const char* const kNumberingSystem[] = {"latn"};
+    static const char* const kTimeZone[] = {"UTC"};
+    static const char* const kUnit[] = {
+        "acre",       "bit",        "byte",       "celsius",
+        "centimeter", "day",        "degree",     "fahrenheit",
+        "gram",       "hectare",    "hour",       "inch",
+        "kilogram",   "kilometer",  "liter",      "meter",
+        "mile",       "milliliter", "millimeter", "millisecond",
+        "minute",     "month",      "ounce",      "percent",
+        "pound",      "second",     "stone",      "week",
+        "yard",       "year"};
+
+    struct Table {
+        const char* key;
+        const char* const* values;
+        size_t count;
+    };
+    const Table tables[] = {
+        {"calendar", kCalendar, sizeof kCalendar / sizeof kCalendar[0]},
+        {"collation", kCollation, sizeof kCollation / sizeof kCollation[0]},
+        {"currency", kCurrency, sizeof kCurrency / sizeof kCurrency[0]},
+        {"numberingSystem", kNumberingSystem,
+         sizeof kNumberingSystem / sizeof kNumberingSystem[0]},
+        {"timeZone", kTimeZone, sizeof kTimeZone / sizeof kTimeZone[0]},
+        {"unit", kUnit, sizeof kUnit / sizeof kUnit[0]},
+    };
+    if (key == nullptr || values == nullptr || count == nullptr) {
+        return NJS_INTL_INTERNAL;
+    }
+    for (const Table& table : tables) {
+        if (equals(key, table.key)) {
+            *values = table.values;
+            *count = table.count;
+            return NJS_INTL_OK;
+        }
+    }
+    return NJS_INTL_INVALID_OPTION;
+}
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1756,6 +1807,7 @@ const NJS_IntlBackend kMinimalBackend = {
     displayNamesCreate,
     displayNamesOf,
     displayNamesDestroy,
+    supportedValues,
 };
 
 }  // namespace

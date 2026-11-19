@@ -2230,6 +2230,43 @@ Value* displayNamesSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t arg
     return supportedLocalesOfImpl(ctx, argc, argv);
 }
 
+// —— Intl.supportedValuesOf ——
+
+Value* supportedValuesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                         Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->supported_values == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support values");
+    }
+    Value* keyArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* keyStr = detail::toStringValue(ctx, keyArg);
+    if (detail::isErrorValue(keyStr)) return keyStr;
+    const std::string key = static_cast<StringData*>(keyStr->data())->value;
+
+    const char* const* values = nullptr;
+    size_t count = 0;
+    NJS_IntlStatus status =
+        backend->supported_values(backend->user_data, key.c_str(), &values, &count);
+    if (status != NJS_INTL_OK) {
+        return detail::rangeError(ctx, std::string("Invalid key: ") + key);
+    }
+
+    std::vector<std::string> sorted;
+    sorted.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        if (values[i] != nullptr) sorted.emplace_back(values[i]);
+    }
+    std::sort(sorted.begin(), sorted.end());
+
+    Value* array = ctx->createArray();
+    if (detail::isErrorValue(array)) return array;
+    auto* arrayData = static_cast<ArrayData*>(array->data());
+    for (size_t i = 0; i < sorted.size(); ++i) {
+        arrayData->setElement(static_cast<uint32_t>(i), ctx->createString(sorted[i]));
+    }
+    return array;
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -2519,6 +2556,9 @@ bool registerIntlBuiltins(IContext* ctx) {
 
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, intl, "supportedValuesOf", supportedValuesOf, 0)) {
         return false;
     }
     if (ctx->defineProperty(intl, "NumberFormat", ctor, true, false, true)

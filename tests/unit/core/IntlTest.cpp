@@ -226,6 +226,7 @@ const NJS_IntlBackend kFakeBackend = {
     nullptr,
     nullptr,
     nullptr,
+    nullptr,
 };
 
 }  // namespace
@@ -806,6 +807,34 @@ TEST(IntlTest, DisplayNamesErrors) {
 
     Value* obj = f.ctx->createObject();
     EXPECT_TRUE(isError(f.call1(obj, "of", f.ctx->createString("en"))));
+}
+
+TEST(IntlTest, SupportedValuesOf) {
+    Fixture f;
+    Value* fn = f.ctx->getProperty(f.intl(), "supportedValuesOf");
+    ASSERT_FALSE(isError(fn));
+
+    Value* calendarArgs[1] = {f.ctx->createString("calendar")};
+    Value* calendars = f.ctx->call(fn, f.intl(), 1, calendarArgs);
+    ASSERT_FALSE(isError(calendars));
+    EXPECT_EQ(numOf(f.ctx->getProperty(calendars, "length")), 6.0);
+    EXPECT_EQ(strOf(f.ctx->getProperty(calendars, "0")), "buddhist");
+    EXPECT_EQ(strOf(f.ctx->getProperty(calendars, "3")), "islamic");
+
+    Value* currencyArgs[1] = {f.ctx->createString("currency")};
+    Value* currencies = f.ctx->call(fn, f.intl(), 1, currencyArgs);
+    ASSERT_FALSE(isError(currencies));
+    EXPECT_EQ(strOf(f.ctx->getProperty(currencies, "0")), "AUD");
+    EXPECT_EQ(strOf(f.ctx->getProperty(currencies, "11")), "USD");
+
+    Value* zoneArgs[1] = {f.ctx->createString("timeZone")};
+    Value* zones = f.ctx->call(fn, f.intl(), 1, zoneArgs);
+    ASSERT_FALSE(isError(zones));
+    EXPECT_EQ(numOf(f.ctx->getProperty(zones, "length")), 1.0);
+    EXPECT_EQ(strOf(f.ctx->getProperty(zones, "0")), "UTC");
+
+    Value* badArgs[1] = {f.ctx->createString("bogus")};
+    EXPECT_TRUE(isError(f.ctx->call(fn, f.intl(), 1, badArgs)));
 }
 
 TEST(IntlTest, ErrorCases) {

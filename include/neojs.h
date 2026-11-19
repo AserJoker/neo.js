@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 7u
+#define NJS_INTL_ABI_VERSION 8u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -222,6 +222,12 @@ struct NJS_IntlBackend {
                                        const char* code, char* out,
                                        size_t* out_len);
     void (*display_names_destroy)(NJS_IntlDisplayNames* names);
+
+    // —— ABI v8 追加 ——
+    // 返回某个 key 的受支持值（静态数组，后端持有）。key 非法时返回
+    // NJS_INTL_INVALID_OPTION。
+    NJS_IntlStatus (*supported_values)(void* user_data, const char* key,
+                                       const char* const** values, size_t* count);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。
