@@ -239,6 +239,27 @@ endif()
 if(NEO_ENABLE_ICU)
     target_link_libraries(neojs PRIVATE ICU::uc ICU::i18n ICU::data)
     target_compile_definitions(neojs PUBLIC NEO_HAS_ICU=1)
+
+    # 独立 ICU 适配器静态库：应用按需链接，core 不依赖它。
+    # 三级回退：custom（应用注入）> ICU（本库）> mini（core 内置）。
+    add_library(neojs_intl_icu STATIC
+        src/private/intl_icu/IcuIntlBackend.cpp
+    )
+    target_include_directories(neojs_intl_icu
+        PUBLIC ${CMAKE_SOURCE_DIR}/include
+    )
+    target_link_libraries(neojs_intl_icu
+        PUBLIC neo_warnings
+        PRIVATE ICU::uc ICU::i18n ICU::data icu_data_init
+    )
+    # ICU 头文件是第三方代码：以 SYSTEM 包含，避免 -Werror 把 ICU 自身的
+    # 旧式转换/冗余 virtual 等告警算到本适配器头上。
+    get_target_property(_icu_uc_inc ICU::uc INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(_icu_i18n_inc ICU::i18n INTERFACE_INCLUDE_DIRECTORIES)
+    target_include_directories(neojs_intl_icu SYSTEM PRIVATE
+        ${_icu_uc_inc} ${_icu_i18n_inc}
+    )
+    target_compile_definitions(neojs_intl_icu PRIVATE NEO_HAS_ICU=1)
 endif()
 
 # ---------------------------------------------------------------------------
