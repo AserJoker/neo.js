@@ -381,8 +381,9 @@ TEST(PromiseStaticTest, ThenUsesSpeciesConstructor) {
     Value* custom = f.ctx->createNativeFunction(
         [](IContext* c, Value*, size_t argc, Value* argv[]) {
             Value* n = c->global()->lookup("__speciesCalls");
-            c->global()->bind("__speciesCalls",
-                              c->createNumber(num(n) + 1.0));
+            Value* nv = c->createNumber(num(n) + 1.0);
+            c->global()->add(nv);
+            c->global()->bind("__speciesCalls", nv);
             Value* args[1] = {argc > 0 ? argv[0] : c->createUndefined()};
             return c->construct(c->global()->lookup("Promise"), 1, args);
         }, 1);
@@ -498,8 +499,9 @@ TEST(PromiseStaticTest, AllUsesOverriddenResolve) {
     Value* custom = f.ctx->createNativeFunction(
         [](IContext* c, Value* self, size_t argc, Value* argv[]) {
             Value* n = c->global()->lookup("__resolveCalls");
-            c->global()->bind("__resolveCalls",
-                              c->createNumber(num(n) + 1.0));
+            Value* nv = c->createNumber(num(n) + 1.0);
+            c->global()->add(nv);
+            c->global()->bind("__resolveCalls", nv);
             Value* args[1] = {argc > 0 ? argv[0] : c->createUndefined()};
             return c->call(c->getProperty(self, "__realResolve"), self, 1, args);
         }, 1);
@@ -520,10 +522,13 @@ TEST(PromiseStaticTest, AllUsesOverriddenResolve) {
     Value* arr = arrayOf(f.ctx.get(), {f.ctx->createNumber(1), f.ctx->createNumber(2)});
     Value* args[1] = {arr};
     Value* result = f.ctx->call(allFn, speciesCtor, 1, args);
+    // result 在调用返回后不再被任何作用域持有；drain 可能触发 GC，须临时钉住。
+    result->pinRefInc();
     drain(f.ctx.get());
 
     EXPECT_DOUBLE_EQ(num(f.ctx->global()->lookup("__resolveCalls")), 2.0);
     EXPECT_EQ(neo::core::asPromise(result)->state, PromiseState::Fulfilled);
+    result->pinRefDec();
 }
 
 TEST(PromiseStaticTest, AllRejectsWhenResolveIsNotCallable) {
@@ -552,7 +557,9 @@ TEST(PromiseStaticTest, CatchUsesOverriddenThen) {
     Value* customThen = f.ctx->createNativeFunction(
         [](IContext* c, Value*, size_t, Value*[]) {
             Value* n = c->global()->lookup("__thenCalls");
-            c->global()->bind("__thenCalls", c->createNumber(num(n) + 1.0));
+            Value* nv = c->createNumber(num(n) + 1.0);
+            c->global()->add(nv);
+            c->global()->bind("__thenCalls", nv);
             return c->createUndefined();
         }, 2);
     f.ctx->setProperty(p, "then", customThen);

@@ -157,7 +157,9 @@ TEST(PromiseChainTest, ThenHandlerRunsInMicrotask) {
     f.ctx->global()->bind("__seen", f.ctx->createUndefined());
     Value* seen = f.ctx->createNativeFunction(
         [](IContext* c, Value*, size_t argc, Value* argv[]) {
-            c->global()->bind("__seen", argc > 0 ? argv[0] : c->createUndefined());
+            Value* v = argc > 0 ? argv[0] : c->createUndefined();
+            c->global()->add(v);
+            c->global()->bind("__seen", v);
             return c->createUndefined();
         }, 1);
     Value* derived = thenOf(f.ctx.get(), p, seen, f.ctx->createUndefined());
@@ -389,7 +391,9 @@ TEST(PromiseChainTest, FinallyRunsAndPassesThroughValue) {
     f.ctx->global()->bind("__ran", f.ctx->createBoolean(false));
     Value* onFinally = f.ctx->createNativeFunction(
         [](IContext* c, Value*, size_t, Value*[]) {
-            c->global()->bind("__ran", c->createBoolean(true));
+            Value* v = c->createBoolean(true);
+            c->global()->add(v);
+            c->global()->bind("__ran", v);
             return c->createUndefined();
         }, 0);
 
@@ -397,12 +401,15 @@ TEST(PromiseChainTest, FinallyRunsAndPassesThroughValue) {
     resolveWith(f.ctx.get(), f.ctx->createNumber(8));
     Value* args[] = {onFinally};
     Value* derived = f.ctx->call(f.ctx->getProperty(p, "finally"), p, 1, args);
+    // derived 在调用返回后不再被任何作用域持有；drain 可能触发 GC，须临时钉住。
+    derived->pinRefInc();
     drain(f.ctx.get());
 
     EXPECT_TRUE(neo::core::detail::toBoolean(f.ctx->global()->lookup("__ran")));
     PromiseData* d = neo::core::asPromise(derived);
     EXPECT_EQ(d->state, PromiseState::Fulfilled);
     EXPECT_DOUBLE_EQ(num(d->result), 8.0);
+    derived->pinRefDec();
 }
 
 TEST(PromiseChainTest, FinallyRethrowsRejection) {
