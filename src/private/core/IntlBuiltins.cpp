@@ -23,6 +23,7 @@
 #include "core/types/IntlDisplayNames.h"
 #include "core/types/IntlSegmenter.h"
 #include "core/types/IntlSegments.h"
+#include "core/types/IntlLocale.h"
 #include "unicode/Utf8.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
@@ -2531,6 +2532,501 @@ Value* segmentsIterator(IContext* ctx, Value* self, size_t /*argc*/,
 
 // —— 注册辅助 ——
 
+// —— Intl.Locale（ECMA-402 §14）——
+//
+// 只做纯计算：语言标签按 BCP 47 / ECMA-402 的 grammar 解析与规范化，
+// unicode 扩展关键字承载 calendar/collation/hourCycle/caseFirst/numberingSystem/
+// numeric 内部槽；[[TimeZone]] 单独保存（不在标签中）。
+// maximize/minimize 使用内置 likely-subtags 子集；表中没有的语言保持原样。
+
+bool localeIsAlpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+bool localeIsDigit(char c) { return c >= '0' && c <= '9'; }
+bool localeIsAlnum(char c) { return localeIsAlpha(c) || localeIsDigit(c); }
+
+std::string localeLower(std::string s) {
+    for (char& c : s) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return s;
+}
+
+std::string localeUpper(std::string s) {
+    for (char& c : s) {
+        if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+    }
+    return s;
+}
+
+std::string localeTitle(std::string s) {
+    s = localeLower(std::move(s));
+    if (!s.empty() && s[0] >= 'a' && s[0] <= 'z') {
+        s[0] = static_cast<char>(s[0] - 'a' + 'A');
+    }
+    return s;
+}
+
+bool localeAll(const std::string& s, bool (*pred)(char)) {
+    for (char c : s) {
+        if (!pred(c)) return false;
+    }
+    return !s.empty();
+}
+
+bool validLanguageSubtag(const std::string& s) {
+    if (!localeAll(s, localeIsAlpha)) return false;
+    return s.size() == 2 || s.size() == 3 || s.size() == 4 || s.size() == 5 ||
+           s.size() == 6 || s.size() == 7 || s.size() == 8;
+}
+
+bool validScriptSubtag(const std::string& s) {
+    return s.size() == 4 && localeAll(s, localeIsAlpha);
+}
+
+bool validRegionSubtag(const std::string& s) {
+    if (s.size() == 2) return localeAll(s, localeIsAlpha);
+    if (s.size() == 3) return localeAll(s, localeIsDigit);
+    return false;
+}
+
+bool validVariantSubtag(const std::string& s) {
+    if (s.size() >= 5 && s.size() <= 8) return localeAll(s, localeIsAlnum);
+    if (s.size() == 4) {
+        return localeIsDigit(s[0]) && localeIsAlnum(s[1]) && localeIsAlnum(s[2]) &&
+               localeIsAlnum(s[3]);
+    }
+    return false;
+}
+
+struct LocaleRecord {
+    std::string language;
+    std::string script;
+    std::string region;
+    std::vector<std::string> variants;
+    std::vector<std::string> unicodeAttributes;
+    // unicode 扩展关键字（key 小写，type 小写；type 为空表示无类型）。
+    std::vector<std::pair<std::string, std::string>> keywords;
+    // 非 u/x 的扩展，按完整子标签串保存（如 "t-en-us"）。
+    std::vector<std::string> extensions;
+    std::vector<std::string> privateUse;
+};
+
+std::vector<std::string> splitLocaleTag(const std::string& tag) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    while (start <= tag.size()) {
+        size_t dash = tag.find('-', start);
+        if (dash == std::string::npos) {
+            parts.push_back(tag.substr(start));
+            break;
+        }
+        parts.push_back(tag.substr(start, dash - start));
+        start = dash + 1;
+    }
+    return parts;
+}
+
+bool parseLocaleTag(const std::string& tag, LocaleRecord& out) {
+    out = LocaleRecord{};
+    if (tag.empty()) return false;
+    const std::vector<std::string> parts = splitLocaleTag(tag);
+    for (const std::string& p : parts) {
+        if (p.empty()) return false;
+    }
+    size_t i = 0;
+    if (!validLanguageSubtag(parts[i])) return false;
+    out.language = localeLower(parts[i++]);
+    if (i < parts.size() && validScriptSubtag(parts[i])) {
+        out.script = localeTitle(parts[i++]);
+    }
+    if (i < parts.size() && validRegionSubtag(parts[i])) {
+        out.region = localeUpper(parts[i++]);
+    }
+    while (i < parts.size() && validVariantSubtag(parts[i])) {
+        const std::string v = localeLower(parts[i]);
+        if (std::find(out.variants.begin(), out.variants.end(), v) !=
+            out.variants.end()) {
+            return false;  // 重复 variant
+        }
+        out.variants.push_back(v);
+        ++i;
+    }
+    while (i < parts.size()) {
+        const std::string& singletonTag = parts[i];
+        if (singletonTag.size() != 1 || !localeIsAlnum(singletonTag[0])) {
+            return false;
+        }
+        const char singleton = localeLower(singletonTag)[0];
+        ++i;
+        if (singleton == 'x') {
+            if (i >= parts.size()) return false;
+            while (i < parts.size()) {
+                const std::string& p = parts[i];
+                if (p.size() < 1 || p.size() > 8 || !localeAll(p, localeIsAlnum)) {
+                    return false;
+                }
+                out.privateUse.push_back(localeLower(p));
+                ++i;
+            }
+            break;
+        }
+        if (singleton == 'u') {
+            const size_t extStart = i;
+            // 属性：3*8alphanum，出现在关键字之前。
+            while (i < parts.size() && parts[i].size() >= 3 &&
+                   parts[i].size() <= 8 && localeAll(parts[i], localeIsAlnum)) {
+                out.unicodeAttributes.push_back(localeLower(parts[i++]));
+            }
+            // 关键字：2alphanum [ "-" 3*8alphanum ]。
+            while (i < parts.size() && parts[i].size() == 2 &&
+                   localeAll(parts[i], localeIsAlnum)) {
+                const std::string key = localeLower(parts[i++]);
+                std::string type;
+                if (i < parts.size() && parts[i].size() >= 3 &&
+                    parts[i].size() <= 8 && localeAll(parts[i], localeIsAlnum)) {
+                    type = localeLower(parts[i++]);
+                }
+                for (const auto& kv : out.keywords) {
+                    if (kv.first == key) return false;  // 重复关键字
+                }
+                out.keywords.emplace_back(key, type);
+            }
+            if (i == extStart) return false;  // "u" 后必须有内容
+            continue;
+        }
+        // 其它扩展：singleton 后至少一个 2*8alphanum 子标签。
+        std::string ext(1, singleton);
+        const size_t extStart = i;
+        while (i < parts.size() && parts[i].size() >= 2 && parts[i].size() <= 8 &&
+               localeAll(parts[i], localeIsAlnum)) {
+            ext += '-';
+            ext += localeLower(parts[i++]);
+        }
+        if (i == extStart) return false;
+        out.extensions.push_back(std::move(ext));
+    }
+    return true;
+}
+
+std::string localeBaseNameOf(const LocaleRecord& r) {
+    std::string s = r.language;
+    if (!r.script.empty()) s += '-' + r.script;
+    if (!r.region.empty()) s += '-' + r.region;
+    for (const std::string& v : r.variants) s += '-' + v;
+    return s;
+}
+
+std::string buildLocaleTag(const LocaleRecord& r) {
+    std::string s = localeBaseNameOf(r);
+    if (!r.unicodeAttributes.empty() || !r.keywords.empty()) {
+        s += "-u";
+        for (const std::string& a : r.unicodeAttributes) s += '-' + a;
+        for (const auto& kv : r.keywords) {
+            s += '-' + kv.first;
+            if (!kv.second.empty()) s += '-' + kv.second;
+        }
+    }
+    for (const std::string& e : r.extensions) s += '-' + e;
+    if (!r.privateUse.empty()) {
+        s += "-x";
+        for (const std::string& p : r.privateUse) s += '-' + p;
+    }
+    return s;
+}
+
+const std::string* localeKeyword(const LocaleRecord& r, const char* key) {
+    for (const auto& kv : r.keywords) {
+        if (kv.first == key) return &kv.second;
+    }
+    return nullptr;
+}
+
+void setLocaleKeyword(LocaleRecord& r, const std::string& key,
+                      const std::string& type) {
+    for (auto it = r.keywords.begin(); it != r.keywords.end(); ++it) {
+        if (it->first != key) continue;
+        if (type.empty()) {
+            r.keywords.erase(it);
+        } else {
+            it->second = type;
+        }
+        return;
+    }
+    if (!type.empty()) r.keywords.emplace_back(key, type);
+}
+
+struct LikelySubtag {
+    const char* language;
+    const char* script;
+    const char* region;
+};
+
+const LikelySubtag kLikelySubtags[] = {
+    {"en", "Latn", "US"}, {"zh", "Hans", "CN"}, {"ja", "Jpan", "JP"},
+    {"ko", "Kore", "KR"}, {"fr", "Latn", "FR"}, {"de", "Latn", "DE"},
+    {"es", "Latn", "ES"}, {"ru", "Cyrl", "RU"}, {"ar", "Arab", "EG"},
+    {"hi", "Deva", "IN"}, {"pt", "Latn", "BR"}, {"it", "Latn", "IT"},
+    {"nl", "Latn", "NL"}, {"sv", "Latn", "SE"}, {"pl", "Latn", "PL"},
+    {"tr", "Latn", "TR"}, {"th", "Thai", "TH"}, {"he", "Hebr", "IL"},
+    {"vi", "Latn", "VN"}, {"id", "Latn", "ID"},
+};
+
+// Maximize：补齐缺失的 script/region。表中没有的语言保持原样。
+void maximizeLocale(LocaleRecord& r) {
+    for (const LikelySubtag& e : kLikelySubtags) {
+        if (r.language != e.language) continue;
+        if (r.script.empty()) r.script = e.script;
+        if (r.region.empty()) r.region = e.region;
+        return;
+    }
+}
+
+Value* requireLocale(IContext* ctx, Value* self, IntlLocaleData*& out) {
+    out = asIntlLocale(self);
+    if (out == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.Locale method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+// 把某个字符串选项读成 LocaleRecord 的字段；未提供则保持原值。
+Value* applyLocaleTagOption(IContext* ctx, Value* options, const char* name,
+                            bool (*validator)(const std::string&),
+                            std::string& field, bool titleCase) {
+    Value* value = nullptr;
+    if (Value* err = readOption(ctx, options, name, value)) return err;
+    if (value->type()->kind() == TypeKind::Undefined) return nullptr;
+    Value* str = detail::toStringValue(ctx, value);
+    if (detail::isErrorValue(str)) return str;
+    const std::string text = static_cast<StringData*>(str->data())->value;
+    if (!validator(text)) {
+        return detail::rangeError(ctx, std::string("Invalid value for option ") + name);
+    }
+    field = titleCase ? localeTitle(text) : localeLower(text);
+    return nullptr;
+}
+
+// 把某个 unicode 关键字选项写入 LocaleRecord；未提供则保持原值。
+Value* applyLocaleKeywordOption(IContext* ctx, Value* options, const char* name,
+                                const char* key, LocaleRecord& rec) {
+    Value* value = nullptr;
+    if (Value* err = readOption(ctx, options, name, value)) return err;
+    if (value->type()->kind() == TypeKind::Undefined) return nullptr;
+    Value* str = detail::toStringValue(ctx, value);
+    if (detail::isErrorValue(str)) return str;
+    const std::string text = static_cast<StringData*>(str->data())->value;
+    if (!text.empty() &&
+        !(text.size() >= 3 && text.size() <= 8 && localeAll(text, localeIsAlnum))) {
+        return detail::rangeError(ctx, std::string("Invalid value for option ") + name);
+    }
+    setLocaleKeyword(rec, key, localeLower(text));
+    return nullptr;
+}
+
+Value* localeCall(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                  Value* /*argv*/[]) {
+    return detail::typeError(ctx, "Constructor Intl.Locale requires 'new'");
+}
+
+Value* localeConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                       Value* argv[]) {
+    Value* tagArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* tagValue = detail::toStringValue(ctx, tagArg);
+    if (detail::isErrorValue(tagValue)) return tagValue;
+    const std::string tag = static_cast<StringData*>(tagValue->data())->value;
+
+    LocaleRecord rec;
+    if (!parseLocaleTag(tag, rec)) {
+        return detail::rangeError(ctx, "Incorrect locale information provided");
+    }
+
+    Value* options = nullptr;
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    if (options != nullptr) {
+        if (Value* err = applyLocaleTagOption(ctx, options, "language",
+                                              validLanguageSubtag, rec.language,
+                                              false)) {
+            return err;
+        }
+        if (Value* err = applyLocaleTagOption(ctx, options, "script",
+                                              validScriptSubtag, rec.script, true)) {
+            return err;
+        }
+        if (Value* err = applyLocaleTagOption(ctx, options, "region",
+                                              validRegionSubtag, rec.region, false)) {
+            return err;
+        }
+        if (Value* err = applyLocaleKeywordOption(ctx, options, "calendar", "ca", rec)) {
+            return err;
+        }
+        if (Value* err =
+                applyLocaleKeywordOption(ctx, options, "collation", "co", rec)) {
+            return err;
+        }
+        if (Value* err =
+                applyLocaleKeywordOption(ctx, options, "hourCycle", "hc", rec)) {
+            return err;
+        }
+        if (Value* err =
+                applyLocaleKeywordOption(ctx, options, "caseFirst", "kf", rec)) {
+            return err;
+        }
+        if (Value* err = applyLocaleKeywordOption(ctx, options, "numberingSystem",
+                                                  "nu", rec)) {
+            return err;
+        }
+        Value* numeric = nullptr;
+        if (Value* err = readOption(ctx, options, "numeric", numeric)) return err;
+        if (numeric->type()->kind() != TypeKind::Undefined) {
+            setLocaleKeyword(rec, "kn",
+                             detail::toBoolean(numeric) ? "true" : "false");
+        }
+    }
+
+    std::string timeZone;
+    if (options != nullptr) {
+        Value* tzValue = nullptr;
+        if (Value* err = readOption(ctx, options, "timeZone", tzValue)) return err;
+        if (tzValue->type()->kind() != TypeKind::Undefined) {
+            Value* tzStr = detail::toStringValue(ctx, tzValue);
+            if (detail::isErrorValue(tzStr)) return tzStr;
+            timeZone = static_cast<StringData*>(tzStr->data())->value;
+            if (timeZone.empty()) {
+                return detail::rangeError(ctx, "Invalid value for option timeZone");
+            }
+        }
+    }
+
+    std::sort(rec.keywords.begin(), rec.keywords.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    return ctx->createIntlLocale(buildLocaleTag(rec), timeZone);
+}
+
+Value* localeBaseName(IContext* ctx, Value* self, size_t /*argc*/,
+                      Value* /*argv*/[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    return ctx->createString(localeBaseNameOf(rec));
+}
+
+Value* localeLanguage(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    return ctx->createString(rec.language);
+}
+
+Value* localeScript(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    return rec.script.empty() ? ctx->createUndefined() : ctx->createString(rec.script);
+}
+
+Value* localeRegion(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    return rec.region.empty() ? ctx->createUndefined() : ctx->createString(rec.region);
+}
+
+Value* localeKeywordGetter(IContext* ctx, Value* self, const char* key) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* type = localeKeyword(rec, key);
+    if (type == nullptr || type->empty()) return ctx->createUndefined();
+    return ctx->createString(*type);
+}
+
+Value* localeCalendar(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "ca");
+}
+Value* localeCollation(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "co");
+}
+Value* localeHourCycle(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "hc");
+}
+Value* localeCaseFirst(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "kf");
+}
+Value* localeNumberingSystem(IContext* ctx, Value* self, size_t, Value*[]) {
+    return localeKeywordGetter(ctx, self, "nu");
+}
+
+Value* localeNumeric(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) return ctx->createUndefined();
+    const std::string* type = localeKeyword(rec, "kn");
+    if (type == nullptr || type->empty()) return ctx->createUndefined();
+    return ctx->createBoolean(*type == "true");
+}
+
+Value* localeTimeZone(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    return d->timeZone.empty() ? ctx->createUndefined()
+                               : ctx->createString(d->timeZone);
+}
+
+Value* localeToString(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    return ctx->createString(d->localeName);
+}
+
+Value* localeMaximize(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) {
+        return detail::rangeError(ctx, "Incorrect locale information provided");
+    }
+    maximizeLocale(rec);
+    return ctx->createIntlLocale(buildLocaleTag(rec), d->timeZone);
+}
+
+Value* localeMinimize(IContext* ctx, Value* self, size_t, Value*[]) {
+    IntlLocaleData* d = nullptr;
+    if (Value* err = requireLocale(ctx, self, d)) return err;
+    LocaleRecord rec;
+    if (!parseLocaleTag(d->localeName, rec)) {
+        return detail::rangeError(ctx, "Incorrect locale information provided");
+    }
+    LocaleRecord maxRec = rec;
+    maximizeLocale(maxRec);
+    const std::string maxTag = buildLocaleTag(maxRec);
+
+    if (!rec.script.empty()) {
+        LocaleRecord trial = rec;
+        trial.script.clear();
+        LocaleRecord trialMax = trial;
+        maximizeLocale(trialMax);
+        if (buildLocaleTag(trialMax) == maxTag) rec = trial;
+    }
+    if (!rec.region.empty()) {
+        LocaleRecord trial = rec;
+        trial.region.clear();
+        LocaleRecord trialMax = trial;
+        maximizeLocale(trialMax);
+        if (buildLocaleTag(trialMax) == maxTag) rec = trial;
+    }
+    return ctx->createIntlLocale(buildLocaleTag(rec), d->timeZone);
+}
+
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc) {
     Value* f = ctx->createNativeFunction(fn, minArgc);
@@ -2871,6 +3367,45 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.Locale ——
+    Value* localeProto = ctx->createObject();
+    if (localeProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(localeProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlLocalePrototype(localeProto);
+    if (!defineGetter(ctx, localeProto, "baseName", localeBaseName)) return false;
+    if (!defineGetter(ctx, localeProto, "calendar", localeCalendar)) return false;
+    if (!defineGetter(ctx, localeProto, "caseFirst", localeCaseFirst)) return false;
+    if (!defineGetter(ctx, localeProto, "collation", localeCollation)) return false;
+    if (!defineGetter(ctx, localeProto, "hourCycle", localeHourCycle)) return false;
+    if (!defineGetter(ctx, localeProto, "language", localeLanguage)) return false;
+    if (!defineGetter(ctx, localeProto, "numberingSystem", localeNumberingSystem)) {
+        return false;
+    }
+    if (!defineGetter(ctx, localeProto, "numeric", localeNumeric)) return false;
+    if (!defineGetter(ctx, localeProto, "region", localeRegion)) return false;
+    if (!defineGetter(ctx, localeProto, "script", localeScript)) return false;
+    if (!defineGetter(ctx, localeProto, "timeZone", localeTimeZone)) return false;
+    if (!defineMethod(ctx, localeProto, "maximize", localeMaximize, 0)) return false;
+    if (!defineMethod(ctx, localeProto, "minimize", localeMinimize, 0)) return false;
+    if (!defineMethod(ctx, localeProto, "toString", localeToString, 0)) return false;
+    if (!defineTag(ctx, localeProto, "Intl.Locale")) return false;
+
+    Value* localeCtor = ctx->createNativeFunction(localeCall, 0);
+    if (localeCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(localeCtor, "Locale");
+    ctx->setFunctionConstructor(localeCtor, localeConstruct);
+    if (ctx->defineProperty(localeCtor, "prototype", localeProto, false, false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(localeProto, "constructor", localeCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -2908,6 +3443,10 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "Segmenter", segmenterCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "Locale", localeCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

@@ -94,6 +94,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* locale(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "Locale");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -125,6 +130,12 @@ std::string strOf(Value* v) {
     return v != nullptr && v->type()->kind() == TypeKind::String
                ? static_cast<neo::core::StringData*>(v->data())->value
                : std::string();
+}
+
+std::string errorName(Fixture& f, Value* v) {
+    if (!isError(v)) return {};
+    Value* err = static_cast<neo::core::ExceptionData*>(v->data())->child;
+    return strOf(f.ctx->getProperty(err, "name"));
 }
 
 Value* formatOf(Fixture& f, Value* formatter, double value) {
@@ -918,6 +929,121 @@ TEST(IntlTest, SegmenterSentenceAndErrors) {
 
     Value* obj = f.ctx->createObject();
     EXPECT_TRUE(isError(f.call1(obj, "segment", f.ctx->createString("x"))));
+}
+
+// —— Intl.Locale（ECMA-402 §14）——
+
+TEST(IntlTest, LocaleBasicsAndCanonicalization) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createString("EN-us")};
+    Value* loc = f.locale(1, args);
+    ASSERT_FALSE(isError(loc));
+
+    EXPECT_EQ(strOf(f.call(loc, "toString")), "en-US");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "baseName")), "en-US");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "language")), "en");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "region")), "US");
+    EXPECT_EQ(f.ctx->getProperty(loc, "script")->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_EQ(f.ctx->getProperty(loc, "calendar")->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_EQ(f.ctx->getProperty(loc, "numeric")->type()->kind(),
+              TypeKind::Undefined);
+    EXPECT_EQ(f.ctx->getProperty(loc, "timeZone")->type()->kind(),
+              TypeKind::Undefined);
+}
+
+TEST(IntlTest, LocaleOptionsAndKeywords) {
+    Fixture f;
+    Value* options = f.ctx->createObject();
+    f.ctx->defineProperty(options, "calendar", f.ctx->createString("gregory"));
+    f.ctx->defineProperty(options, "numberingSystem", f.ctx->createString("latn"));
+    f.ctx->defineProperty(options, "caseFirst", f.ctx->createString("upper"));
+    f.ctx->defineProperty(options, "numeric", f.ctx->createBoolean(true));
+    f.ctx->defineProperty(options, "timeZone", f.ctx->createString("UTC"));
+    Value* args[2] = {f.ctx->createString("en"), options};
+    Value* loc = f.locale(2, args);
+    ASSERT_FALSE(isError(loc));
+
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "calendar")), "gregory");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "numberingSystem")), "latn");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "caseFirst")), "upper");
+    EXPECT_TRUE(boolOf(f.ctx->getProperty(loc, "numeric")));
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "timeZone")), "UTC");
+    // 关键字按 key 排序输出，timeZone 不进入标签。
+    EXPECT_EQ(strOf(f.call(loc, "toString")),
+              "en-u-ca-gregory-kf-upper-kn-true-nu-latn");
+}
+
+TEST(IntlTest, LocaleTagExtensionsAndVariants) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createString("zh-Hant-TW-u-nu-hanidec-x-foo")};
+    Value* loc = f.locale(1, args);
+    ASSERT_FALSE(isError(loc));
+
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "language")), "zh");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "script")), "Hant");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "region")), "TW");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "numberingSystem")), "hanidec");
+    EXPECT_EQ(strOf(f.call(loc, "toString")), "zh-Hant-TW-u-nu-hanidec-x-foo");
+    EXPECT_EQ(strOf(f.ctx->getProperty(loc, "baseName")), "zh-Hant-TW");
+}
+
+TEST(IntlTest, LocaleMaximizeAndMinimize) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createString("en")};
+    Value* loc = f.locale(1, args);
+    ASSERT_FALSE(isError(loc));
+
+    Value* max = f.call(loc, "maximize");
+    ASSERT_FALSE(isError(max));
+    EXPECT_EQ(strOf(f.call(max, "toString")), "en-Latn-US");
+    EXPECT_EQ(strOf(f.ctx->getProperty(max, "script")), "Latn");
+
+    Value* min = f.call(max, "minimize");
+    ASSERT_FALSE(isError(min));
+    EXPECT_EQ(strOf(f.call(min, "toString")), "en");
+
+    Value* zhArgs[1] = {f.ctx->createString("zh-Hans-CN")};
+    Value* zh = f.locale(1, zhArgs);
+    ASSERT_FALSE(isError(zh));
+    EXPECT_EQ(strOf(f.call(f.call(zh, "minimize"), "toString")), "zh");
+}
+
+TEST(IntlTest, LocaleErrors) {
+    Fixture f;
+    Value* ctor = f.ctx->getProperty(f.intl(), "Locale");
+
+    // 无 new → TypeError
+    Value* callArgs[1] = {f.ctx->createString("en")};
+    EXPECT_EQ(errorName(f, f.ctx->call(ctor, f.ctx->createUndefined(), 1, callArgs)),
+              "TypeError");
+
+    // 结构非法的标签 → RangeError
+    Value* badTag[1] = {f.ctx->createString("en_US")};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 1, badTag)), "RangeError");
+
+    // 非法 language 选项 → RangeError
+    Value* badLang = f.ctx->createObject();
+    f.ctx->defineProperty(badLang, "language", f.ctx->createString("x!"));
+    Value* badLangArgs[2] = {f.ctx->createString("en"), badLang};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badLangArgs)), "RangeError");
+
+    // 非法 unicode 关键字类型 → RangeError
+    Value* badKeyword = f.ctx->createObject();
+    f.ctx->defineProperty(badKeyword, "calendar", f.ctx->createString("x"));
+    Value* badKeywordArgs[2] = {f.ctx->createString("en"), badKeyword};
+    EXPECT_EQ(errorName(f, f.ctx->construct(ctor, 2, badKeywordArgs)),
+              "RangeError");
+
+    // 非 Locale 接收者 → TypeError
+    Value* obj = f.ctx->createObject();
+    Value* proto = f.ctx->getProperty(ctor, "prototype");
+    Value* toStringFn = f.ctx->getProperty(proto, "toString");
+    EXPECT_EQ(errorName(f, f.ctx->call(toStringFn, obj, 0, nullptr)), "TypeError");
+    Value* languageGetter = f.ctx->getProperty(proto, "language");
+    EXPECT_EQ(errorName(f, f.ctx->call(languageGetter, obj, 0, nullptr)),
+              "TypeError");
 }
 
 TEST(IntlTest, ErrorCases) {

@@ -741,6 +741,14 @@ public:
     virtual void setIntlSegmentsPrototype(Value* proto) = 0;
     virtual Value* intlSegmentsPrototype() const = 0;
 
+    // createIntlLocale: 创建 Intl.Locale 实例（ECMA-402 §14）。
+    // localeName 为含 unicode 扩展的完整规范标签；timeZone 为空串表示 undefined。
+    virtual Value* createIntlLocale(std::string_view localeName,
+                                    std::string_view timeZone,
+                                    std::string_view bindName = {}) = 0;
+    virtual void setIntlLocalePrototype(Value* proto) = 0;
+    virtual Value* intlLocalePrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

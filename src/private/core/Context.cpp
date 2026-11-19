@@ -58,6 +58,7 @@
 #include "core/types/IntlDisplayNames.h"
 #include "core/types/IntlSegmenter.h"
 #include "core/types/IntlSegments.h"
+#include "core/types/IntlLocale.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2420,6 +2421,21 @@ Value* Context::createIntlSegments(std::string_view input,
     if (object != oomValue_ && intlSegmentsPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlSegmentsPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlLocale(std::string_view localeName,
+                                 std::string_view timeZone,
+                                 std::string_view bindName) {
+    auto* d = gc_->allocData<IntlLocaleData>();
+    if (d == nullptr) return oomValue_;
+    d->localeName = std::string(localeName);
+    d->timeZone = std::string(timeZone);
+    Value* object = createTracked(getIntlLocaleType(), d, bindName);
+    if (object != oomValue_ && intlLocalePrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlLocalePrototype_;
     }
     return object;
 }

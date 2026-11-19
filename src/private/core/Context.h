@@ -109,6 +109,7 @@ class Context : public IContext {
     Value* intlDisplayNamesPrototype_ = nullptr;
     Value* intlSegmenterPrototype_ = nullptr;
     Value* intlSegmentsPrototype_ = nullptr;
+    Value* intlLocalePrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -216,6 +217,10 @@ public:
     Value* intlSegmentsPrototype() const override {
         return intlSegmentsPrototype_;
     }
+    void setIntlLocalePrototype(Value* proto) override {
+        intlLocalePrototype_ = proto;
+    }
+    Value* intlLocalePrototype() const override { return intlLocalePrototype_; }
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
@@ -453,6 +458,9 @@ public:
                               std::vector<size_t> starts,
                               std::vector<size_t> lengths, Value* records,
                               std::string_view bindName = {}) override;
+    Value* createIntlLocale(std::string_view localeName,
+                            std::string_view timeZone,
+                            std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(

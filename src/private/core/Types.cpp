@@ -31,6 +31,7 @@
 #include "core/types/IntlDisplayNames.h"
 #include "core/types/IntlSegmenter.h"
 #include "core/types/IntlSegments.h"
+#include "core/types/IntlLocale.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
@@ -253,6 +254,11 @@ IType* getIntlSegmentsType() {
     return &inst;
 }
 
+IType* getIntlLocaleType() {
+    static IntlLocaleType inst;
+    return &inst;
+}
+
 IType* getRegExpStringIteratorType() {
     static RegExpStringIteratorType inst;
     return &inst;
@@ -307,6 +313,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IntlDisplayNames: return getIntlDisplayNamesType();
         case TypeKind::IntlSegmenter: return getIntlSegmenterType();
         case TypeKind::IntlSegments: return getIntlSegmentsType();
+        case TypeKind::IntlLocale: return getIntlLocaleType();
     }
     return nullptr;
 }

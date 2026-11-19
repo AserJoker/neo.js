@@ -160,6 +160,8 @@ enum class TypeKind : uint8_t {
     IntlSegmenter,
     // Intl.Segmenter.prototype.segment 返回的 Segments 对象（ECMA-402 §18.4）。
     IntlSegments,
+    // Intl.Locale 实例（ECMA-402 §14）：普通对象 + 规范内部槽的字符串化表示。
+    IntlLocale,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -359,6 +361,7 @@ IType* getIntlListFormatType();
 IType* getIntlDisplayNamesType();
 IType* getIntlSegmenterType();
 IType* getIntlSegmentsType();
+IType* getIntlLocaleType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，
