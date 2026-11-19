@@ -19,6 +19,7 @@
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlPluralRules.h"
 #include "core/types/IntlRelativeTimeFormat.h"
+#include "core/types/IntlListFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -505,6 +506,7 @@ const char* partTypeName(NJS_IntlPartType type) {
         case NJS_INTL_PART_SECOND: return "second";
         case NJS_INTL_PART_DAY_PERIOD: return "dayPeriod";
         case NJS_INTL_PART_TIME_ZONE_NAME: return "timeZoneName";
+        case NJS_INTL_PART_ELEMENT: return "element";
     }
     return "literal";
 }
@@ -1806,6 +1808,207 @@ Value* relativeTimeFormatSupportedLocalesOf(IContext* ctx, Value* /*self*/,
     return supportedLocalesOfImpl(ctx, argc, argv);
 }
 
+// —— Intl.ListFormat ——
+
+struct ListOptions {
+    std::string type = "conjunction";
+    std::string style = "long";
+};
+
+Value* parseListOptions(IContext* ctx, Value* options, ListOptions& out) {
+    static const char* const kTypes[] = {"conjunction", "disjunction", "unit"};
+    if (Value* err = optionString(ctx, options, "type", kTypes, 3, "conjunction",
+                                  out.type)) {
+        return err;
+    }
+    static const char* const kStyles[] = {"long", "short", "narrow"};
+    return optionString(ctx, options, "style", kStyles, 3, "long", out.style);
+}
+
+void buildListBackendOptions(const ListOptions& options,
+                             std::vector<std::pair<std::string, std::string>>& storage,
+                             std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("type", options.type);
+    storage.emplace_back("style", options.style);
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* listFormatConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                           Value* argv[]);
+
+Value* listFormatCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return listFormatConstruct(ctx, self, argc, argv);
+}
+
+Value* listFormatConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                           Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->list_format_create == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support ListFormat");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    ListOptions parsed;
+    if (Value* err = parseListOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildListBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlListFormat* formatter = backend->list_format_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (formatter == nullptr) {
+        return backendStatusError(ctx, status, "Intl.ListFormat options");
+    }
+
+    Value* object = ctx->createIntlListFormat(backend, formatter, resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlListFormatData* d = asIntlListFormat(object);
+    d->locale = resolved.locale;
+    d->type = parsed.type;
+    d->style = parsed.style;
+    return object;
+}
+
+Value* requireListFormat(IContext* ctx, Value* self, IntlListFormatData*& out) {
+    out = asIntlListFormat(self);
+    if (out == nullptr || out->formatter == nullptr || out->backend == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.ListFormat method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+// 把 list 参数按 CreateListFromArrayLike 语义转为字符串数组。
+Value* listFormatItems(IContext* ctx, Value* list, std::vector<std::string>& out) {
+    if (list->type()->kind() == TypeKind::Undefined ||
+        list->type()->kind() == TypeKind::Null) {
+        return detail::typeError(ctx, "Intl.ListFormat list must not be null");
+    }
+    uint32_t length = 0;
+    if (Value* err = detail::lengthOf(ctx, list, length)) return err;
+    out.reserve(length);
+    for (uint32_t i = 0; i < length; ++i) {
+        Value* item = ctx->getProperty(list, ctx->createString(std::to_string(i)));
+        if (detail::isErrorValue(item)) return item;
+        Value* str = detail::toStringValue(ctx, item);
+        if (detail::isErrorValue(str)) return str;
+        out.push_back(static_cast<StringData*>(str->data())->value);
+    }
+    return nullptr;
+}
+
+Value* listFormatParts(IContext* ctx, IntlListFormatData* d,
+                       const std::vector<std::string>& items,
+                       std::vector<NJS_IntlPart>& parts) {
+    const NJS_IntlBackend* backend = d->backend;
+    if (backend->list_format_format == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support formatting");
+    }
+    std::vector<const char*> pointers;
+    pointers.reserve(items.size());
+    for (const std::string& item : items) pointers.push_back(item.c_str());
+
+    size_t count = 0;
+    NJS_IntlStatus status = backend->list_format_format(
+        d->formatter, pointers.data(), pointers.size(), nullptr, &count);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.ListFormat.format");
+    }
+    parts.resize(count);
+    if (count == 0) return nullptr;
+    status = backend->list_format_format(d->formatter, pointers.data(),
+                                         pointers.size(), parts.data(), &count);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.ListFormat.format");
+    }
+    parts.resize(count);
+    return nullptr;
+}
+
+Value* listFormatFormat(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlListFormatData* d = nullptr;
+    if (Value* err = requireListFormat(ctx, self, d)) return err;
+    Value* list = argc > 0 ? argv[0] : ctx->createUndefined();
+    std::vector<std::string> items;
+    if (Value* err = listFormatItems(ctx, list, items)) return err;
+    std::vector<NJS_IntlPart> parts;
+    if (Value* err = listFormatParts(ctx, d, items, parts)) return err;
+    std::string out;
+    for (const NJS_IntlPart& part : parts) {
+        out.append(part.text, part.length);
+    }
+    return ctx->createString(out);
+}
+
+Value* listFormatFormatToParts(IContext* ctx, Value* self, size_t argc,
+                               Value* argv[]) {
+    IntlListFormatData* d = nullptr;
+    if (Value* err = requireListFormat(ctx, self, d)) return err;
+    Value* list = argc > 0 ? argv[0] : ctx->createUndefined();
+    std::vector<std::string> items;
+    if (Value* err = listFormatItems(ctx, list, items)) return err;
+    std::vector<NJS_IntlPart> parts;
+    if (Value* err = listFormatParts(ctx, d, items, parts)) return err;
+
+    Value* array = ctx->createArray();
+    if (detail::isErrorValue(array)) return array;
+    auto* arrayData = static_cast<ArrayData*>(array->data());
+    for (size_t i = 0; i < parts.size(); ++i) {
+        Value* item = ctx->createObject();
+        if (detail::isErrorValue(item)) return item;
+        Value* type = ctx->createString(partTypeName(parts[i].type));
+        Value* text = ctx->createString(std::string(parts[i].text, parts[i].length));
+        if (Value* err = ctx->defineProperty(item, "type", type, true, true, true)) {
+            if (detail::isErrorValue(err)) return err;
+        }
+        if (Value* err = ctx->defineProperty(item, "value", text, true, true, true)) {
+            if (detail::isErrorValue(err)) return err;
+        }
+        arrayData->setElement(static_cast<uint32_t>(i), item);
+    }
+    return array;
+}
+
+Value* listFormatResolvedOptions(IContext* ctx, Value* self, size_t /*argc*/,
+                                 Value* /*argv*/[]) {
+    IntlListFormatData* d = nullptr;
+    if (Value* err = requireListFormat(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("type", ctx->createString(d->type))) return err;
+    if (Value* err = define("style", ctx->createString(d->style))) return err;
+    return result;
+}
+
+Value* listFormatSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                                    Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -2024,6 +2227,41 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.ListFormat ——
+    Value* listProto = ctx->createObject();
+    if (listProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(listProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlListFormatPrototype(listProto);
+    if (!defineMethod(ctx, listProto, "format", listFormatFormat, 0)) return false;
+    if (!defineMethod(ctx, listProto, "formatToParts", listFormatFormatToParts, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, listProto, "resolvedOptions", listFormatResolvedOptions,
+                      0)) {
+        return false;
+    }
+    if (!defineTag(ctx, listProto, "Intl.ListFormat")) return false;
+
+    Value* listCtor = ctx->createNativeFunction(listFormatCall, 0);
+    if (listCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(listCtor, "ListFormat");
+    ctx->setFunctionConstructor(listCtor, listFormatConstruct);
+    if (ctx->defineProperty(listCtor, "prototype", listProto, false, false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(listProto, "constructor", listCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, listCtor, "supportedLocalesOf",
+                      listFormatSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -2046,6 +2284,10 @@ bool registerIntlBuiltins(IContext* ctx) {
     }
     if (ctx->defineProperty(intl, "RelativeTimeFormat", relativeCtor, true, false,
                             true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "ListFormat", listCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

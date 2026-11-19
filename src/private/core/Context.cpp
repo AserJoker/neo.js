@@ -54,6 +54,7 @@
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlPluralRules.h"
 #include "core/types/IntlRelativeTimeFormat.h"
+#include "core/types/IntlListFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2329,6 +2330,29 @@ Value* Context::createIntlRelativeTimeFormat(
     if (object != oomValue_ && intlRelativeTimeFormatPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlRelativeTimeFormatPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlListFormat(const NJS_IntlBackend* backend,
+                                     NJS_IntlListFormat* formatter,
+                                     std::string_view locale,
+                                     std::string_view bindName) {
+    auto* d = gc_->allocData<IntlListFormatData>();
+    if (d == nullptr) {
+        if (formatter != nullptr && backend != nullptr &&
+            backend->list_format_destroy != nullptr) {
+            backend->list_format_destroy(formatter);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->formatter = formatter;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlListFormatType(), d, bindName);
+    if (object != oomValue_ && intlListFormatPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlListFormatPrototype_;
     }
     return object;
 }

@@ -27,6 +27,7 @@
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlPluralRules.h"
 #include "core/types/IntlRelativeTimeFormat.h"
+#include "core/types/IntlListFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
@@ -229,6 +230,11 @@ IType* getIntlRelativeTimeFormatType() {
     return &inst;
 }
 
+IType* getIntlListFormatType() {
+    static IntlListFormatType inst;
+    return &inst;
+}
+
 IType* getRegExpStringIteratorType() {
     static RegExpStringIteratorType inst;
     return &inst;
@@ -279,6 +285,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IntlPluralRules: return getIntlPluralRulesType();
         case TypeKind::IntlRelativeTimeFormat:
             return getIntlRelativeTimeFormatType();
+        case TypeKind::IntlListFormat: return getIntlListFormatType();
     }
     return nullptr;
 }

@@ -708,6 +708,14 @@ public:
     virtual void setIntlRelativeTimeFormatPrototype(Value* proto) = 0;
     virtual Value* intlRelativeTimeFormatPrototype() const = 0;
 
+    // createIntlListFormat: 创建 Intl.ListFormat 实例（ECMA-402 §13）。
+    virtual Value* createIntlListFormat(const NJS_IntlBackend* backend,
+                                        NJS_IntlListFormat* formatter,
+                                        std::string_view locale,
+                                        std::string_view bindName = {}) = 0;
+    virtual void setIntlListFormatPrototype(Value* proto) = 0;
+    virtual Value* intlListFormatPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 5u
+#define NJS_INTL_ABI_VERSION 6u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -88,7 +88,8 @@ typedef enum {
     NJS_INTL_PART_MINUTE = 14,
     NJS_INTL_PART_SECOND = 15,
     NJS_INTL_PART_DAY_PERIOD = 16,
-    NJS_INTL_PART_TIME_ZONE_NAME = 17
+    NJS_INTL_PART_TIME_ZONE_NAME = 17,
+    NJS_INTL_PART_ELEMENT = 18
 } NJS_IntlPartType;
 
 typedef struct {
@@ -114,6 +115,7 @@ typedef struct NJS_IntlFormatter NJS_IntlFormatter;
 typedef struct NJS_IntlCollator NJS_IntlCollator;
 typedef struct NJS_IntlPluralRules NJS_IntlPluralRules;
 typedef struct NJS_IntlRelativeTimeFormat NJS_IntlRelativeTimeFormat;
+typedef struct NJS_IntlListFormat NJS_IntlListFormat;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
 
 struct NJS_IntlBackend {
@@ -192,6 +194,19 @@ struct NJS_IntlBackend {
         NJS_IntlRelativeTimeFormat* formatter, double value, const char* unit,
         NJS_IntlPart* parts, size_t* count);
     void (*relative_time_format_destroy)(NJS_IntlRelativeTimeFormat* formatter);
+
+    // —— ABI v6 追加 ——
+    // 创建/销毁列表格式化器。items 为 UTF-8 字符串数组，输出 parts 的
+    // element 类型承载各元素文本。
+    NJS_IntlListFormat* (*list_format_create)(void* user_data, const char* locale,
+                                              const NJS_IntlOption* opts,
+                                              size_t nopts,
+                                              NJS_IntlResolved* resolved,
+                                              NJS_IntlStatus* status);
+    NJS_IntlStatus (*list_format_format)(NJS_IntlListFormat* formatter,
+                                         const char* const* items, size_t count,
+                                         NJS_IntlPart* parts, size_t* out_count);
+    void (*list_format_destroy)(NJS_IntlListFormat* formatter);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

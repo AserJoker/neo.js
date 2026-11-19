@@ -221,6 +221,13 @@ struct NJS_IntlRelativeTimeFormat {
     std::vector<Part> last_parts;
 };
 
+struct NJS_IntlListFormat {
+    std::string locale;
+    std::string type = "conjunction";
+    std::string style = "long";
+    std::vector<Part> last_parts;
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -1386,6 +1393,107 @@ void relativeTimeFormatDestroy(NJS_IntlRelativeTimeFormat* formatter) {
     delete formatter;
 }
 
+// —— ListFormat ——
+
+NJS_IntlListFormat* listFormatCreate(void* /*ud*/, const char* locale,
+                                     const NJS_IntlOption* opts, size_t nopts,
+                                     NJS_IntlResolved* resolved,
+                                     NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlListFormat* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* f = new (std::nothrow) NJS_IntlListFormat();
+    if (f == nullptr) return fail(NJS_INTL_INTERNAL);
+    f->locale = locale;
+
+    const char* type = findOption(opts, nopts, "type");
+    if (type != nullptr) {
+        if (!equals(type, "conjunction") && !equals(type, "disjunction") &&
+            !equals(type, "unit")) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        f->type = type;
+    }
+    const char* style = findOption(opts, nopts, "style");
+    if (style != nullptr) {
+        if (!equals(style, "long") && !equals(style, "short") &&
+            !equals(style, "narrow")) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        f->style = style;
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, f->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  "latn");
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return f;
+}
+
+NJS_IntlStatus listFormatFormat(NJS_IntlListFormat* f, const char* const* items,
+                                size_t count, NJS_IntlPart* parts,
+                                size_t* out_count) {
+    if (f == nullptr || out_count == nullptr) return NJS_INTL_INTERNAL;
+    if (count > 0 && items == nullptr) return NJS_INTL_INTERNAL;
+
+    f->last_parts.clear();
+    if (count == 0) {
+        *out_count = 0;
+        return NJS_INTL_OK;
+    }
+
+    const bool disjunction = f->type == "disjunction";
+    const bool unitType = f->type == "unit";
+    const char* conjunction = disjunction ? " or " : " and ";
+    const char* pairSeparator = unitType ? ", " : conjunction;
+    const bool oxford = count > 2 && !unitType;
+
+    for (size_t i = 0; i < count; ++i) {
+        if (i > 0) {
+            if (i + 1 == count) {
+                f->last_parts.push_back(
+                    Part{NJS_INTL_PART_LITERAL, oxford ? ", " : pairSeparator});
+                if (oxford) {
+                    f->last_parts.push_back(
+                        Part{NJS_INTL_PART_LITERAL, disjunction ? "or " : "and "});
+                }
+            } else {
+                f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, ", "});
+            }
+        }
+        f->last_parts.push_back(
+            Part{NJS_INTL_PART_ELEMENT, items[i] != nullptr ? items[i] : ""});
+    }
+
+    const size_t needed = f->last_parts.size();
+    if (parts == nullptr || *out_count < needed) {
+        *out_count = needed;
+        return NJS_INTL_OK;
+    }
+    for (size_t i = 0; i < needed; ++i) {
+        parts[i].type = f->last_parts[i].type;
+        parts[i].text = f->last_parts[i].text.c_str();
+        parts[i].length = f->last_parts[i].text.size();
+    }
+    *out_count = needed;
+    return NJS_INTL_OK;
+}
+
+void listFormatDestroy(NJS_IntlListFormat* formatter) { delete formatter; }
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1394,7 +1502,7 @@ const NJS_IntlBackend kMinimalBackend = {
     NJS_INTL_ABI_VERSION,
     sizeof(NJS_IntlBackend),
     NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
-        NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_RELATIVE |
+        NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_RELATIVE | NJS_INTL_CAP_LIST |
         NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
@@ -1416,6 +1524,9 @@ const NJS_IntlBackend kMinimalBackend = {
     relativeTimeFormatCreate,
     relativeTimeFormatFormat,
     relativeTimeFormatDestroy,
+    listFormatCreate,
+    listFormatFormat,
+    listFormatDestroy,
 };
 
 }  // namespace

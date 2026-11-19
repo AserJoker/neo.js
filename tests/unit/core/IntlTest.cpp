@@ -22,6 +22,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <string>
 
@@ -75,6 +76,11 @@ struct Fixture {
 
     Value* relativeTimeFormat(size_t argc = 0, Value* argv[] = nullptr) {
         Value* ctor = ctx->getProperty(intl(), "RelativeTimeFormat");
+        return ctx->construct(ctor, argc, argv);
+    }
+
+    Value* listFormat(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "ListFormat");
         return ctx->construct(ctor, argc, argv);
     }
 
@@ -198,6 +204,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -631,6 +640,81 @@ TEST(IntlTest, RelativeTimeFormatPartsAndErrors) {
 
     Value* obj = f.ctx->createObject();
     EXPECT_TRUE(isError(f.call1(obj, "format", f.ctx->createNumber(1))));
+}
+
+TEST(IntlTest, ListFormatBasics) {
+    Fixture f;
+    Value* lf = f.listFormat();
+    ASSERT_FALSE(isError(lf));
+
+    auto makeList = [&](std::initializer_list<const char*> items) {
+        Value* array = f.ctx->createArray();
+        auto* data = static_cast<ArrayData*>(array->data());
+        uint32_t i = 0;
+        for (const char* item : items) {
+            data->setElement(i++, f.ctx->createString(item));
+        }
+        return array;
+    };
+    auto format = [&](Value* formatter, Value* list) {
+        return strOf(f.call1(formatter, "format", list));
+    };
+
+    EXPECT_EQ(format(lf, makeList({"A", "B", "C"})), "A, B, and C");
+    EXPECT_EQ(format(lf, makeList({"A", "B"})), "A and B");
+    EXPECT_EQ(format(lf, makeList({"A"})), "A");
+    EXPECT_EQ(format(lf, makeList({})), "");
+
+    Value* disjOpts = f.ctx->createObject();
+    f.ctx->defineProperty(disjOpts, "type", f.ctx->createString("disjunction"));
+    Value* disjArgs[2] = {f.ctx->createUndefined(), disjOpts};
+    Value* disj = f.listFormat(2, disjArgs);
+    ASSERT_FALSE(isError(disj));
+    EXPECT_EQ(format(disj, makeList({"A", "B", "C"})), "A, B, or C");
+
+    Value* unitOpts = f.ctx->createObject();
+    f.ctx->defineProperty(unitOpts, "type", f.ctx->createString("unit"));
+    Value* unitArgs[2] = {f.ctx->createUndefined(), unitOpts};
+    Value* unit = f.listFormat(2, unitArgs);
+    ASSERT_FALSE(isError(unit));
+    EXPECT_EQ(format(unit, makeList({"A", "B", "C"})), "A, B, C");
+
+    Value* resolved = f.call(lf, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "type")), "conjunction");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "style")), "long");
+}
+
+TEST(IntlTest, ListFormatPartsAndErrors) {
+    Fixture f;
+    Value* lf = f.listFormat();
+    ASSERT_FALSE(isError(lf));
+
+    Value* array = f.ctx->createArray();
+    auto* data = static_cast<ArrayData*>(array->data());
+    data->setElement(0, f.ctx->createString("A"));
+    data->setElement(1, f.ctx->createString("B"));
+
+    Value* parts = f.call1(lf, "formatToParts", array);
+    ASSERT_FALSE(isError(parts));
+    EXPECT_EQ(numOf(f.ctx->getProperty(parts, "length")), 3.0);
+    Value* first = f.ctx->getProperty(parts, "0");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "type")), "element");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "value")), "A");
+    Value* sep = f.ctx->getProperty(parts, "1");
+    EXPECT_EQ(strOf(f.ctx->getProperty(sep, "type")), "literal");
+    EXPECT_EQ(strOf(f.ctx->getProperty(sep, "value")), " and ");
+
+    Value* nullList[1] = {f.ctx->createNull()};
+    EXPECT_TRUE(isError(f.call(lf, "format", 1, nullList)));
+
+    Value* badTypeOpts = f.ctx->createObject();
+    f.ctx->defineProperty(badTypeOpts, "type", f.ctx->createString("bogus"));
+    Value* badTypeArgs[2] = {f.ctx->createUndefined(), badTypeOpts};
+    EXPECT_TRUE(isError(f.listFormat(2, badTypeArgs)));
+
+    Value* obj = f.ctx->createObject();
+    EXPECT_TRUE(isError(f.call1(obj, "format", array)));
 }
 
 TEST(IntlTest, ErrorCases) {
