@@ -12,5 +12,6 @@ add_subdirectory(unicode)
 add_subdirectory(regex)
 add_subdirectory(vm)
 add_subdirectory(compiler)
+add_subdirectory(worker)
 # 以下模块 M1 起填充：
 # add_subdirectory(gc)

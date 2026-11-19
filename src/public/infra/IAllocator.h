@@ -56,6 +56,12 @@ std::unique_ptr<IAllocator> createMallocAllocator();
 // 超限 alloc 返回 nullptr，用于受控执行环境拦截无限分配 bug。
 std::unique_ptr<IAllocator> createMallocAllocatorWithLimit(size_t bytes);
 
+// 工厂：创建子分配器——向 parent 借内存，但独立记账与限额。
+// 用于 Worker 等子执行环境：每份配额独立，同时 parent->used() 汇总全部子分配器
+// 的占用（统一统计）。parent 必须比子分配器活得久；parent 自身超限时 alloc 失败。
+std::unique_ptr<IAllocator> createQuotaAllocator(IAllocator* parent,
+                                                 size_t limit = SIZE_MAX);
+
 }  // namespace neo::infra
 
 #endif  // NEO_INFRA_IALLOCATOR_H
