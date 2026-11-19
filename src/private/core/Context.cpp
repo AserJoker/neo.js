@@ -53,6 +53,7 @@
 #include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlPluralRules.h"
+#include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2306,6 +2307,28 @@ Value* Context::createIntlPluralRules(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlPluralRulesPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlPluralRulesPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlRelativeTimeFormat(
+    const NJS_IntlBackend* backend, NJS_IntlRelativeTimeFormat* formatter,
+    std::string_view locale, std::string_view bindName) {
+    auto* d = gc_->allocData<IntlRelativeTimeFormatData>();
+    if (d == nullptr) {
+        if (formatter != nullptr && backend != nullptr &&
+            backend->relative_time_format_destroy != nullptr) {
+            backend->relative_time_format_destroy(formatter);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->formatter = formatter;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlRelativeTimeFormatType(), d, bindName);
+    if (object != oomValue_ && intlRelativeTimeFormatPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlRelativeTimeFormatPrototype_;
     }
     return object;
 }

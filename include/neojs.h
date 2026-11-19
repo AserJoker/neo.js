@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 4u
+#define NJS_INTL_ABI_VERSION 5u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -113,6 +113,7 @@ typedef struct {
 typedef struct NJS_IntlFormatter NJS_IntlFormatter;
 typedef struct NJS_IntlCollator NJS_IntlCollator;
 typedef struct NJS_IntlPluralRules NJS_IntlPluralRules;
+typedef struct NJS_IntlRelativeTimeFormat NJS_IntlRelativeTimeFormat;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
 
 struct NJS_IntlBackend {
@@ -180,6 +181,17 @@ struct NJS_IntlBackend {
                                                 NJS_IntlStatus* status);
     const char* (*plural_rules_select)(NJS_IntlPluralRules* rules, double value);
     void (*plural_rules_destroy)(NJS_IntlPluralRules* rules);
+
+    // —— ABI v5 追加 ——
+    // 创建/销毁相对时间格式化器。unit 为单数形式（year/quarter/month/week/
+    // day/hour/minute/second）；value 为带符号数值。
+    NJS_IntlRelativeTimeFormat* (*relative_time_format_create)(
+        void* user_data, const char* locale, const NJS_IntlOption* opts,
+        size_t nopts, NJS_IntlResolved* resolved, NJS_IntlStatus* status);
+    NJS_IntlStatus (*relative_time_format_format)(
+        NJS_IntlRelativeTimeFormat* formatter, double value, const char* unit,
+        NJS_IntlPart* parts, size_t* count);
+    void (*relative_time_format_destroy)(NJS_IntlRelativeTimeFormat* formatter);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

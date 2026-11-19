@@ -18,6 +18,7 @@
 #include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlPluralRules.h"
+#include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -1576,6 +1577,235 @@ Value* pluralRulesSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc
     return supportedLocalesOfImpl(ctx, argc, argv);
 }
 
+// —— Intl.RelativeTimeFormat ——
+
+struct RelativeTimeOptions {
+    std::string style = "long";
+    std::string numeric = "always";
+    std::string numberingSystem = "latn";
+};
+
+Value* parseRelativeTimeOptions(IContext* ctx, Value* options,
+                                RelativeTimeOptions& out) {
+    static const char* const kStyles[] = {"long", "short", "narrow"};
+    if (Value* err = optionString(ctx, options, "style", kStyles, 3, "long",
+                                  out.style)) {
+        return err;
+    }
+    static const char* const kNumeric[] = {"always", "auto"};
+    if (Value* err = optionString(ctx, options, "numeric", kNumeric, 2, "always",
+                                  out.numeric)) {
+        return err;
+    }
+    return optionFreeString(ctx, options, "numberingSystem", "latn",
+                            out.numberingSystem);
+}
+
+void buildRelativeTimeBackendOptions(
+    const RelativeTimeOptions& options,
+    std::vector<std::pair<std::string, std::string>>& storage,
+    std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("style", options.style);
+    storage.emplace_back("numeric", options.numeric);
+    storage.emplace_back("numberingSystem", options.numberingSystem);
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* relativeTimeFormatConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                                   Value* argv[]);
+
+Value* relativeTimeFormatCall(IContext* ctx, Value* self, size_t argc,
+                              Value* argv[]) {
+    return relativeTimeFormatConstruct(ctx, self, argc, argv);
+}
+
+Value* relativeTimeFormatConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                                   Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->relative_time_format_create == nullptr) {
+        return detail::typeError(
+            ctx, "Intl backend does not support RelativeTimeFormat");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    RelativeTimeOptions parsed;
+    if (Value* err = parseRelativeTimeOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildRelativeTimeBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlRelativeTimeFormat* formatter = backend->relative_time_format_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (formatter == nullptr) {
+        return backendStatusError(ctx, status, "Intl.RelativeTimeFormat options");
+    }
+
+    Value* object = ctx->createIntlRelativeTimeFormat(backend, formatter,
+                                                      resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlRelativeTimeFormatData* d = asIntlRelativeTimeFormat(object);
+    d->locale = resolved.locale;
+    d->style = parsed.style;
+    d->numeric = parsed.numeric;
+    d->numberingSystem = parsed.numberingSystem;
+    return object;
+}
+
+Value* requireRelativeTimeFormat(IContext* ctx, Value* self,
+                                 IntlRelativeTimeFormatData*& out) {
+    out = asIntlRelativeTimeFormat(self);
+    if (out == nullptr || out->formatter == nullptr || out->backend == nullptr) {
+        return detail::typeError(ctx,
+                                 "Intl.RelativeTimeFormat method called on "
+                                 "incompatible receiver");
+    }
+    return nullptr;
+}
+
+bool isRelativeTimeUnit(const std::string& unit) {
+    static const char* const kUnits[] = {"year",  "quarter", "month", "week",
+                                         "day",   "hour",    "minute", "second"};
+    for (const char* candidate : kUnits) {
+        if (unit == candidate) return true;
+    }
+    return false;
+}
+
+Value* relativeTimeFormatParts(IContext* ctx, IntlRelativeTimeFormatData* d,
+                               double value, const std::string& unit,
+                               std::vector<NJS_IntlPart>& parts) {
+    const NJS_IntlBackend* backend = d->backend;
+    if (backend->relative_time_format_format == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support formatting");
+    }
+    size_t count = 0;
+    NJS_IntlStatus status = backend->relative_time_format_format(
+        d->formatter, value, unit.c_str(), nullptr, &count);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.RelativeTimeFormat.format");
+    }
+    parts.resize(count);
+    if (count == 0) return nullptr;
+    status = backend->relative_time_format_format(d->formatter, value, unit.c_str(),
+                                                  parts.data(), &count);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.RelativeTimeFormat.format");
+    }
+    parts.resize(count);
+    return nullptr;
+}
+
+// 解析 format(value, unit) 的公共参数。
+Value* relativeTimeFormatArgs(IContext* ctx, Value* self, size_t argc,
+                              Value* argv[], IntlRelativeTimeFormatData*& d,
+                              double& value, std::string& unit) {
+    if (Value* err = requireRelativeTimeFormat(ctx, self, d)) return err;
+    Value* valueArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* number = detail::toNumberValue(ctx, valueArg);
+    if (detail::isErrorValue(number)) return number;
+    value = static_cast<NumberData*>(number->data())->value;
+
+    Value* unitArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* unitStr = detail::toStringValue(ctx, unitArg);
+    if (detail::isErrorValue(unitStr)) return unitStr;
+    unit = static_cast<StringData*>(unitStr->data())->value;
+    if (!isRelativeTimeUnit(unit)) {
+        return detail::rangeError(ctx, std::string("Invalid unit: ") + unit);
+    }
+    return nullptr;
+}
+
+Value* relativeTimeFormatFormat(IContext* ctx, Value* self, size_t argc,
+                                Value* argv[]) {
+    IntlRelativeTimeFormatData* d = nullptr;
+    double value = 0;
+    std::string unit;
+    if (Value* err = relativeTimeFormatArgs(ctx, self, argc, argv, d, value, unit)) {
+        return err;
+    }
+    std::vector<NJS_IntlPart> parts;
+    if (Value* err = relativeTimeFormatParts(ctx, d, value, unit, parts)) return err;
+    std::string out;
+    for (const NJS_IntlPart& part : parts) {
+        out.append(part.text, part.length);
+    }
+    return ctx->createString(out);
+}
+
+Value* relativeTimeFormatFormatToParts(IContext* ctx, Value* self, size_t argc,
+                                       Value* argv[]) {
+    IntlRelativeTimeFormatData* d = nullptr;
+    double value = 0;
+    std::string unit;
+    if (Value* err = relativeTimeFormatArgs(ctx, self, argc, argv, d, value, unit)) {
+        return err;
+    }
+    std::vector<NJS_IntlPart> parts;
+    if (Value* err = relativeTimeFormatParts(ctx, d, value, unit, parts)) return err;
+
+    Value* array = ctx->createArray();
+    if (detail::isErrorValue(array)) return array;
+    auto* arrayData = static_cast<ArrayData*>(array->data());
+    for (size_t i = 0; i < parts.size(); ++i) {
+        Value* item = ctx->createObject();
+        if (detail::isErrorValue(item)) return item;
+        Value* type = ctx->createString(partTypeName(parts[i].type));
+        Value* text = ctx->createString(std::string(parts[i].text, parts[i].length));
+        if (Value* err = ctx->defineProperty(item, "type", type, true, true, true)) {
+            if (detail::isErrorValue(err)) return err;
+        }
+        if (Value* err = ctx->defineProperty(item, "value", text, true, true, true)) {
+            if (detail::isErrorValue(err)) return err;
+        }
+        arrayData->setElement(static_cast<uint32_t>(i), item);
+    }
+    return array;
+}
+
+Value* relativeTimeFormatResolvedOptions(IContext* ctx, Value* self,
+                                         size_t /*argc*/, Value* /*argv*/[]) {
+    IntlRelativeTimeFormatData* d = nullptr;
+    if (Value* err = requireRelativeTimeFormat(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("style", ctx->createString(d->style))) return err;
+    if (Value* err = define("numeric", ctx->createString(d->numeric))) return err;
+    if (Value* err = define("numberingSystem",
+                            ctx->createString(d->numberingSystem))) {
+        return err;
+    }
+    return result;
+}
+
+Value* relativeTimeFormatSupportedLocalesOf(IContext* ctx, Value* /*self*/,
+                                            size_t argc, Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -1754,6 +1984,46 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.RelativeTimeFormat ——
+    Value* relativeProto = ctx->createObject();
+    if (relativeProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(relativeProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlRelativeTimeFormatPrototype(relativeProto);
+    if (!defineMethod(ctx, relativeProto, "format", relativeTimeFormatFormat, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, relativeProto, "formatToParts",
+                      relativeTimeFormatFormatToParts, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, relativeProto, "resolvedOptions",
+                      relativeTimeFormatResolvedOptions, 0)) {
+        return false;
+    }
+    if (!defineTag(ctx, relativeProto, "Intl.RelativeTimeFormat")) return false;
+
+    Value* relativeCtor = ctx->createNativeFunction(relativeTimeFormatCall, 0);
+    if (relativeCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(relativeCtor, "RelativeTimeFormat");
+    ctx->setFunctionConstructor(relativeCtor, relativeTimeFormatConstruct);
+    if (ctx->defineProperty(relativeCtor, "prototype", relativeProto, false, false,
+                            false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(relativeProto, "constructor", relativeCtor, true, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, relativeCtor, "supportedLocalesOf",
+                      relativeTimeFormatSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -1771,6 +2041,11 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "PluralRules", pluralCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "RelativeTimeFormat", relativeCtor, true, false,
+                            true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

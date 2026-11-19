@@ -104,6 +104,7 @@ class Context : public IContext {
     Value* intlDateTimeFormatPrototype_ = nullptr;
     Value* intlCollatorPrototype_ = nullptr;
     Value* intlPluralRulesPrototype_ = nullptr;
+    Value* intlRelativeTimeFormatPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -180,6 +181,12 @@ public:
     }
     Value* intlPluralRulesPrototype() const override {
         return intlPluralRulesPrototype_;
+    }
+    void setIntlRelativeTimeFormatPrototype(Value* proto) override {
+        intlRelativeTimeFormatPrototype_ = proto;
+    }
+    Value* intlRelativeTimeFormatPrototype() const override {
+        return intlRelativeTimeFormatPrototype_;
     }
 
     Scope* global() const override { return global_; }
@@ -399,6 +406,9 @@ public:
                                  NJS_IntlPluralRules* rules,
                                  std::string_view locale,
                                  std::string_view bindName = {}) override;
+    Value* createIntlRelativeTimeFormat(
+        const NJS_IntlBackend* backend, NJS_IntlRelativeTimeFormat* formatter,
+        std::string_view locale, std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(

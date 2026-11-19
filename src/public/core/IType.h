@@ -150,6 +150,8 @@ enum class TypeKind : uint8_t {
     IntlCollator,
     // Intl.PluralRules 实例（ECMA-402 §15）：普通对象 + 宿主后端复数规则句柄。
     IntlPluralRules,
+    // Intl.RelativeTimeFormat 实例（ECMA-402 §16）：普通对象 + 宿主后端格式化器句柄。
+    IntlRelativeTimeFormat,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -344,6 +346,7 @@ IType* getIntlNumberFormatType();
 IType* getIntlDateTimeFormatType();
 IType* getIntlCollatorType();
 IType* getIntlPluralRulesType();
+IType* getIntlRelativeTimeFormatType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

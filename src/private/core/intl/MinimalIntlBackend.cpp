@@ -213,6 +213,14 @@ struct NJS_IntlPluralRules {
     int max_sig = -1;
 };
 
+struct NJS_IntlRelativeTimeFormat {
+    std::string locale;
+    std::string style = "long";
+    std::string numeric = "always";
+    std::string numbering_system = "latn";
+    std::vector<Part> last_parts;
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -1220,6 +1228,164 @@ const char* pluralRulesSelect(NJS_IntlPluralRules* r, double value) {
 
 void pluralRulesDestroy(NJS_IntlPluralRules* rules) { delete rules; }
 
+// —— RelativeTimeFormat ——
+
+namespace {
+
+bool isRelativeUnit(const char* unit) {
+    static const char* const kUnits[] = {"year",  "quarter", "month", "week",
+                                         "day",   "hour",    "minute", "second"};
+    for (const char* candidate : kUnits) {
+        if (equals(unit, candidate)) return true;
+    }
+    return false;
+}
+
+const char* pluralUnit(const char* unit) {
+    if (equals(unit, "year")) return "years";
+    if (equals(unit, "quarter")) return "quarters";
+    if (equals(unit, "month")) return "months";
+    if (equals(unit, "week")) return "weeks";
+    if (equals(unit, "day")) return "days";
+    if (equals(unit, "hour")) return "hours";
+    if (equals(unit, "minute")) return "minutes";
+    return "seconds";
+}
+
+// 返回 numeric=auto 且 value ∈ {-1,0,1} 时的英文短语，否则 nullptr。
+const char* autoPhrase(const char* unit, double value) {
+    if (!(value == -1.0 || value == 0.0 || value == 1.0)) return nullptr;
+    if (equals(unit, "day")) {
+        return value < 0 ? "yesterday" : (value == 0 ? "today" : "tomorrow");
+    }
+    if (equals(unit, "hour") || equals(unit, "minute") || equals(unit, "second")) {
+        return nullptr;
+    }
+    const char* prefix = value < 0 ? "last " : (value == 0 ? "this " : "next ");
+    static thread_local std::string phrase;
+    phrase.assign(prefix);
+    phrase.append(unit);
+    return phrase.c_str();
+}
+
+}  // namespace
+
+NJS_IntlRelativeTimeFormat* relativeTimeFormatCreate(
+    void* /*ud*/, const char* locale, const NJS_IntlOption* opts, size_t nopts,
+    NJS_IntlResolved* resolved, NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlRelativeTimeFormat* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* f = new (std::nothrow) NJS_IntlRelativeTimeFormat();
+    if (f == nullptr) return fail(NJS_INTL_INTERNAL);
+    f->locale = locale;
+
+    const char* style = findOption(opts, nopts, "style");
+    if (style != nullptr) {
+        if (!equals(style, "long") && !equals(style, "short") &&
+            !equals(style, "narrow")) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        f->style = style;
+    }
+    const char* numeric = findOption(opts, nopts, "numeric");
+    if (numeric != nullptr) {
+        if (!equals(numeric, "always") && !equals(numeric, "auto")) {
+            delete f;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        f->numeric = numeric;
+    }
+    const char* numbering = findOption(opts, nopts, "numberingSystem");
+    if (numbering != nullptr) {
+        if (!equals(numbering, "latn")) {
+            delete f;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+        f->numbering_system = numbering;
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, f->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  f->numbering_system.c_str());
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return f;
+}
+
+NJS_IntlStatus relativeTimeFormatFormat(NJS_IntlRelativeTimeFormat* f,
+                                        double value, const char* unit,
+                                        NJS_IntlPart* parts, size_t* count) {
+    if (f == nullptr || unit == nullptr || count == nullptr) {
+        return NJS_INTL_INTERNAL;
+    }
+    if (!isRelativeUnit(unit)) return NJS_INTL_INVALID_OPTION;
+    if (std::isnan(value) || std::isinf(value)) return NJS_INTL_INVALID_VALUE;
+
+    f->last_parts.clear();
+    const char* phrase = f->numeric == "auto" ? autoPhrase(unit, value) : nullptr;
+    if (phrase != nullptr) {
+        f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, phrase});
+    } else {
+        const double abs = std::fabs(value);
+        char buffer[kBufferSize];
+        auto result = std::to_chars(buffer, buffer + sizeof buffer, abs,
+                                    std::chars_format::fixed, 3);
+        std::string number;
+        if (result.ec == std::errc()) {
+            number.assign(buffer, result.ptr);
+            const size_t dot = number.find('.');
+            if (dot != std::string::npos) {
+                while (!number.empty() && number.back() == '0') number.pop_back();
+                if (!number.empty() && number.back() == '.') number.pop_back();
+            }
+        } else {
+            number = "0";
+        }
+        const bool singular = number == "1";
+        const char* unitText = singular ? unit : pluralUnit(unit);
+        if (value < 0) {
+            f->last_parts.push_back(Part{NJS_INTL_PART_INTEGER, number});
+            f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+            f->last_parts.push_back(Part{NJS_INTL_PART_UNIT, unitText});
+            f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, " ago"});
+        } else {
+            f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, "in "});
+            f->last_parts.push_back(Part{NJS_INTL_PART_INTEGER, number});
+            f->last_parts.push_back(Part{NJS_INTL_PART_LITERAL, " "});
+            f->last_parts.push_back(Part{NJS_INTL_PART_UNIT, unitText});
+        }
+    }
+
+    const size_t needed = f->last_parts.size();
+    if (parts == nullptr || *count < needed) {
+        *count = needed;
+        return NJS_INTL_OK;
+    }
+    for (size_t i = 0; i < needed; ++i) {
+        parts[i].type = f->last_parts[i].type;
+        parts[i].text = f->last_parts[i].text.c_str();
+        parts[i].length = f->last_parts[i].text.size();
+    }
+    *count = needed;
+    return NJS_INTL_OK;
+}
+
+void relativeTimeFormatDestroy(NJS_IntlRelativeTimeFormat* formatter) {
+    delete formatter;
+}
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1228,7 +1394,8 @@ const NJS_IntlBackend kMinimalBackend = {
     NJS_INTL_ABI_VERSION,
     sizeof(NJS_IntlBackend),
     NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
-        NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_FORMAT_TO_PARTS,
+        NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_RELATIVE |
+        NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -1246,6 +1413,9 @@ const NJS_IntlBackend kMinimalBackend = {
     pluralRulesCreate,
     pluralRulesSelect,
     pluralRulesDestroy,
+    relativeTimeFormatCreate,
+    relativeTimeFormatFormat,
+    relativeTimeFormatDestroy,
 };
 
 }  // namespace

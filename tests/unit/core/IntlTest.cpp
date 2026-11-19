@@ -73,6 +73,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* relativeTimeFormat(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "RelativeTimeFormat");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -193,6 +198,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -562,6 +570,67 @@ TEST(IntlTest, PluralRulesCardinalAndOrdinal) {
     EXPECT_EQ(strOf(f.ctx->getProperty(categories, "1")), "other");
 
     EXPECT_TRUE(isError(f.call(cardinal, "selectRange")));
+}
+
+TEST(IntlTest, RelativeTimeFormatBasics) {
+    Fixture f;
+    Value* rtf = f.relativeTimeFormat();
+    ASSERT_FALSE(isError(rtf));
+
+    auto format = [&](Value* formatter, double value, const char* unit) {
+        Value* args[2] = {f.ctx->createNumber(value), f.ctx->createString(unit)};
+        return strOf(f.call(formatter, "format", 2, args));
+    };
+
+    EXPECT_EQ(format(rtf, 1.0, "day"), "in 1 day");
+    EXPECT_EQ(format(rtf, 3.0, "day"), "in 3 days");
+    EXPECT_EQ(format(rtf, -2.0, "hour"), "2 hours ago");
+    EXPECT_EQ(format(rtf, 0.0, "minute"), "in 0 minutes");
+
+    Value* resolved = f.call(rtf, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "style")), "long");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "numeric")), "always");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "numberingSystem")), "latn");
+
+    Value* autoOpts = f.ctx->createObject();
+    f.ctx->defineProperty(autoOpts, "numeric", f.ctx->createString("auto"));
+    Value* autoArgs[2] = {f.ctx->createUndefined(), autoOpts};
+    Value* autoRtf = f.relativeTimeFormat(2, autoArgs);
+    ASSERT_FALSE(isError(autoRtf));
+    EXPECT_EQ(format(autoRtf, -1.0, "day"), "yesterday");
+    EXPECT_EQ(format(autoRtf, 0.0, "day"), "today");
+    EXPECT_EQ(format(autoRtf, 1.0, "day"), "tomorrow");
+    EXPECT_EQ(format(autoRtf, -1.0, "week"), "last week");
+    EXPECT_EQ(format(autoRtf, 2.0, "week"), "in 2 weeks");
+}
+
+TEST(IntlTest, RelativeTimeFormatPartsAndErrors) {
+    Fixture f;
+    Value* rtf = f.relativeTimeFormat();
+    ASSERT_FALSE(isError(rtf));
+
+    Value* args[2] = {f.ctx->createNumber(-2.0), f.ctx->createString("hour")};
+    Value* parts = f.call(rtf, "formatToParts", 2, args);
+    ASSERT_FALSE(isError(parts));
+    EXPECT_EQ(numOf(f.ctx->getProperty(parts, "length")), 4.0);
+    Value* first = f.ctx->getProperty(parts, "0");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "type")), "integer");
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "value")), "2");
+    Value* last = f.ctx->getProperty(parts, "3");
+    EXPECT_EQ(strOf(f.ctx->getProperty(last, "type")), "literal");
+    EXPECT_EQ(strOf(f.ctx->getProperty(last, "value")), " ago");
+
+    Value* badUnit[2] = {f.ctx->createNumber(1), f.ctx->createString("fortnight")};
+    EXPECT_TRUE(isError(f.call(rtf, "format", 2, badUnit)));
+
+    Value* badStyleOpts = f.ctx->createObject();
+    f.ctx->defineProperty(badStyleOpts, "style", f.ctx->createString("bogus"));
+    Value* badStyleArgs[2] = {f.ctx->createUndefined(), badStyleOpts};
+    EXPECT_TRUE(isError(f.relativeTimeFormat(2, badStyleArgs)));
+
+    Value* obj = f.ctx->createObject();
+    EXPECT_TRUE(isError(f.call1(obj, "format", f.ctx->createNumber(1))));
 }
 
 TEST(IntlTest, ErrorCases) {
