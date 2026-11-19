@@ -27,6 +27,7 @@
 #include "core/types/TypeBehavior.h"
 #include "core/types/TypedArray.h"
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -63,6 +64,8 @@ struct CloneContext {
     IContext* ctx;
     std::unordered_map<const Value*, uint32_t> seen;
     uint32_t nextId = 1;
+    const std::vector<Value*>* transfer = nullptr;
+    std::vector<Value*>* transferred = nullptr;
 };
 
 Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
@@ -213,7 +216,14 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
             if (beginNode(cc, value, out, MessageValueKind::ArrayBuffer)) {
                 return nullptr;
             }
+            // 转移与复制都先把字节放进消息；源对象在克隆成功后才分离
+            // （克隆失败时不能产生副作用）。
             out.bytes = data->bytes;
+            if (cc.transfer != nullptr &&
+                std::find(cc.transfer->begin(), cc.transfer->end(), value) !=
+                    cc.transfer->end()) {
+                if (cc.transferred != nullptr) cc.transferred->push_back(value);
+            }
             return nullptr;
         }
         case TypeKind::DataView: {
@@ -396,8 +406,38 @@ Value* restoreValue(IContext* ctx, const MessageValue& value,
 
 }  // namespace
 
-Value* valueToMessage(IContext* ctx, Value* value, MessageValue& out) {
-    CloneContext cc{ctx, {}, 1};
+Value* resolveTransferList(IContext* ctx, Value* list,
+                           std::vector<Value*>& out) {
+    if (list == nullptr) return nullptr;
+    TypeKind kind = list->type()->kind();
+    if (kind == TypeKind::Undefined || kind == TypeKind::Null) return nullptr;
+    if (kind != TypeKind::Array) {
+        return dataCloneError(ctx, "Transfer list must be an array");
+    }
+
+    auto* data = static_cast<ArrayData*>(list->data());
+    for (uint32_t i = 0; i < data->length(); ++i) {
+        Value* item = data->elementAt(i);
+        if (item == nullptr) continue;
+        if (item->type()->kind() != TypeKind::ArrayBuffer) {
+            return dataCloneError(ctx, "Transferable type not supported");
+        }
+        auto* buffer = core::asArrayBuffer(item);
+        if (buffer->detached) {
+            return dataCloneError(ctx, "ArrayBuffer is already detached");
+        }
+        if (std::find(out.begin(), out.end(), item) != out.end()) {
+            return dataCloneError(ctx, "Duplicate transferable");
+        }
+        out.push_back(item);
+    }
+    return nullptr;
+}
+
+Value* valueToMessage(IContext* ctx, Value* value, MessageValue& out,
+                      const std::vector<Value*>& transfer,
+                      std::vector<Value*>* transferred) {
+    CloneContext cc{ctx, {}, 1, &transfer, transferred};
     return cloneValue(ctx, value, out, cc);
 }
 

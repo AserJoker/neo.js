@@ -172,6 +172,49 @@ TEST(MessageValueTest, RoundTripsThroughContext) {
     EXPECT_EQ(again.object[1].second.array[2].kind, MessageValueKind::Undefined);
 }
 
+TEST(MessageValueTest, TransfersArrayBuffer) {
+    Fixture f;
+    Value* buffer = f.ctx->createArrayBuffer(4);
+    auto* data = neo::core::asArrayBuffer(buffer);
+    data->bytes = {1, 2, 3, 4};
+
+    std::vector<Value*> transfer{buffer};
+    MessageValue mv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), buffer, mv, transfer), nullptr);
+    ASSERT_EQ(mv.kind, MessageValueKind::ArrayBuffer);
+    EXPECT_EQ(mv.bytes, data->bytes);
+    // valueToMessage 不产生副作用；调用方在成功后分离。
+    EXPECT_FALSE(data->detached);
+
+    data->bytes.clear();
+    data->detached = true;
+
+    Value* restored = messageToValue(f.ctx.get(), mv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
+    auto* restoredData = neo::core::asArrayBuffer(restored);
+    EXPECT_FALSE(restoredData->detached);
+    EXPECT_EQ(restoredData->bytes, (std::vector<uint8_t>{1, 2, 3, 4}));
+}
+
+TEST(MessageValueTest, TransferListRejectsDuplicatesAndDetached) {
+    Fixture f;
+    Value* buffer = f.ctx->createArrayBuffer(4);
+
+    std::vector<Value*> transfer;
+    Value* list = f.ctx->createArray();
+    f.ctx->arrayAppend(list, buffer);
+    f.ctx->arrayAppend(list, buffer);
+    Value* err = neo::worker::resolveTransferList(f.ctx.get(), list, transfer);
+    ASSERT_TRUE(neo::core::detail::isErrorValue(err));
+
+    neo::core::asArrayBuffer(buffer)->detached = true;
+    std::vector<Value*> single;
+    Value* list2 = f.ctx->createArray();
+    f.ctx->arrayAppend(list2, buffer);
+    Value* err2 = neo::worker::resolveTransferList(f.ctx.get(), list2, single);
+    ASSERT_TRUE(neo::core::detail::isErrorValue(err2));
+}
+
 TEST(MessageValueTest, UnsupportedTypeThrowsDataCloneError) {
     Fixture f;
     Value* sym = f.ctx->createSymbol("s");

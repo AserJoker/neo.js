@@ -9,6 +9,7 @@
 #include "core/IContext.h"
 #include "core/IType.h"
 #include "core/Value.h"
+#include "core/types/Boolean.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
@@ -122,6 +123,51 @@ TEST(JsWorkerTest, PostMessageRoundTripThroughOnMessage) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 42.0);
+}
+
+TEST(JsWorkerTest, TransfersArrayBufferToWorker) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_transfer.js";
+    writeFile(workerPath,
+              "onmessage = function (e) {\n"
+              "  var a = new Uint8Array(e.data);\n"
+              "  postMessage(a[0] + a[1]);\n"
+              "};\n");
+
+    std::string mainSource =
+        "var buf = new ArrayBuffer(2);\n"
+        "var a = new Uint8Array(buf);\n"
+        "a[0] = 7; a[1] = 5;\n"
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.onmessage = function (e) { globalThis.result = e.data; };\n"
+        "w.postMessage(buf, [buf]);\n"
+        "globalThis.detached = buf.byteLength === 0;\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* detached = f.ctx->getProperty(f.ctx->globalObject(), "detached");
+    ASSERT_EQ(detached->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(detached->data())->value);
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) {
+            (void)f.ctx->runOneTask();
+        }
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 12.0);
 }
 
 TEST(JsWorkerTest, PostMessageRejectsUncloneableValue) {

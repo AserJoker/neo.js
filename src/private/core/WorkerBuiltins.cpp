@@ -19,6 +19,7 @@
 #include "core/IGCEngine.h"
 #include "core/IType.h"
 #include "core/Value.h"
+#include "core/types/ArrayBuffer.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "core/types/Worker.h"
@@ -32,6 +33,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace neo::core {
 
@@ -86,8 +88,19 @@ void dispatchToMain(IContext* ctx, WorkerState* state) {
 Value* workerPostMessageGlobal(IContext* ctx, Value* /*self*/, size_t argc,
                                Value* argv[]) {
     Value* value = argc > 0 ? argv[0] : ctx->createUndefined();
+    std::vector<Value*> transfer;
+    if (Value* err = worker::resolveTransferList(
+            ctx, argc > 1 ? argv[1] : nullptr, transfer)) {
+        return err;
+    }
     MessageValue mv;
-    if (Value* err = worker::valueToMessage(ctx, value, mv)) return err;
+    if (Value* err = worker::valueToMessage(ctx, value, mv, transfer)) return err;
+    // 克隆成功后才分离源 ArrayBuffer（失败时不能有副作用）。
+    for (Value* item : transfer) {
+        auto* data = asArrayBuffer(item);
+        data->bytes.clear();
+        data->detached = true;
+    }
     if (t_env.outbox == nullptr) return ctx->createUndefined();
 
     Message msg;
@@ -240,8 +253,18 @@ Value* workerPostMessageMethod(IContext* ctx, Value* self, size_t argc,
     }
 
     Value* value = argc > 0 ? argv[0] : ctx->createUndefined();
+    std::vector<Value*> transfer;
+    if (Value* err = worker::resolveTransferList(
+            ctx, argc > 1 ? argv[1] : nullptr, transfer)) {
+        return err;
+    }
     MessageValue mv;
-    if (Value* err = worker::valueToMessage(ctx, value, mv)) return err;
+    if (Value* err = worker::valueToMessage(ctx, value, mv, transfer)) return err;
+    for (Value* item : transfer) {
+        auto* buffer = asArrayBuffer(item);
+        buffer->bytes.clear();
+        buffer->detached = true;
+    }
 
     Message msg;
     msg.value = std::move(mv);
