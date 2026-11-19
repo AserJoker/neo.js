@@ -159,6 +159,7 @@ add_library(neojs STATIC
     src/private/core/types/IntlNumberFormat.cpp
     src/private/core/types/IntlDateTimeFormat.cpp
     src/private/core/types/IntlCollator.cpp
+    src/private/core/types/IntlPluralRules.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp

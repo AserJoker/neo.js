@@ -202,6 +202,17 @@ struct NJS_IntlCollator {
     bool numeric = false;
 };
 
+struct NJS_IntlPluralRules {
+    std::string locale;
+    std::string type = "cardinal";
+    std::string notation = "standard";
+    int min_int = 1;
+    int min_frac = 0;
+    int max_frac = 3;
+    int min_sig = -1;
+    int max_sig = -1;
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -1081,6 +1092,134 @@ NJS_IntlStatus collatorCompare(NJS_IntlCollator* c, const char* a, size_t a_len,
 
 void collatorDestroy(NJS_IntlCollator* collator) { delete collator; }
 
+// —— PluralRules ——
+
+NJS_IntlPluralRules* pluralRulesCreate(void* /*ud*/, const char* locale,
+                                       const NJS_IntlOption* opts, size_t nopts,
+                                       NJS_IntlResolved* resolved,
+                                       NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlPluralRules* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* r = new (std::nothrow) NJS_IntlPluralRules();
+    if (r == nullptr) return fail(NJS_INTL_INTERNAL);
+    r->locale = locale;
+
+    const char* type = findOption(opts, nopts, "type");
+    if (type != nullptr) {
+        if (!equals(type, "cardinal") && !equals(type, "ordinal")) {
+            delete r;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        r->type = type;
+    }
+    const char* notation = findOption(opts, nopts, "notation");
+    if (notation != nullptr && !equals(notation, "standard")) {
+        delete r;
+        return fail(NJS_INTL_UNSUPPORTED);
+    }
+
+    const char* min_int = findOption(opts, nopts, "minimumIntegerDigits");
+    if (min_int != nullptr && !parseInt(min_int, 1, 21, r->min_int)) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* min_frac = findOption(opts, nopts, "minimumFractionDigits");
+    if (min_frac != nullptr && !parseInt(min_frac, 0, 100, r->min_frac)) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* max_frac = findOption(opts, nopts, "maximumFractionDigits");
+    if (max_frac != nullptr && !parseInt(max_frac, 0, 100, r->max_frac)) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (r->max_frac < r->min_frac) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* min_sig = findOption(opts, nopts, "minimumSignificantDigits");
+    if (min_sig != nullptr && !parseInt(min_sig, 1, 21, r->min_sig)) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* max_sig = findOption(opts, nopts, "maximumSignificantDigits");
+    if (max_sig != nullptr && !parseInt(max_sig, 1, 21, r->max_sig)) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (r->min_sig >= 0 && r->max_sig >= 0 && r->max_sig < r->min_sig) {
+        delete r;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, r->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  "latn");
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return r;
+}
+
+const char* pluralRulesSelect(NJS_IntlPluralRules* r, double value) {
+    if (r == nullptr || std::isnan(value)) return "other";
+    const double abs = std::fabs(value);
+
+    char buffer[kBufferSize];
+    auto result = std::to_chars(buffer, buffer + sizeof buffer, abs,
+                                std::chars_format::fixed, r->max_frac);
+    std::string text;
+    if (result.ec == std::errc()) {
+        text.assign(buffer, result.ptr);
+    } else {
+        text = "0";
+    }
+
+    std::string integer = text;
+    std::string fraction;
+    const size_t dot = text.find('.');
+    if (dot != std::string::npos) {
+        integer = text.substr(0, dot);
+        fraction = text.substr(dot + 1);
+        while (static_cast<int>(fraction.size()) > r->min_frac &&
+               !fraction.empty() && fraction.back() == '0') {
+            fraction.pop_back();
+        }
+    }
+
+    long long i = 0;
+    try {
+        i = std::stoll(integer);
+    } catch (...) {
+        i = 0;
+    }
+    const int v = static_cast<int>(fraction.size());
+
+    if (r->type == "ordinal") {
+        const long long mod10 = i % 10;
+        const long long mod100 = i % 100;
+        if (mod10 == 1 && mod100 != 11) return "one";
+        if (mod10 == 2 && mod100 != 12) return "two";
+        if (mod10 == 3 && mod100 != 13) return "few";
+        return "other";
+    }
+
+    if (i == 1 && v == 0) return "one";
+    return "other";
+}
+
+void pluralRulesDestroy(NJS_IntlPluralRules* rules) { delete rules; }
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1089,7 +1228,7 @@ const NJS_IntlBackend kMinimalBackend = {
     NJS_INTL_ABI_VERSION,
     sizeof(NJS_IntlBackend),
     NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
-        NJS_INTL_CAP_FORMAT_TO_PARTS,
+        NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -1104,6 +1243,9 @@ const NJS_IntlBackend kMinimalBackend = {
     collatorCreate,
     collatorCompare,
     collatorDestroy,
+    pluralRulesCreate,
+    pluralRulesSelect,
+    pluralRulesDestroy,
 };
 
 }  // namespace

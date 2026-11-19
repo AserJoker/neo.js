@@ -692,6 +692,14 @@ public:
     virtual void setIntlCollatorPrototype(Value* proto) = 0;
     virtual Value* intlCollatorPrototype() const = 0;
 
+    // createIntlPluralRules: 创建 Intl.PluralRules 实例（ECMA-402 §15）。
+    virtual Value* createIntlPluralRules(const NJS_IntlBackend* backend,
+                                         NJS_IntlPluralRules* rules,
+                                         std::string_view locale,
+                                         std::string_view bindName = {}) = 0;
+    virtual void setIntlPluralRulesPrototype(Value* proto) = 0;
+    virtual Value* intlPluralRulesPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

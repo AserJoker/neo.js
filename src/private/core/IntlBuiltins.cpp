@@ -17,6 +17,7 @@
 #include "core/types/Array.h"
 #include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
+#include "core/types/IntlPluralRules.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -1335,6 +1336,246 @@ Value* collatorSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
     return supportedLocalesOfImpl(ctx, argc, argv);
 }
 
+// —— Intl.PluralRules ——
+
+struct PluralOptions {
+    std::string type = "cardinal";
+    std::string notation = "standard";
+    int minimumIntegerDigits = 1;
+    int minimumFractionDigits = 0;
+    int maximumFractionDigits = 3;
+    int minimumSignificantDigits = -1;
+    int maximumSignificantDigits = -1;
+};
+
+Value* parsePluralOptions(IContext* ctx, Value* options, PluralOptions& out) {
+    static const char* const kTypes[] = {"cardinal", "ordinal"};
+    if (Value* err = optionString(ctx, options, "type", kTypes, 2, "cardinal",
+                                  out.type)) {
+        return err;
+    }
+    static const char* const kNotations[] = {"standard", "scientific", "engineering",
+                                             "compact"};
+    if (Value* err = optionString(ctx, options, "notation", kNotations, 4, "standard",
+                                  out.notation)) {
+        return err;
+    }
+    if (Value* err = optionInt(ctx, options, "minimumIntegerDigits", 1, 21, 1,
+                               out.minimumIntegerDigits)) {
+        return err;
+    }
+    if (Value* err = optionInt(ctx, options, "minimumFractionDigits", 0, 100, 0,
+                               out.minimumFractionDigits)) {
+        return err;
+    }
+    if (Value* err = optionInt(ctx, options, "maximumFractionDigits", 0, 100,
+                               std::max(out.minimumFractionDigits, 3),
+                               out.maximumFractionDigits)) {
+        return err;
+    }
+    if (out.maximumFractionDigits < out.minimumFractionDigits) {
+        return detail::rangeError(
+            ctx, "maximumFractionDigits must be >= minimumFractionDigits");
+    }
+    Value* minSig = nullptr;
+    if (Value* err = readOption(ctx, options, "minimumSignificantDigits", minSig)) {
+        return err;
+    }
+    if (minSig->type()->kind() != TypeKind::Undefined) {
+        if (Value* err = optionInt(ctx, options, "minimumSignificantDigits", 1, 21,
+                                   -1, out.minimumSignificantDigits)) {
+            return err;
+        }
+    }
+    Value* maxSig = nullptr;
+    if (Value* err = readOption(ctx, options, "maximumSignificantDigits", maxSig)) {
+        return err;
+    }
+    if (maxSig->type()->kind() != TypeKind::Undefined) {
+        if (Value* err = optionInt(ctx, options, "maximumSignificantDigits", 1, 21,
+                                   -1, out.maximumSignificantDigits)) {
+            return err;
+        }
+    }
+    if (out.minimumSignificantDigits >= 0 && out.maximumSignificantDigits >= 0 &&
+        out.maximumSignificantDigits < out.minimumSignificantDigits) {
+        return detail::rangeError(
+            ctx, "maximumSignificantDigits must be >= minimumSignificantDigits");
+    }
+    return nullptr;
+}
+
+void buildPluralBackendOptions(
+    const PluralOptions& options,
+    std::vector<std::pair<std::string, std::string>>& storage,
+    std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("type", options.type);
+    storage.emplace_back("notation", options.notation);
+    storage.emplace_back("minimumIntegerDigits",
+                         std::to_string(options.minimumIntegerDigits));
+    storage.emplace_back("minimumFractionDigits",
+                         std::to_string(options.minimumFractionDigits));
+    storage.emplace_back("maximumFractionDigits",
+                         std::to_string(options.maximumFractionDigits));
+    if (options.minimumSignificantDigits >= 0) {
+        storage.emplace_back("minimumSignificantDigits",
+                             std::to_string(options.minimumSignificantDigits));
+    }
+    if (options.maximumSignificantDigits >= 0) {
+        storage.emplace_back("maximumSignificantDigits",
+                             std::to_string(options.maximumSignificantDigits));
+    }
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* pluralRulesConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                            Value* argv[]);
+
+Value* pluralRulesCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return pluralRulesConstruct(ctx, self, argc, argv);
+}
+
+Value* pluralRulesConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                            Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->plural_rules_create == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support PluralRules");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    PluralOptions parsed;
+    if (Value* err = parsePluralOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildPluralBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlPluralRules* rules = backend->plural_rules_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (rules == nullptr) {
+        return backendStatusError(ctx, status, "Intl.PluralRules options");
+    }
+
+    Value* object = ctx->createIntlPluralRules(backend, rules, resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlPluralRulesData* d = asIntlPluralRules(object);
+    d->locale = resolved.locale;
+    d->type = parsed.type;
+    d->notation = parsed.notation;
+    d->minimumIntegerDigits = parsed.minimumIntegerDigits;
+    d->minimumFractionDigits = parsed.minimumFractionDigits;
+    d->maximumFractionDigits = parsed.maximumFractionDigits;
+    d->minimumSignificantDigits = parsed.minimumSignificantDigits;
+    d->maximumSignificantDigits = parsed.maximumSignificantDigits;
+    return object;
+}
+
+Value* requirePluralRules(IContext* ctx, Value* self, IntlPluralRulesData*& out) {
+    out = asIntlPluralRules(self);
+    if (out == nullptr || out->rules == nullptr || out->backend == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.PluralRules method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+Value* pluralRulesSelect(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlPluralRulesData* d = nullptr;
+    if (Value* err = requirePluralRules(ctx, self, d)) return err;
+    Value* value = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* number = detail::toNumberValue(ctx, value);
+    if (detail::isErrorValue(number)) return number;
+    if (d->backend->plural_rules_select == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support select");
+    }
+    const char* category = d->backend->plural_rules_select(
+        d->rules, static_cast<NumberData*>(number->data())->value);
+    return ctx->createString(category != nullptr ? category : "other");
+}
+
+Value* pluralRulesSelectRange(IContext* ctx, Value* self, size_t /*argc*/,
+                              Value* /*argv*/[]) {
+    IntlPluralRulesData* d = nullptr;
+    if (Value* err = requirePluralRules(ctx, self, d)) return err;
+    return detail::rangeError(ctx, "Intl.PluralRules.selectRange is not supported");
+}
+
+Value* pluralRulesResolvedOptions(IContext* ctx, Value* self, size_t /*argc*/,
+                                  Value* /*argv*/[]) {
+    IntlPluralRulesData* d = nullptr;
+    if (Value* err = requirePluralRules(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("type", ctx->createString(d->type))) return err;
+    if (Value* err = define("notation", ctx->createString(d->notation))) return err;
+    if (Value* err = define("minimumIntegerDigits",
+                            ctx->createNumber(d->minimumIntegerDigits))) {
+        return err;
+    }
+    if (Value* err = define("minimumFractionDigits",
+                            ctx->createNumber(d->minimumFractionDigits))) {
+        return err;
+    }
+    if (Value* err = define("maximumFractionDigits",
+                            ctx->createNumber(d->maximumFractionDigits))) {
+        return err;
+    }
+    if (d->minimumSignificantDigits >= 0) {
+        if (Value* err = define("minimumSignificantDigits",
+                                ctx->createNumber(d->minimumSignificantDigits))) {
+            return err;
+        }
+    }
+    if (d->maximumSignificantDigits >= 0) {
+        if (Value* err = define("maximumSignificantDigits",
+                                ctx->createNumber(d->maximumSignificantDigits))) {
+            return err;
+        }
+    }
+
+    static const char* const kCardinal[] = {"one", "other"};
+    static const char* const kOrdinal[] = {"few", "one", "two", "other"};
+    const char* const* categories = d->type == "ordinal" ? kOrdinal : kCardinal;
+    const size_t categoryCount = d->type == "ordinal" ? 4 : 2;
+    Value* list = ctx->createArray();
+    if (detail::isErrorValue(list)) return list;
+    auto* arrayData = static_cast<ArrayData*>(list->data());
+    for (size_t i = 0; i < categoryCount; ++i) {
+        arrayData->setElement(static_cast<uint32_t>(i),
+                              ctx->createString(categories[i]));
+    }
+    if (Value* err = define("pluralCategories", list)) return err;
+    return result;
+}
+
+Value* pluralRulesSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                                     Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -1478,6 +1719,41 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.PluralRules ——
+    Value* pluralProto = ctx->createObject();
+    if (pluralProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(pluralProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlPluralRulesPrototype(pluralProto);
+    if (!defineMethod(ctx, pluralProto, "select", pluralRulesSelect, 0)) return false;
+    if (!defineMethod(ctx, pluralProto, "selectRange", pluralRulesSelectRange, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, pluralProto, "resolvedOptions", pluralRulesResolvedOptions,
+                      0)) {
+        return false;
+    }
+    if (!defineTag(ctx, pluralProto, "Intl.PluralRules")) return false;
+
+    Value* pluralCtor = ctx->createNativeFunction(pluralRulesCall, 0);
+    if (pluralCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(pluralCtor, "PluralRules");
+    ctx->setFunctionConstructor(pluralCtor, pluralRulesConstruct);
+    if (ctx->defineProperty(pluralCtor, "prototype", pluralProto, false, false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(pluralProto, "constructor", pluralCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, pluralCtor, "supportedLocalesOf",
+                      pluralRulesSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -1491,6 +1767,10 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "Collator", collatorCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "PluralRules", pluralCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

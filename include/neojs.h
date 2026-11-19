@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 3u
+#define NJS_INTL_ABI_VERSION 4u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -112,6 +112,7 @@ typedef struct {
 
 typedef struct NJS_IntlFormatter NJS_IntlFormatter;
 typedef struct NJS_IntlCollator NJS_IntlCollator;
+typedef struct NJS_IntlPluralRules NJS_IntlPluralRules;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
 
 struct NJS_IntlBackend {
@@ -168,6 +169,17 @@ struct NJS_IntlBackend {
                                        size_t a_len, const char* b, size_t b_len,
                                        int* result);
     void (*collator_destroy)(NJS_IntlCollator* collator);
+
+    // —— ABI v4 追加 ——
+    // 创建/销毁复数规则；select 返回静态字符串（zero/one/two/few/many/other）。
+    NJS_IntlPluralRules* (*plural_rules_create)(void* user_data,
+                                                const char* locale,
+                                                const NJS_IntlOption* opts,
+                                                size_t nopts,
+                                                NJS_IntlResolved* resolved,
+                                                NJS_IntlStatus* status);
+    const char* (*plural_rules_select)(NJS_IntlPluralRules* rules, double value);
+    void (*plural_rules_destroy)(NJS_IntlPluralRules* rules);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

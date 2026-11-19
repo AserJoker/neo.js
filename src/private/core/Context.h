@@ -103,6 +103,7 @@ class Context : public IContext {
     Value* intlNumberFormatPrototype_ = nullptr;
     Value* intlDateTimeFormatPrototype_ = nullptr;
     Value* intlCollatorPrototype_ = nullptr;
+    Value* intlPluralRulesPrototype_ = nullptr;
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -174,6 +175,12 @@ public:
         intlCollatorPrototype_ = proto;
     }
     Value* intlCollatorPrototype() const override { return intlCollatorPrototype_; }
+    void setIntlPluralRulesPrototype(Value* proto) override {
+        intlPluralRulesPrototype_ = proto;
+    }
+    Value* intlPluralRulesPrototype() const override {
+        return intlPluralRulesPrototype_;
+    }
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
@@ -388,6 +395,10 @@ public:
                               NJS_IntlCollator* collator,
                               std::string_view locale,
                               std::string_view bindName = {}) override;
+    Value* createIntlPluralRules(const NJS_IntlBackend* backend,
+                                 NJS_IntlPluralRules* rules,
+                                 std::string_view locale,
+                                 std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(

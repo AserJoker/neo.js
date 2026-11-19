@@ -68,6 +68,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* pluralRules(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "PluralRules");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -188,6 +193,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -520,6 +528,40 @@ TEST(IntlTest, StringLocaleCompareDelegatesToCollator) {
     f.ctx->defineProperty(opts, "numeric", f.ctx->createBoolean(true));
     Value* numericArgs[3] = {f.ctx->createString("2"), f.ctx->createUndefined(), opts};
     EXPECT_EQ(numOf(f.ctx->call(tenFn, ten, 3, numericArgs)), 1.0);
+}
+
+TEST(IntlTest, PluralRulesCardinalAndOrdinal) {
+    Fixture f;
+    Value* cardinal = f.pluralRules();
+    ASSERT_FALSE(isError(cardinal));
+    auto select = [&](Value* rules, double value) -> std::string {
+        return strOf(f.call1(rules, "select", f.ctx->createNumber(value)));
+    };
+    EXPECT_EQ(select(cardinal, 1.0), "one");
+    EXPECT_EQ(select(cardinal, 2.0), "other");
+    EXPECT_EQ(select(cardinal, 1.5), "other");
+
+    Value* ordinalOpts = f.ctx->createObject();
+    f.ctx->defineProperty(ordinalOpts, "type", f.ctx->createString("ordinal"));
+    Value* ordinalArgs[2] = {f.ctx->createUndefined(), ordinalOpts};
+    Value* ordinal = f.pluralRules(2, ordinalArgs);
+    ASSERT_FALSE(isError(ordinal));
+    EXPECT_EQ(select(ordinal, 1.0), "one");
+    EXPECT_EQ(select(ordinal, 2.0), "two");
+    EXPECT_EQ(select(ordinal, 3.0), "few");
+    EXPECT_EQ(select(ordinal, 11.0), "other");
+    EXPECT_EQ(select(ordinal, 21.0), "one");
+
+    Value* resolved = f.call(cardinal, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "type")), "cardinal");
+    Value* categories = f.ctx->getProperty(resolved, "pluralCategories");
+    ASSERT_FALSE(isError(categories));
+    EXPECT_EQ(numOf(f.ctx->getProperty(categories, "length")), 2.0);
+    EXPECT_EQ(strOf(f.ctx->getProperty(categories, "0")), "one");
+    EXPECT_EQ(strOf(f.ctx->getProperty(categories, "1")), "other");
+
+    EXPECT_TRUE(isError(f.call(cardinal, "selectRange")));
 }
 
 TEST(IntlTest, ErrorCases) {

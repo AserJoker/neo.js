@@ -52,6 +52,7 @@
 #include "core/types/TypedArray.h"
 #include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
+#include "core/types/IntlPluralRules.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2282,6 +2283,29 @@ Value* Context::createIntlCollator(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlCollatorPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlCollatorPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlPluralRules(const NJS_IntlBackend* backend,
+                                      NJS_IntlPluralRules* rules,
+                                      std::string_view locale,
+                                      std::string_view bindName) {
+    auto* d = gc_->allocData<IntlPluralRulesData>();
+    if (d == nullptr) {
+        if (rules != nullptr && backend != nullptr &&
+            backend->plural_rules_destroy != nullptr) {
+            backend->plural_rules_destroy(rules);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->rules = rules;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlPluralRulesType(), d, bindName);
+    if (object != oomValue_ && intlPluralRulesPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlPluralRulesPrototype_;
     }
     return object;
 }
