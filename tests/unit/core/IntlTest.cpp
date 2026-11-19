@@ -84,6 +84,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* displayNames(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "DisplayNames");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -204,6 +209,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -715,6 +723,89 @@ TEST(IntlTest, ListFormatPartsAndErrors) {
 
     Value* obj = f.ctx->createObject();
     EXPECT_TRUE(isError(f.call1(obj, "format", array)));
+}
+
+TEST(IntlTest, DisplayNamesBasics) {
+    Fixture f;
+    auto make = [&](const char* type, const char* fallback = nullptr) {
+        Value* options = f.ctx->createObject();
+        f.ctx->defineProperty(options, "type", f.ctx->createString(type));
+        if (fallback != nullptr) {
+            f.ctx->defineProperty(options, "fallback",
+                                  f.ctx->createString(fallback));
+        }
+        Value* args[2] = {f.ctx->createUndefined(), options};
+        return f.displayNames(2, args);
+    };
+    auto of = [&](Value* names, const char* code) {
+        return f.call1(names, "of", f.ctx->createString(code));
+    };
+
+    Value* languages = make("language");
+    ASSERT_FALSE(isError(languages));
+    EXPECT_EQ(strOf(of(languages, "en")), "English");
+    EXPECT_EQ(strOf(of(languages, "zh")), "Chinese");
+    EXPECT_EQ(strOf(of(languages, "xx")), "xx");
+
+    Value* regions = make("region");
+    ASSERT_FALSE(isError(regions));
+    EXPECT_EQ(strOf(of(regions, "US")), "United States");
+    EXPECT_EQ(strOf(of(regions, "CN")), "China");
+
+    Value* scripts = make("script");
+    ASSERT_FALSE(isError(scripts));
+    EXPECT_EQ(strOf(of(scripts, "Latn")), "Latin");
+
+    Value* currencies = make("currency");
+    ASSERT_FALSE(isError(currencies));
+    EXPECT_EQ(strOf(of(currencies, "USD")), "US Dollar");
+    EXPECT_EQ(strOf(of(currencies, "EUR")), "Euro");
+
+    Value* none = make("language", "none");
+    ASSERT_FALSE(isError(none));
+    Value* missing = of(none, "xx");
+    ASSERT_FALSE(isError(missing));
+    EXPECT_EQ(missing->type()->kind(), TypeKind::Undefined);
+
+    Value* resolved = f.call(languages, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "type")), "language");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "style")), "long");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "fallback")), "code");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "languageDisplay")), "dialect");
+}
+
+TEST(IntlTest, DisplayNamesErrors) {
+    Fixture f;
+    // type 缺失 → RangeError
+    EXPECT_TRUE(isError(f.displayNames()));
+
+    Value* options = f.ctx->createObject();
+    f.ctx->defineProperty(options, "type", f.ctx->createString("language"));
+    Value* args[2] = {f.ctx->createUndefined(), options};
+    Value* names = f.displayNames(2, args);
+    ASSERT_FALSE(isError(names));
+
+    // region 码必须 2 字母或 3 数字
+    Value* regions = f.ctx->createObject();
+    f.ctx->defineProperty(regions, "type", f.ctx->createString("region"));
+    Value* regionArgs[2] = {f.ctx->createUndefined(), regions};
+    Value* regionNames = f.displayNames(2, regionArgs);
+    ASSERT_FALSE(isError(regionNames));
+    EXPECT_TRUE(isError(f.call1(regionNames, "of", f.ctx->createString("USA"))));
+
+    // dateTimeField 非法字段
+    Value* fields = f.ctx->createObject();
+    f.ctx->defineProperty(fields, "type", f.ctx->createString("dateTimeField"));
+    Value* fieldArgs[2] = {f.ctx->createUndefined(), fields};
+    Value* fieldNames = f.displayNames(2, fieldArgs);
+    ASSERT_FALSE(isError(fieldNames));
+    EXPECT_TRUE(isError(f.call1(fieldNames, "of", f.ctx->createString("bogus"))));
+    EXPECT_EQ(strOf(f.call1(fieldNames, "of", f.ctx->createString("year"))),
+              "year");
+
+    Value* obj = f.ctx->createObject();
+    EXPECT_TRUE(isError(f.call1(obj, "of", f.ctx->createString("en"))));
 }
 
 TEST(IntlTest, ErrorCases) {

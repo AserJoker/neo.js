@@ -55,6 +55,7 @@
 #include "core/types/IntlPluralRules.h"
 #include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlListFormat.h"
+#include "core/types/IntlDisplayNames.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2353,6 +2354,29 @@ Value* Context::createIntlListFormat(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlListFormatPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlListFormatPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlDisplayNames(const NJS_IntlBackend* backend,
+                                       NJS_IntlDisplayNames* names,
+                                       std::string_view locale,
+                                       std::string_view bindName) {
+    auto* d = gc_->allocData<IntlDisplayNamesData>();
+    if (d == nullptr) {
+        if (names != nullptr && backend != nullptr &&
+            backend->display_names_destroy != nullptr) {
+            backend->display_names_destroy(names);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->names = names;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlDisplayNamesType(), d, bindName);
+    if (object != oomValue_ && intlDisplayNamesPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlDisplayNamesPrototype_;
     }
     return object;
 }

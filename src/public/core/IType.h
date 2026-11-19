@@ -154,6 +154,8 @@ enum class TypeKind : uint8_t {
     IntlRelativeTimeFormat,
     // Intl.ListFormat 实例（ECMA-402 §13）：普通对象 + 宿主后端列表格式化器句柄。
     IntlListFormat,
+    // Intl.DisplayNames 实例（ECMA-402 §12）：普通对象 + 宿主后端显示名解析器句柄。
+    IntlDisplayNames,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -350,6 +352,7 @@ IType* getIntlCollatorType();
 IType* getIntlPluralRulesType();
 IType* getIntlRelativeTimeFormatType();
 IType* getIntlListFormatType();
+IType* getIntlDisplayNamesType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

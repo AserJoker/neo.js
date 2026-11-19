@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 6u
+#define NJS_INTL_ABI_VERSION 7u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -116,6 +116,7 @@ typedef struct NJS_IntlCollator NJS_IntlCollator;
 typedef struct NJS_IntlPluralRules NJS_IntlPluralRules;
 typedef struct NJS_IntlRelativeTimeFormat NJS_IntlRelativeTimeFormat;
 typedef struct NJS_IntlListFormat NJS_IntlListFormat;
+typedef struct NJS_IntlDisplayNames NJS_IntlDisplayNames;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
 
 struct NJS_IntlBackend {
@@ -207,6 +208,20 @@ struct NJS_IntlBackend {
                                          const char* const* items, size_t count,
                                          NJS_IntlPart* parts, size_t* out_count);
     void (*list_format_destroy)(NJS_IntlListFormat* formatter);
+
+    // —— ABI v7 追加 ——
+    // 创建/销毁显示名解析器。of 为两段式字符串输出；无显示名且 fallback
+    // 为 none 时写入 *out_len = 0 并返回 OK。
+    NJS_IntlDisplayNames* (*display_names_create)(void* user_data,
+                                                  const char* locale,
+                                                  const NJS_IntlOption* opts,
+                                                  size_t nopts,
+                                                  NJS_IntlResolved* resolved,
+                                                  NJS_IntlStatus* status);
+    NJS_IntlStatus (*display_names_of)(NJS_IntlDisplayNames* names,
+                                       const char* code, char* out,
+                                       size_t* out_len);
+    void (*display_names_destroy)(NJS_IntlDisplayNames* names);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

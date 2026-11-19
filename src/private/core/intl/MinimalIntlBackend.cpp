@@ -228,6 +228,14 @@ struct NJS_IntlListFormat {
     std::vector<Part> last_parts;
 };
 
+struct NJS_IntlDisplayNames {
+    std::string locale;
+    std::string type = "language";
+    std::string style = "long";
+    std::string fallback = "code";
+    std::string language_display = "dialect";
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -1494,6 +1502,224 @@ NJS_IntlStatus listFormatFormat(NJS_IntlListFormat* f, const char* const* items,
 
 void listFormatDestroy(NJS_IntlListFormat* formatter) { delete formatter; }
 
+// —— DisplayNames ——
+
+namespace {
+
+std::string asciiLower(const char* text) {
+    std::string out(text);
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
+struct DisplayNameEntry {
+    const char* code;
+    const char* name;
+};
+
+const char* lookupDisplayName(const DisplayNameEntry* table, size_t size,
+                              const std::string& code) {
+    for (size_t i = 0; i < size; ++i) {
+        if (code == table[i].code) return table[i].name;
+    }
+    return nullptr;
+}
+
+const char* displayNameFor(const char* type, const std::string& code) {
+    static const DisplayNameEntry kLanguages[] = {
+        {"en", "English"},    {"zh", "Chinese"},    {"ja", "Japanese"},
+        {"fr", "French"},     {"de", "German"},     {"es", "Spanish"},
+        {"ru", "Russian"},    {"ar", "Arabic"},     {"ko", "Korean"},
+        {"pt", "Portuguese"}, {"it", "Italian"},    {"hi", "Hindi"},
+        {"nl", "Dutch"},      {"sv", "Swedish"},    {"pl", "Polish"},
+        {"tr", "Turkish"},    {"vi", "Vietnamese"}, {"th", "Thai"}};
+    static const DisplayNameEntry kRegions[] = {
+        {"US", "United States"}, {"GB", "United Kingdom"},
+        {"CN", "China"},         {"JP", "Japan"},
+        {"DE", "Germany"},       {"FR", "France"},
+        {"KR", "South Korea"},   {"IN", "India"},
+        {"CA", "Canada"},        {"AU", "Australia"},
+        {"RU", "Russia"},        {"BR", "Brazil"},
+        {"IT", "Italy"},         {"ES", "Spain"},
+        {"MX", "Mexico"},        {"NL", "Netherlands"}};
+    static const DisplayNameEntry kScripts[] = {
+        {"Latn", "Latin"},     {"Cyrl", "Cyrillic"}, {"Arab", "Arabic"},
+        {"Hans", "Simplified Han"}, {"Hant", "Traditional Han"},
+        {"Jpan", "Japanese"},  {"Kore", "Korean"},   {"Grek", "Greek"},
+        {"Hebr", "Hebrew"},    {"Deva", "Devanagari"}};
+    static const DisplayNameEntry kCurrencies[] = {
+        {"USD", "US Dollar"},        {"EUR", "Euro"},
+        {"CNY", "Chinese Yuan"},     {"JPY", "Japanese Yen"},
+        {"GBP", "British Pound"},    {"KRW", "South Korean Won"},
+        {"INR", "Indian Rupee"},     {"RUB", "Russian Ruble"},
+        {"CAD", "Canadian Dollar"},  {"AUD", "Australian Dollar"},
+        {"BRL", "Brazilian Real"},   {"CHF", "Swiss Franc"}};
+    static const DisplayNameEntry kCalendars[] = {
+        {"gregory", "Gregorian Calendar"},
+        {"buddhist", "Buddhist Calendar"},
+        {"chinese", "Chinese Calendar"},
+        {"islamic", "Islamic Calendar"},
+        {"japanese", "Japanese Calendar"},
+        {"roc", "Minguo Calendar"}};
+    static const DisplayNameEntry kDateTimeFields[] = {
+        {"year", "year"},         {"quarter", "quarter"},
+        {"month", "month"},       {"week", "week"},
+        {"weekOfYear", "week"},   {"day", "day"},
+        {"dayPeriod", "AM/PM"},   {"hour", "hour"},
+        {"minute", "minute"},     {"second", "second"},
+        {"weekday", "day of the week"}, {"era", "era"},
+        {"timeZoneName", "time zone"}};
+
+    if (equals(type, "language")) {
+        return lookupDisplayName(kLanguages,
+                                 sizeof kLanguages / sizeof kLanguages[0], code);
+    }
+    if (equals(type, "region")) {
+        return lookupDisplayName(kRegions, sizeof kRegions / sizeof kRegions[0],
+                                 code);
+    }
+    if (equals(type, "script")) {
+        return lookupDisplayName(kScripts, sizeof kScripts / sizeof kScripts[0],
+                                 code);
+    }
+    if (equals(type, "currency")) {
+        return lookupDisplayName(kCurrencies,
+                                 sizeof kCurrencies / sizeof kCurrencies[0], code);
+    }
+    if (equals(type, "calendar")) {
+        return lookupDisplayName(kCalendars,
+                                 sizeof kCalendars / sizeof kCalendars[0], code);
+    }
+    return lookupDisplayName(kDateTimeFields,
+                             sizeof kDateTimeFields / sizeof kDateTimeFields[0],
+                             code);
+}
+
+// 按类型归一化 code 的大小写形式。
+std::string normalizeCode(const char* type, const std::string& raw) {
+    std::string code = raw;
+    if (equals(type, "language") || equals(type, "calendar")) {
+        return asciiLower(raw.c_str());
+    }
+    if (equals(type, "region") || equals(type, "currency")) {
+        for (char& c : code) {
+            if (c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+        }
+        return code;
+    }
+    if (equals(type, "script")) {
+        for (size_t i = 0; i < code.size(); ++i) {
+            char& c = code[i];
+            if (i == 0 && c >= 'a' && c <= 'z') c = static_cast<char>(c - 'a' + 'A');
+            else if (i > 0 && c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+        }
+        return code;
+    }
+    return code;
+}
+
+}  // namespace
+
+NJS_IntlDisplayNames* displayNamesCreate(void* /*ud*/, const char* locale,
+                                         const NJS_IntlOption* opts, size_t nopts,
+                                         NJS_IntlResolved* resolved,
+                                         NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlDisplayNames* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* d = new (std::nothrow) NJS_IntlDisplayNames();
+    if (d == nullptr) return fail(NJS_INTL_INTERNAL);
+    d->locale = locale;
+
+    const char* type = findOption(opts, nopts, "type");
+    if (type == nullptr) {
+        delete d;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    if (!equals(type, "language") && !equals(type, "region") &&
+        !equals(type, "script") && !equals(type, "currency") &&
+        !equals(type, "calendar") && !equals(type, "dateTimeField")) {
+        delete d;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    d->type = type;
+
+    const char* style = findOption(opts, nopts, "style");
+    if (style != nullptr) {
+        if (!equals(style, "long") && !equals(style, "short") &&
+            !equals(style, "narrow")) {
+            delete d;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        d->style = style;
+    }
+    const char* fallback = findOption(opts, nopts, "fallback");
+    if (fallback != nullptr) {
+        if (!equals(fallback, "code") && !equals(fallback, "none")) {
+            delete d;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        d->fallback = fallback;
+    }
+    const char* languageDisplay = findOption(opts, nopts, "languageDisplay");
+    if (languageDisplay != nullptr) {
+        if (!equals(languageDisplay, "dialect") &&
+            !equals(languageDisplay, "standard")) {
+            delete d;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        d->language_display = languageDisplay;
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, d->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  "latn");
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return d;
+}
+
+NJS_IntlStatus displayNamesOf(NJS_IntlDisplayNames* d, const char* code,
+                              char* out, size_t* out_len) {
+    if (d == nullptr || code == nullptr || out_len == nullptr) {
+        return NJS_INTL_INTERNAL;
+    }
+    const std::string normalized = normalizeCode(d->type.c_str(), code);
+    const char* name = displayNameFor(d->type.c_str(), normalized);
+    std::string text;
+    if (name != nullptr) {
+        text = name;
+    } else if (equals(d->fallback.c_str(), "code")) {
+        text = normalized;
+    } else {
+        *out_len = 0;
+        return NJS_INTL_OK;
+    }
+
+    const size_t needed = text.size() + 1;
+    if (out == nullptr || *out_len < needed) {
+        *out_len = needed;
+        return NJS_INTL_OK;
+    }
+    std::snprintf(out, *out_len, "%s", text.c_str());
+    *out_len = needed;
+    return NJS_INTL_OK;
+}
+
+void displayNamesDestroy(NJS_IntlDisplayNames* names) { delete names; }
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1503,7 +1729,7 @@ const NJS_IntlBackend kMinimalBackend = {
     sizeof(NJS_IntlBackend),
     NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
         NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_RELATIVE | NJS_INTL_CAP_LIST |
-        NJS_INTL_CAP_FORMAT_TO_PARTS,
+        NJS_INTL_CAP_DISPLAY_NAMES | NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -1527,6 +1753,9 @@ const NJS_IntlBackend kMinimalBackend = {
     listFormatCreate,
     listFormatFormat,
     listFormatDestroy,
+    displayNamesCreate,
+    displayNamesOf,
+    displayNamesDestroy,
 };
 
 }  // namespace

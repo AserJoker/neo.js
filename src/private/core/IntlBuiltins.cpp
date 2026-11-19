@@ -20,6 +20,7 @@
 #include "core/types/IntlPluralRules.h"
 #include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlListFormat.h"
+#include "core/types/IntlDisplayNames.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -2009,6 +2010,226 @@ Value* listFormatSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
     return supportedLocalesOfImpl(ctx, argc, argv);
 }
 
+// —— Intl.DisplayNames ——
+
+struct DisplayNamesOptions {
+    std::string type;
+    std::string style = "long";
+    std::string fallback = "code";
+    std::string languageDisplay = "dialect";
+};
+
+Value* parseDisplayNamesOptions(IContext* ctx, Value* options,
+                                DisplayNamesOptions& out) {
+    if (Value* err = optionFreeString(ctx, options, "type", "", out.type)) return err;
+    if (out.type.empty()) {
+        return detail::rangeError(ctx, "Intl.DisplayNames requires a type option");
+    }
+    static const char* const kStyles[] = {"long", "short", "narrow"};
+    if (Value* err = optionString(ctx, options, "style", kStyles, 3, "long",
+                                  out.style)) {
+        return err;
+    }
+    static const char* const kFallbacks[] = {"code", "none"};
+    if (Value* err = optionString(ctx, options, "fallback", kFallbacks, 2, "code",
+                                  out.fallback)) {
+        return err;
+    }
+    static const char* const kLanguageDisplay[] = {"dialect", "standard"};
+    return optionString(ctx, options, "languageDisplay", kLanguageDisplay, 2,
+                        "dialect", out.languageDisplay);
+}
+
+void buildDisplayNamesBackendOptions(
+    const DisplayNamesOptions& options,
+    std::vector<std::pair<std::string, std::string>>& storage,
+    std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("type", options.type);
+    storage.emplace_back("style", options.style);
+    storage.emplace_back("fallback", options.fallback);
+    storage.emplace_back("languageDisplay", options.languageDisplay);
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* displayNamesConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                             Value* argv[]);
+
+Value* displayNamesCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return displayNamesConstruct(ctx, self, argc, argv);
+}
+
+Value* displayNamesConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                             Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->display_names_create == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support DisplayNames");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    DisplayNamesOptions parsed;
+    if (Value* err = parseDisplayNamesOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildDisplayNamesBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlDisplayNames* names = backend->display_names_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (names == nullptr) {
+        return backendStatusError(ctx, status, "Intl.DisplayNames options");
+    }
+
+    Value* object = ctx->createIntlDisplayNames(backend, names, resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlDisplayNamesData* d = asIntlDisplayNames(object);
+    d->locale = resolved.locale;
+    d->type = parsed.type;
+    d->style = parsed.style;
+    d->fallback = parsed.fallback;
+    d->languageDisplay = parsed.languageDisplay;
+    return object;
+}
+
+Value* requireDisplayNames(IContext* ctx, Value* self,
+                           IntlDisplayNamesData*& out) {
+    out = asIntlDisplayNames(self);
+    if (out == nullptr || out->names == nullptr || out->backend == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.DisplayNames method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+bool isAsciiAlpha(char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+bool isAsciiDigit(char c) { return c >= '0' && c <= '9'; }
+
+bool isWellFormedCode(const std::string& type, const std::string& code) {
+    if (code.empty()) return false;
+    if (type == "language") {
+        if (!isAsciiAlpha(code[0])) return false;
+        for (char c : code) {
+            if (!isAsciiAlpha(c) && !isAsciiDigit(c) && c != '-') return false;
+        }
+        return true;
+    }
+    if (type == "region") {
+        if (code.size() == 2) {
+            return isAsciiAlpha(code[0]) && isAsciiAlpha(code[1]);
+        }
+        if (code.size() == 3) {
+            return isAsciiDigit(code[0]) && isAsciiDigit(code[1]) &&
+                   isAsciiDigit(code[2]);
+        }
+        return false;
+    }
+    if (type == "script") {
+        if (code.size() != 4) return false;
+        for (char c : code) {
+            if (!isAsciiAlpha(c)) return false;
+        }
+        return true;
+    }
+    if (type == "currency") {
+        if (code.size() != 3) return false;
+        for (char c : code) {
+            if (!isAsciiAlpha(c)) return false;
+        }
+        return true;
+    }
+    if (type == "calendar") {
+        for (char c : code) {
+            if (!isAsciiAlpha(c) && !isAsciiDigit(c) && c != '-') return false;
+        }
+        return true;
+    }
+    static const char* const kFields[] = {
+        "year", "quarter", "month", "week", "weekOfYear", "day", "dayPeriod",
+        "hour", "minute", "second", "weekday", "era", "timeZoneName"};
+    for (const char* field : kFields) {
+        if (code == field) return true;
+    }
+    return false;
+}
+
+Value* displayNamesOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlDisplayNamesData* d = nullptr;
+    if (Value* err = requireDisplayNames(ctx, self, d)) return err;
+    Value* codeArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* codeStr = detail::toStringValue(ctx, codeArg);
+    if (detail::isErrorValue(codeStr)) return codeStr;
+    const std::string code = static_cast<StringData*>(codeStr->data())->value;
+    if (!isWellFormedCode(d->type, code)) {
+        return detail::rangeError(ctx, std::string("Invalid code: ") + code);
+    }
+    if (d->backend->display_names_of == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support of");
+    }
+
+    size_t length = 0;
+    NJS_IntlStatus status =
+        d->backend->display_names_of(d->names, code.c_str(), nullptr, &length);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.DisplayNames.of");
+    }
+    if (length == 0) return ctx->createUndefined();
+    std::vector<char> buffer(length);
+    status = d->backend->display_names_of(d->names, code.c_str(), buffer.data(),
+                                          &length);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.DisplayNames.of");
+    }
+    return ctx->createString(std::string(buffer.data()));
+}
+
+Value* displayNamesResolvedOptions(IContext* ctx, Value* self, size_t /*argc*/,
+                                   Value* /*argv*/[]) {
+    IntlDisplayNamesData* d = nullptr;
+    if (Value* err = requireDisplayNames(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("style", ctx->createString(d->style))) return err;
+    if (Value* err = define("type", ctx->createString(d->type))) return err;
+    if (Value* err = define("fallback", ctx->createString(d->fallback))) return err;
+    if (d->type == "language") {
+        if (Value* err = define("languageDisplay",
+                                ctx->createString(d->languageDisplay))) {
+            return err;
+        }
+    }
+    return result;
+}
+
+Value* displayNamesSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                                      Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -2262,6 +2483,40 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.DisplayNames ——
+    Value* displayProto = ctx->createObject();
+    if (displayProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(displayProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlDisplayNamesPrototype(displayProto);
+    if (!defineMethod(ctx, displayProto, "of", displayNamesOf, 0)) return false;
+    if (!defineMethod(ctx, displayProto, "resolvedOptions",
+                      displayNamesResolvedOptions, 0)) {
+        return false;
+    }
+    if (!defineTag(ctx, displayProto, "Intl.DisplayNames")) return false;
+
+    Value* displayCtor = ctx->createNativeFunction(displayNamesCall, 0);
+    if (displayCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(displayCtor, "DisplayNames");
+    ctx->setFunctionConstructor(displayCtor, displayNamesConstruct);
+    if (ctx->defineProperty(displayCtor, "prototype", displayProto, false, false,
+                            false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(displayProto, "constructor", displayCtor, true, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, displayCtor, "supportedLocalesOf",
+                      displayNamesSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -2288,6 +2543,10 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "ListFormat", listCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "DisplayNames", displayCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }
