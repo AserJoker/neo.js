@@ -1,12 +1,15 @@
-// MessageValue.h - 跨线程消息的结构化值（JSON-like）
+// MessageValue.h - 跨线程消息的结构化值
 //
-// MessageValue 是与 Context/GC 无关的纯 C++ 值树，可在任意线程构造与销毁。
+// MessageValue 是与 Context/GC 无关的纯 C++ 值树/图，可在任意线程构造与销毁。
 // postMessage 时把 JS Value 深拷贝成 MessageValue，接收方再还原成自己的 Value；
 // 两边不共享任何 Value*/data。
 //
-// W2 支持：undefined / null / boolean / number / string / array / 普通对象。
-// 函数、symbol、bigint、Proxy 等暂不支持，抛 DataCloneError（W3 扩展 Date/Map/
-// Set/RegExp/TypedArray、循环引用与 transfer）。
+// 支持：undefined / null / boolean / number / string / array / 普通对象 /
+// Date / Map / Set / RegExp / ArrayBuffer / DataView / TypedArray，
+// 以及循环引用与共享引用（对象图用 id + Reference 表示）。
+//
+// 不支持：函数、symbol、bigint、Proxy、WeakMap/WeakSet、Error 等，抛
+// DataCloneError。transfer list / MessagePort 转移在后续阶段实现。
 //
 // Hole 只出现在数组元素位置，用于保留稀疏数组的空洞（还原时跳过该索引）。
 //
@@ -15,6 +18,7 @@
 #ifndef NEO_WORKER_MESSAGEVALUE_H
 #define NEO_WORKER_MESSAGEVALUE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -31,15 +35,39 @@ enum class MessageValueKind : uint8_t {
     Array,
     Object,
     Hole,  // 仅用于数组元素位置
+    Date,
+    Map,
+    Set,
+    RegExp,
+    ArrayBuffer,
+    DataView,
+    TypedArray,
+    Reference,  // 指向同一消息中 id 为 ref 的已克隆对象（循环/共享引用）
 };
 
 struct MessageValue {
     MessageValueKind kind = MessageValueKind::Undefined;
+    // 对象图节点 id（仅对象类节点非 0）。Reference 用 ref 指向目标 id。
+    uint32_t id = 0;
+    uint32_t ref = 0;
+
     bool boolean = false;
     double number = 0.0;
-    std::string string;
-    std::vector<MessageValue> array;
-    std::vector<std::pair<std::string, MessageValue>> object;
+    std::string string;   // String 值 / RegExp source
+    std::string string2;  // RegExp flags
+
+    std::vector<MessageValue> array;                              // Array
+    std::vector<std::pair<std::string, MessageValue>> object;     // Object
+    std::vector<std::pair<MessageValue, MessageValue>> entries;   // Map
+    std::vector<MessageValue> items;                              // Set
+    std::vector<uint8_t> bytes;                                   // ArrayBuffer
+
+    // DataView / TypedArray：buffer 恰好含一个 ArrayBuffer 节点。
+    std::vector<MessageValue> buffer;
+    size_t byteOffset = 0;
+    size_t byteLength = 0;    // DataView
+    size_t length = 0;        // TypedArray 元素个数
+    uint8_t typedArrayKind = 0;
 
     static MessageValue undefined() { return MessageValue{}; }
     static MessageValue null() {
@@ -81,6 +109,12 @@ struct MessageValue {
     static MessageValue hole() {
         MessageValue v;
         v.kind = MessageValueKind::Hole;
+        return v;
+    }
+    static MessageValue reference(uint32_t id) {
+        MessageValue v;
+        v.kind = MessageValueKind::Reference;
+        v.ref = id;
         return v;
     }
 };

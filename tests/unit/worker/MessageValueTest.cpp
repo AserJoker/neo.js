@@ -11,10 +11,15 @@
 #include "core/IType.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/ArrayBuffer.h"
+#include "core/types/Collection.h"
+#include "core/types/Date.h"
 #include "core/types/Error.h"
 #include "core/types/Exception.h"
 #include "core/types/Number.h"
+#include "core/types/RegExp.h"
 #include "core/types/String.h"
+#include "core/types/TypedArray.h"
 #include "core/types/TypeBehavior.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
@@ -181,18 +186,97 @@ TEST(MessageValueTest, UnsupportedTypeThrowsDataCloneError) {
     EXPECT_EQ(stringAt(name), "DataCloneError");
 }
 
-TEST(MessageValueTest, CyclicReferenceThrowsDataCloneError) {
+TEST(MessageValueTest, SupportsCyclicReferences) {
     Fixture f;
     Value* obj = f.ctx->createObject();
     f.ctx->setProperty(obj, "self", obj);
 
     MessageValue mv;
-    Value* err = valueToMessage(f.ctx.get(), obj, mv);
-    ASSERT_TRUE(neo::core::detail::isErrorValue(err));
-    ASSERT_EQ(err->type()->kind(), TypeKind::Exception);
+    ASSERT_EQ(valueToMessage(f.ctx.get(), obj, mv), nullptr);
+    ASSERT_EQ(mv.kind, MessageValueKind::Object);
+    ASSERT_NE(mv.id, 0u);
+    ASSERT_EQ(mv.object.size(), 1u);
+    ASSERT_EQ(mv.object[0].second.kind, MessageValueKind::Reference);
+    EXPECT_EQ(mv.object[0].second.ref, mv.id);
 
-    auto* ex = static_cast<ExceptionData*>(err->data());
-    Value* name = f.ctx->getProperty(ex->child, "name");
-    ASSERT_EQ(name->type()->kind(), TypeKind::String);
-    EXPECT_EQ(stringAt(name), "DataCloneError");
+    Value* restored = messageToValue(f.ctx.get(), mv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
+    Value* self = f.ctx->getProperty(restored, "self");
+    EXPECT_EQ(self, restored);
+}
+
+TEST(MessageValueTest, ClonesDateMapSetAndRegExp) {
+    Fixture f;
+    Value* date = f.ctx->createDate(1234.5);
+    Value* map = f.ctx->createCollection(neo::core::CollectionKind::Map);
+    Value* mapArgs[] = {f.ctx->createString("k"), f.ctx->createNumber(7)};
+    f.ctx->call(f.ctx->getProperty(map, "set"), map, 2, mapArgs);
+    Value* set = f.ctx->createCollection(neo::core::CollectionKind::Set);
+    Value* setArgs[] = {f.ctx->createNumber(9)};
+    f.ctx->call(f.ctx->getProperty(set, "add"), set, 1, setArgs);
+    Value* re = f.ctx->createRegExp("a+b", "gi");
+
+    MessageValue dateMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), date, dateMv), nullptr);
+    EXPECT_EQ(dateMv.kind, MessageValueKind::Date);
+    EXPECT_EQ(dateMv.number, 1234.5);
+
+    MessageValue mapMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), map, mapMv), nullptr);
+    ASSERT_EQ(mapMv.kind, MessageValueKind::Map);
+    ASSERT_EQ(mapMv.entries.size(), 1u);
+    EXPECT_EQ(mapMv.entries[0].first.string, "k");
+    EXPECT_EQ(mapMv.entries[0].second.number, 7.0);
+
+    MessageValue setMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), set, setMv), nullptr);
+    ASSERT_EQ(setMv.kind, MessageValueKind::Set);
+    ASSERT_EQ(setMv.items.size(), 1u);
+    EXPECT_EQ(setMv.items[0].number, 9.0);
+
+    MessageValue reMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), re, reMv), nullptr);
+    EXPECT_EQ(reMv.kind, MessageValueKind::RegExp);
+    EXPECT_EQ(reMv.string, "a+b");
+    EXPECT_EQ(reMv.string2, "gi");
+
+    Value* restoredMap = messageToValue(f.ctx.get(), mapMv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restoredMap));
+    Value* getArgs[] = {f.ctx->createString("k")};
+    Value* got = f.ctx->call(f.ctx->getProperty(restoredMap, "get"),
+                             restoredMap, 1, getArgs);
+    ASSERT_EQ(got->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(numberAt(got), 7.0);
+}
+
+TEST(MessageValueTest, ClonesArrayBufferAndTypedArray) {
+    Fixture f;
+    Value* buffer = f.ctx->createArrayBuffer(8);
+    auto* bufData = neo::core::asArrayBuffer(buffer);
+    bufData->bytes = {1, 2, 3, 4, 5, 6, 7, 8};
+    Value* view = f.ctx->createTypedArray(buffer, 0, 2,
+                                          neo::core::TypedArrayKind::Uint16);
+
+    MessageValue bufMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), buffer, bufMv), nullptr);
+    ASSERT_EQ(bufMv.kind, MessageValueKind::ArrayBuffer);
+    EXPECT_EQ(bufMv.bytes.size(), 8u);
+
+    MessageValue viewMv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), view, viewMv), nullptr);
+    ASSERT_EQ(viewMv.kind, MessageValueKind::TypedArray);
+    ASSERT_EQ(viewMv.buffer.size(), 1u);
+    ASSERT_EQ(viewMv.buffer[0].kind, MessageValueKind::ArrayBuffer);
+    EXPECT_EQ(viewMv.length, 2u);
+    EXPECT_EQ(viewMv.typedArrayKind,
+              static_cast<uint8_t>(neo::core::TypedArrayKind::Uint16));
+
+    Value* restored = messageToValue(f.ctx.get(), viewMv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
+    ASSERT_EQ(restored->type()->kind(), TypeKind::TypedArray);
+    auto* data = neo::core::asTypedArray(restored);
+    EXPECT_EQ(data->length, 2u);
+    EXPECT_EQ(data->kind, neo::core::TypedArrayKind::Uint16);
+    auto* restoredBuf = neo::core::asArrayBuffer(data->buffer);
+    EXPECT_EQ(restoredBuf->bytes, bufData->bytes);
 }
