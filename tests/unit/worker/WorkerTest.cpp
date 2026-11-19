@@ -52,7 +52,8 @@ void echoHandler(IContext* ctx, const Message& in, MessageQueue& outbox) {
     neo::core::Value* v = ctx->createString("ok");
     auto* s = static_cast<StringData*>(v->data());
     Message reply;
-    reply.payload = "echo:" + in.payload + ":" + s->value;
+    reply.value = neo::worker::MessageValue::stringValue(
+        "echo:" + in.value.string + ":" + s->value);
     outbox.push(std::move(reply));
 }
 
@@ -119,12 +120,12 @@ TEST(WorkerTest, EchoRoundTrip) {
     EXPECT_TRUE(w->running());
 
     Message msg;
-    msg.payload = "ping";
+    msg.value = neo::worker::MessageValue::stringValue("ping");
     w->post(std::move(msg));
 
     Message reply;
     ASSERT_TRUE(receiveWithTimeout(*w, reply, 10000));
-    EXPECT_EQ(reply.payload, "echo:ping:ok");
+    EXPECT_EQ(reply.value.string, "echo:ping:ok");
 
     w->requestStop();
     w->join();
@@ -141,7 +142,7 @@ TEST(WorkerTest, StopDrainsQueuedMessages) {
 
     for (int i = 0; i < 3; ++i) {
         Message msg;
-        msg.payload = std::to_string(i);
+        msg.value = neo::worker::MessageValue::stringValue(std::to_string(i));
         w->post(std::move(msg));
     }
     w->requestStop();
@@ -151,7 +152,7 @@ TEST(WorkerTest, StopDrainsQueuedMessages) {
     for (int i = 0; i < 3; ++i) {
         Message reply;
         ASSERT_TRUE(w->tryReceive(reply)) << "missing reply " << i;
-        EXPECT_EQ(reply.payload, "echo:" + std::to_string(i) + ":ok");
+        EXPECT_EQ(reply.value.string, "echo:" + std::to_string(i) + ":ok");
     }
     Message extra;
     EXPECT_FALSE(w->tryReceive(extra));
@@ -166,7 +167,7 @@ TEST(WorkerTest, ChildAllocatorQuotaReleasedOnJoin) {
     ASSERT_TRUE(w->start());
 
     Message msg;
-    msg.payload = "x";
+    msg.value = neo::worker::MessageValue::stringValue("x");
     w->post(std::move(msg));
     Message reply;
     ASSERT_TRUE(receiveWithTimeout(*w, reply, 10000));
@@ -194,18 +195,18 @@ TEST(WorkerTest, IndependentWorkers) {
     EXPECT_NE(a->allocator(), b->allocator());
 
     Message ma;
-    ma.payload = "a";
+    ma.value = neo::worker::MessageValue::stringValue("a");
     a->post(std::move(ma));
     Message mb;
-    mb.payload = "b";
+    mb.value = neo::worker::MessageValue::stringValue("b");
     b->post(std::move(mb));
 
     Message ra;
     Message rb;
     ASSERT_TRUE(receiveWithTimeout(*a, ra, 10000));
     ASSERT_TRUE(receiveWithTimeout(*b, rb, 10000));
-    EXPECT_EQ(ra.payload, "echo:a:ok");
-    EXPECT_EQ(rb.payload, "echo:b:ok");
+    EXPECT_EQ(ra.value.string, "echo:a:ok");
+    EXPECT_EQ(rb.value.string, "echo:b:ok");
 
     a->requestStop();
     b->requestStop();

@@ -3,26 +3,26 @@
 // Worker 与主线程之间只传消息，不共享 Value/Context。队列本身是线程安全的：
 // 生产者可在任意线程 push，消费者在 worker 线程 waitPop。
 //
-// W1 的消息载荷是字符串占位；W2 换成 MessageValue（JSON-like 深拷贝 +
-// DataCloneError），队列容器与唤醒机制不变。
+// 消息载荷是与 Context 无关的 MessageValue（JSON-like 深拷贝）。
 //
 // 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装）、028（infra）
 
 #ifndef NEO_WORKER_MESSAGEQUEUE_H
 #define NEO_WORKER_MESSAGEQUEUE_H
 
+#include "worker/MessageValue.h"
+
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
 #include <mutex>
-#include <string>
 #include <utility>
 
 namespace neo::worker {
 
-// 跨线程消息。payload 在 W1 是原样字符串。
+// 跨线程消息：载荷是深拷贝后的结构化值。
 struct Message {
-    std::string payload;
+    MessageValue value;
 };
 
 // 线程安全 FIFO。close 后不再接受新消息，等待者被唤醒并返回 false。

@@ -208,6 +208,7 @@ add_library(neojs STATIC
     src/private/infra/CommandParser.cpp
     src/private/infra/NativeFileSystem.cpp
     src/private/worker/Worker.cpp
+    src/private/worker/MessageValue.cpp
     src/private/frontend/CharStream.cpp
     src/private/frontend/Lexer.cpp
     src/private/frontend/Node.cpp
