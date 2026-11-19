@@ -192,6 +192,16 @@ struct NJS_IntlFormatter {
     int fractional_second_digits = -1;
 };
 
+struct NJS_IntlCollator {
+    std::string locale;
+    std::string usage = "sort";
+    std::string sensitivity = "variant";
+    std::string case_first = "false";
+    std::string collation = "default";
+    bool ignore_punctuation = false;
+    bool numeric = false;
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -846,6 +856,231 @@ NJS_IntlStatus dateTimeFormatFormat(NJS_IntlFormatter* f, double time,
     return NJS_INTL_OK;
 }
 
+// —— Collator ——
+
+std::vector<uint32_t> decodeUtf8(const char* text, size_t length) {
+    std::vector<uint32_t> out;
+    out.reserve(length);
+    size_t i = 0;
+    while (i < length) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        uint32_t cp = c;
+        size_t extra = 0;
+        if (c < 0x80) {
+            extra = 0;
+        } else if ((c & 0xE0) == 0xC0) {
+            cp = c & 0x1F;
+            extra = 1;
+        } else if ((c & 0xF0) == 0xE0) {
+            cp = c & 0x0F;
+            extra = 2;
+        } else if ((c & 0xF8) == 0xF0) {
+            cp = c & 0x07;
+            extra = 3;
+        } else {
+            out.push_back(c);
+            ++i;
+            continue;
+        }
+        if (i + extra >= length) {
+            out.push_back(c);
+            ++i;
+            continue;
+        }
+        bool ok = true;
+        for (size_t k = 1; k <= extra; ++k) {
+            const unsigned char cc = static_cast<unsigned char>(text[i + k]);
+            if ((cc & 0xC0) != 0x80) {
+                ok = false;
+                break;
+            }
+            cp = (cp << 6) | (cc & 0x3F);
+        }
+        if (!ok) {
+            out.push_back(c);
+            ++i;
+            continue;
+        }
+        out.push_back(cp);
+        i += extra + 1;
+    }
+    return out;
+}
+
+bool isAsciiPunctuation(uint32_t cp) {
+    return (cp >= 33 && cp <= 47) || (cp >= 58 && cp <= 64) ||
+           (cp >= 91 && cp <= 96) || (cp >= 123 && cp <= 126);
+}
+
+bool isCombiningMark(uint32_t cp) { return cp >= 0x0300 && cp <= 0x036F; }
+
+uint32_t foldCase(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z') return cp - 'A' + 'a';
+    return cp;
+}
+
+std::vector<uint32_t> transform(const NJS_IntlCollator* c,
+                                const std::vector<uint32_t>& input) {
+    std::vector<uint32_t> out;
+    out.reserve(input.size());
+    const bool ignore_case = c->sensitivity != "variant";
+    const bool ignore_accent =
+        c->sensitivity == "base" || c->sensitivity == "accent";
+    for (uint32_t cp : input) {
+        if (c->ignore_punctuation && isAsciiPunctuation(cp)) continue;
+        if (ignore_accent && isCombiningMark(cp)) continue;
+        if (ignore_case) cp = foldCase(cp);
+        out.push_back(cp);
+    }
+    return out;
+}
+
+int compareNumeric(const std::vector<uint32_t>& a, const std::vector<uint32_t>& b) {
+    size_t i = 0;
+    size_t j = 0;
+    while (i < a.size() && j < b.size()) {
+        const bool da = a[i] >= '0' && a[i] <= '9';
+        const bool db = b[j] >= '0' && b[j] <= '9';
+        if (da && db) {
+            size_t ia = i;
+            size_t jb = j;
+            while (ia < a.size() && a[ia] == '0') ++ia;
+            while (jb < b.size() && b[jb] == '0') ++jb;
+            size_t ea = ia;
+            size_t eb = jb;
+            while (ea < a.size() && a[ea] >= '0' && a[ea] <= '9') ++ea;
+            while (eb < b.size() && b[eb] >= '0' && b[eb] <= '9') ++eb;
+            const size_t la = ea - ia;
+            const size_t lb = eb - jb;
+            if (la != lb) return la < lb ? -1 : 1;
+            for (size_t k = 0; k < la; ++k) {
+                if (a[ia + k] != b[jb + k]) return a[ia + k] < b[jb + k] ? -1 : 1;
+            }
+            i = ea;
+            j = eb;
+            continue;
+        }
+        if (a[i] != b[j]) return a[i] < b[j] ? -1 : 1;
+        ++i;
+        ++j;
+    }
+    if (i < a.size()) return 1;
+    if (j < b.size()) return -1;
+    return 0;
+}
+
+NJS_IntlCollator* collatorCreate(void* /*ud*/, const char* locale,
+                                 const NJS_IntlOption* opts, size_t nopts,
+                                 NJS_IntlResolved* resolved,
+                                 NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlCollator* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* c = new (std::nothrow) NJS_IntlCollator();
+    if (c == nullptr) return fail(NJS_INTL_INTERNAL);
+    c->locale = locale;
+
+    const char* usage = findOption(opts, nopts, "usage");
+    if (usage != nullptr) {
+        if (!equals(usage, "sort") && !equals(usage, "search")) {
+            delete c;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        c->usage = usage;
+    }
+    const char* sensitivity = findOption(opts, nopts, "sensitivity");
+    if (sensitivity != nullptr) {
+        if (!equals(sensitivity, "base") && !equals(sensitivity, "accent") &&
+            !equals(sensitivity, "case") && !equals(sensitivity, "variant")) {
+            delete c;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        c->sensitivity = sensitivity;
+    }
+    const char* case_first = findOption(opts, nopts, "caseFirst");
+    if (case_first != nullptr) {
+        if (!equals(case_first, "upper") && !equals(case_first, "lower") &&
+            !equals(case_first, "false")) {
+            delete c;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        c->case_first = case_first;
+    }
+    const char* collation = findOption(opts, nopts, "collation");
+    if (collation != nullptr) {
+        if (!equals(collation, "default")) {
+            delete c;
+            return fail(NJS_INTL_UNSUPPORTED);
+        }
+        c->collation = collation;
+    }
+    const char* ignore_punctuation = findOption(opts, nopts, "ignorePunctuation");
+    if (ignore_punctuation != nullptr &&
+        !parseBool(ignore_punctuation, c->ignore_punctuation)) {
+        delete c;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+    const char* numeric = findOption(opts, nopts, "numeric");
+    if (numeric != nullptr && !parseBool(numeric, c->numeric)) {
+        delete c;
+        return fail(NJS_INTL_INVALID_OPTION);
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, c->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  "latn");
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return c;
+}
+
+NJS_IntlStatus collatorCompare(NJS_IntlCollator* c, const char* a, size_t a_len,
+                               const char* b, size_t b_len, int* result) {
+    if (c == nullptr || result == nullptr) return NJS_INTL_INTERNAL;
+    const std::vector<uint32_t> ta = transform(c, decodeUtf8(a, a_len));
+    const std::vector<uint32_t> tb = transform(c, decodeUtf8(b, b_len));
+
+    int comparison = 0;
+    if (c->numeric) {
+        comparison = compareNumeric(ta, tb);
+    } else if (ta != tb) {
+        comparison = std::lexicographical_compare(ta.begin(), ta.end(), tb.begin(),
+                                                  tb.end())
+                         ? -1
+                         : 1;
+    }
+
+    if (comparison == 0 && c->case_first != "false" &&
+        c->sensitivity != "base" && c->sensitivity != "accent") {
+        const std::vector<uint32_t> oa = decodeUtf8(a, a_len);
+        const std::vector<uint32_t> ob = decodeUtf8(b, b_len);
+        const size_t n = std::min(oa.size(), ob.size());
+        for (size_t i = 0; i < n; ++i) {
+            const bool ua = oa[i] >= 'A' && oa[i] <= 'Z';
+            const bool ub = ob[i] >= 'A' && ob[i] <= 'Z';
+            if (ua != ub) {
+                const bool upper_first = c->case_first == "upper";
+                comparison = (ua == upper_first) ? -1 : 1;
+                break;
+            }
+        }
+    }
+    *result = comparison;
+    return NJS_INTL_OK;
+}
+
+void collatorDestroy(NJS_IntlCollator* collator) { delete collator; }
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -853,7 +1088,8 @@ const char* lastError(void* /*ud*/) { return nullptr; }
 const NJS_IntlBackend kMinimalBackend = {
     NJS_INTL_ABI_VERSION,
     sizeof(NJS_IntlBackend),
-    NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_FORMAT_TO_PARTS,
+    NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
+        NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -865,6 +1101,9 @@ const NJS_IntlBackend kMinimalBackend = {
     lastError,
     dateTimeFormatCreate,
     dateTimeFormatFormat,
+    collatorCreate,
+    collatorCompare,
+    collatorDestroy,
 };
 
 }  // namespace

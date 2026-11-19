@@ -11,6 +11,7 @@
 
 #include "core/IContext.h"
 #include "core/IType.h"
+#include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -517,9 +518,23 @@ Value* stringLocaleCompare(IContext* ctx, Value* self, size_t argc, Value* argv[
     if (detail::isErrorValue(str)) return str;
     Value* that = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
     if (detail::isErrorValue(that)) return that;
+    // 有 Intl 时委托给 %Collator%（ECMA-402 §22.1.3.10）；否则退化为码元序。
+    Value* intl = ctx->global()->lookup("Intl");
+    if (intl != nullptr && detail::isObjectKind(intl->type()->kind())) {
+        Value* ctor = ctx->getProperty(intl, "Collator");
+        if (!detail::isErrorValue(ctor) && detail::isCallable(ctor)) {
+            Value* ctorArgs[2] = {argOrUndefined(ctx, argc, argv, 1),
+                                  argOrUndefined(ctx, argc, argv, 2)};
+            Value* collator = ctx->construct(ctor, 2, ctorArgs);
+            if (detail::isErrorValue(collator)) return collator;
+            Value* compare = ctx->getProperty(collator, "compare");
+            if (detail::isErrorValue(compare)) return compare;
+            Value* compareArgs[2] = {str, that};
+            return ctx->call(compare, collator, 2, compareArgs);
+        }
+    }
     std::vector<uint16_t> a = toUtf16(stringValue(str));
     std::vector<uint16_t> b = toUtf16(stringValue(that));
-    // 无 locale/ICU 时退化为码元序比较。
     if (std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end())) {
         return ctx->createNumber(-1.0);
     }

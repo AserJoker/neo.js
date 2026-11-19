@@ -15,6 +15,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
@@ -1145,6 +1146,195 @@ Value* dateTimeFormatFormatGetter(IContext* ctx, Value* self, size_t /*argc*/,
     return ctx->createBoundFunction(fn, self, 0, nullptr);
 }
 
+// —— Intl.Collator ——
+
+struct CollatorOptions {
+    std::string usage = "sort";
+    std::string sensitivity = "variant";
+    std::string caseFirst = "false";
+    std::string collation = "default";
+    bool ignorePunctuation = false;
+    bool numeric = false;
+};
+
+Value* parseCollatorOptions(IContext* ctx, Value* options, CollatorOptions& out) {
+    static const char* const kUsages[] = {"sort", "search"};
+    if (Value* err = optionString(ctx, options, "usage", kUsages, 2, "sort",
+                                  out.usage)) {
+        return err;
+    }
+    static const char* const kSensitivities[] = {"base", "accent", "case",
+                                                 "variant"};
+    if (Value* err = optionString(ctx, options, "sensitivity", kSensitivities, 4,
+                                  "variant", out.sensitivity)) {
+        return err;
+    }
+    static const char* const kCaseFirsts[] = {"upper", "lower", "false"};
+    if (Value* err = optionString(ctx, options, "caseFirst", kCaseFirsts, 3,
+                                  "false", out.caseFirst)) {
+        return err;
+    }
+    if (Value* err = optionFreeString(ctx, options, "collation", "default",
+                                      out.collation)) {
+        return err;
+    }
+    if (Value* err = optionBool(ctx, options, "ignorePunctuation", false,
+                                out.ignorePunctuation)) {
+        return err;
+    }
+    if (Value* err = optionBool(ctx, options, "numeric", false, out.numeric)) {
+        return err;
+    }
+    return nullptr;
+}
+
+void buildCollatorBackendOptions(
+    const CollatorOptions& options,
+    std::vector<std::pair<std::string, std::string>>& storage,
+    std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("usage", options.usage);
+    storage.emplace_back("sensitivity", options.sensitivity);
+    storage.emplace_back("caseFirst", options.caseFirst);
+    storage.emplace_back("collation", options.collation);
+    storage.emplace_back("ignorePunctuation",
+                         options.ignorePunctuation ? "true" : "false");
+    storage.emplace_back("numeric", options.numeric ? "true" : "false");
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* collatorConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                         Value* argv[]);
+
+Value* collatorCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return collatorConstruct(ctx, self, argc, argv);
+}
+
+Value* collatorConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                         Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->collator_create == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support Collator");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    CollatorOptions parsed;
+    if (Value* err = parseCollatorOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildCollatorBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlCollator* collator = backend->collator_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (collator == nullptr) {
+        return backendStatusError(ctx, status, "Intl.Collator options");
+    }
+
+    Value* object = ctx->createIntlCollator(backend, collator, resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlCollatorData* d = asIntlCollator(object);
+    d->locale = resolved.locale;
+    d->usage = parsed.usage;
+    d->sensitivity = parsed.sensitivity;
+    d->caseFirst = parsed.caseFirst;
+    d->collation = parsed.collation;
+    d->ignorePunctuation = parsed.ignorePunctuation;
+    d->numeric = parsed.numeric;
+    return object;
+}
+
+Value* requireCollator(IContext* ctx, Value* self, IntlCollatorData*& out) {
+    out = asIntlCollator(self);
+    if (out == nullptr || out->collator == nullptr || out->backend == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.Collator method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+Value* collatorCompareFn(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlCollatorData* d = nullptr;
+    if (Value* err = requireCollator(ctx, self, d)) return err;
+    Value* a = detail::toStringValue(ctx, argc > 0 ? argv[0] : ctx->createUndefined());
+    if (detail::isErrorValue(a)) return a;
+    Value* b = detail::toStringValue(ctx, argc > 1 ? argv[1] : ctx->createUndefined());
+    if (detail::isErrorValue(b)) return b;
+    if (d->backend->collator_compare == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support comparison");
+    }
+    const std::string& sa = static_cast<StringData*>(a->data())->value;
+    const std::string& sb = static_cast<StringData*>(b->data())->value;
+    int result = 0;
+    NJS_IntlStatus status = d->backend->collator_compare(
+        d->collator, sa.data(), sa.size(), sb.data(), sb.size(), &result);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.Collator.compare");
+    }
+    return ctx->createNumber(static_cast<double>(result));
+}
+
+Value* collatorCompareGetter(IContext* ctx, Value* self, size_t /*argc*/,
+                             Value* /*argv*/[]) {
+    IntlCollatorData* d = nullptr;
+    if (Value* err = requireCollator(ctx, self, d)) return err;
+    Value* fn = ctx->createNativeFunction(collatorCompareFn, 0);
+    if (fn == ctx->oomValue()) return fn;
+    ctx->setFunctionName(fn, "compare");
+    return ctx->createBoundFunction(fn, self, 0, nullptr);
+}
+
+Value* collatorResolvedOptions(IContext* ctx, Value* self, size_t /*argc*/,
+                               Value* /*argv*/[]) {
+    IntlCollatorData* d = nullptr;
+    if (Value* err = requireCollator(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("usage", ctx->createString(d->usage))) return err;
+    if (Value* err = define("sensitivity", ctx->createString(d->sensitivity))) {
+        return err;
+    }
+    if (Value* err = define("ignorePunctuation",
+                            ctx->createBoolean(d->ignorePunctuation))) {
+        return err;
+    }
+    if (Value* err = define("numeric", ctx->createBoolean(d->numeric))) return err;
+    if (Value* err = define("caseFirst", ctx->createString(d->caseFirst))) {
+        return err;
+    }
+    if (Value* err = define("collation", ctx->createString(d->collation))) {
+        return err;
+    }
+    return result;
+}
+
+Value* collatorSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                                  Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -1252,6 +1442,42 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.Collator ——
+    Value* collatorProto = ctx->createObject();
+    if (collatorProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(collatorProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlCollatorPrototype(collatorProto);
+    if (!defineGetter(ctx, collatorProto, "compare", collatorCompareGetter)) {
+        return false;
+    }
+    if (!defineMethod(ctx, collatorProto, "resolvedOptions", collatorResolvedOptions,
+                      0)) {
+        return false;
+    }
+    if (!defineTag(ctx, collatorProto, "Intl.Collator")) return false;
+
+    Value* collatorCtor = ctx->createNativeFunction(collatorCall, 0);
+    if (collatorCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(collatorCtor, "Collator");
+    ctx->setFunctionConstructor(collatorCtor, collatorConstruct);
+    if (ctx->defineProperty(collatorCtor, "prototype", collatorProto, false, false,
+                            false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(collatorProto, "constructor", collatorCtor, true, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, collatorCtor, "supportedLocalesOf",
+                      collatorSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -1261,6 +1487,10 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "DateTimeFormat", dateCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "Collator", collatorCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

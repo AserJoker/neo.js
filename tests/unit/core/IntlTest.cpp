@@ -63,6 +63,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* collator(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "Collator");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -183,6 +188,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
 };
@@ -453,6 +461,65 @@ TEST(IntlTest, DateToLocaleStringDelegatesToIntl) {
     Value* timeText = f.ctx->call(timeFn, date, 0, nullptr);
     ASSERT_FALSE(isError(timeText));
     EXPECT_EQ(strOf(timeText), "0:00:00");
+}
+
+TEST(IntlTest, CollatorCompareAndOptions) {
+    Fixture f;
+    Value* collator = f.collator();
+    ASSERT_FALSE(isError(collator));
+    Value* compare = f.ctx->getProperty(collator, "compare");
+    ASSERT_FALSE(isError(compare));
+
+    auto compareStrings = [&](const char* a, const char* b) -> double {
+        Value* args[2] = {f.ctx->createString(a), f.ctx->createString(b)};
+        return numOf(f.ctx->call(compare, collator, 2, args));
+    };
+    EXPECT_EQ(compareStrings("a", "b"), -1.0);
+    EXPECT_EQ(compareStrings("b", "a"), 1.0);
+    EXPECT_EQ(compareStrings("a", "a"), 0.0);
+    EXPECT_EQ(compareStrings("A", "a"), -1.0);
+
+    Value* baseOpts = f.ctx->createObject();
+    f.ctx->defineProperty(baseOpts, "sensitivity", f.ctx->createString("base"));
+    Value* baseArgs[2] = {f.ctx->createUndefined(), baseOpts};
+    Value* base = f.collator(2, baseArgs);
+    ASSERT_FALSE(isError(base));
+    Value* baseCompare = f.ctx->getProperty(base, "compare");
+    Value* basePair[2] = {f.ctx->createString("A"), f.ctx->createString("a")};
+    EXPECT_EQ(numOf(f.ctx->call(baseCompare, base, 2, basePair)), 0.0);
+
+    Value* numericOpts = f.ctx->createObject();
+    f.ctx->defineProperty(numericOpts, "numeric", f.ctx->createBoolean(true));
+    Value* numericArgs[2] = {f.ctx->createUndefined(), numericOpts};
+    Value* numeric = f.collator(2, numericArgs);
+    ASSERT_FALSE(isError(numeric));
+    Value* numericCompare = f.ctx->getProperty(numeric, "compare");
+    Value* numericPair[2] = {f.ctx->createString("10"), f.ctx->createString("2")};
+    EXPECT_EQ(numOf(f.ctx->call(numericCompare, numeric, 2, numericPair)), 1.0);
+
+    Value* resolved = f.call(collator, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "locale")), "en");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "usage")), "sort");
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "sensitivity")), "variant");
+    EXPECT_FALSE(boolOf(f.ctx->getProperty(resolved, "numeric")));
+}
+
+TEST(IntlTest, StringLocaleCompareDelegatesToCollator) {
+    Fixture f;
+    Value* a = f.ctx->createString("a");
+    Value* fn = f.ctx->getProperty(a, "localeCompare");
+    ASSERT_FALSE(isError(fn));
+
+    Value* args[1] = {f.ctx->createString("b")};
+    EXPECT_EQ(numOf(f.ctx->call(fn, a, 1, args)), -1.0);
+
+    Value* ten = f.ctx->createString("10");
+    Value* tenFn = f.ctx->getProperty(ten, "localeCompare");
+    Value* opts = f.ctx->createObject();
+    f.ctx->defineProperty(opts, "numeric", f.ctx->createBoolean(true));
+    Value* numericArgs[3] = {f.ctx->createString("2"), f.ctx->createUndefined(), opts};
+    EXPECT_EQ(numOf(f.ctx->call(tenFn, ten, 3, numericArgs)), 1.0);
 }
 
 TEST(IntlTest, ErrorCases) {

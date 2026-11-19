@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 2u
+#define NJS_INTL_ABI_VERSION 3u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -111,6 +111,7 @@ typedef struct {
 } NJS_IntlResolved;
 
 typedef struct NJS_IntlFormatter NJS_IntlFormatter;
+typedef struct NJS_IntlCollator NJS_IntlCollator;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
 
 struct NJS_IntlBackend {
@@ -156,6 +157,17 @@ struct NJS_IntlBackend {
     NJS_IntlStatus (*date_time_format_format)(NJS_IntlFormatter* formatter,
                                               double time, NJS_IntlPart* parts,
                                               size_t* count);
+
+    // —— ABI v3 追加 ——
+    // 创建/销毁排序器；compare 返回 -1/0/1。
+    NJS_IntlCollator* (*collator_create)(void* user_data, const char* locale,
+                                         const NJS_IntlOption* opts, size_t nopts,
+                                         NJS_IntlResolved* resolved,
+                                         NJS_IntlStatus* status);
+    NJS_IntlStatus (*collator_compare)(NJS_IntlCollator* collator, const char* a,
+                                       size_t a_len, const char* b, size_t b_len,
+                                       int* result);
+    void (*collator_destroy)(NJS_IntlCollator* collator);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。

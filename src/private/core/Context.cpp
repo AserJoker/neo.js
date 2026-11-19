@@ -50,6 +50,7 @@
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
 #include "core/types/TypedArray.h"
+#include "core/types/IntlCollator.h"
 #include "core/types/IntlDateTimeFormat.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
@@ -2258,6 +2259,29 @@ Value* Context::createIntlDateTimeFormat(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlDateTimeFormatPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlDateTimeFormatPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlCollator(const NJS_IntlBackend* backend,
+                                   NJS_IntlCollator* collator,
+                                   std::string_view locale,
+                                   std::string_view bindName) {
+    auto* d = gc_->allocData<IntlCollatorData>();
+    if (d == nullptr) {
+        if (collator != nullptr && backend != nullptr &&
+            backend->collator_destroy != nullptr) {
+            backend->collator_destroy(collator);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->collator = collator;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlCollatorType(), d, bindName);
+    if (object != oomValue_ && intlCollatorPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlCollatorPrototype_;
     }
     return object;
 }
