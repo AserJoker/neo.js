@@ -89,6 +89,11 @@ struct Fixture {
         return ctx->construct(ctor, argc, argv);
     }
 
+    Value* segmenter(size_t argc = 0, Value* argv[] = nullptr) {
+        Value* ctor = ctx->getProperty(intl(), "Segmenter");
+        return ctx->construct(ctor, argc, argv);
+    }
+
     Value* call(Value* self, const char* name, size_t argc = 0, Value* argv[] = nullptr) {
         Value* fn = ctx->getProperty(self, name);
         return ctx->call(fn, self, argc, argv);
@@ -209,6 +214,9 @@ const NJS_IntlBackend kFakeBackend = {
     fakeFormat,
     fakeDestroy,
     fakeLastError,
+    nullptr,
+    nullptr,
+    nullptr,
     nullptr,
     nullptr,
     nullptr,
@@ -835,6 +843,81 @@ TEST(IntlTest, SupportedValuesOf) {
 
     Value* badArgs[1] = {f.ctx->createString("bogus")};
     EXPECT_TRUE(isError(f.ctx->call(fn, f.intl(), 1, badArgs)));
+}
+
+TEST(IntlTest, SegmenterGraphemeAndWord) {
+    Fixture f;
+    auto make = [&](const char* granularity) {
+        Value* options = f.ctx->createObject();
+        f.ctx->defineProperty(options, "granularity",
+                              f.ctx->createString(granularity));
+        Value* args[2] = {f.ctx->createUndefined(), options};
+        return f.segmenter(2, args);
+    };
+    auto segment = [&](Value* segmenter, const char* text) {
+        return f.call1(segmenter, "segment", f.ctx->createString(text));
+    };
+    auto containing = [&](Value* segments, double index) {
+        return f.call1(segments, "containing", f.ctx->createNumber(index));
+    };
+
+    Value* grapheme = make("grapheme");
+    ASSERT_FALSE(isError(grapheme));
+    Value* graphemes = segment(grapheme, "abc");
+    ASSERT_FALSE(isError(graphemes));
+    Value* first = containing(graphemes, 0);
+    ASSERT_FALSE(isError(first));
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "segment")), "a");
+    EXPECT_EQ(numOf(f.ctx->getProperty(first, "index")), 0.0);
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "input")), "abc");
+    Value* last = containing(graphemes, 2);
+    EXPECT_EQ(strOf(f.ctx->getProperty(last, "segment")), "c");
+    Value* outOfRange = containing(graphemes, 3);
+    ASSERT_FALSE(isError(outOfRange));
+    EXPECT_EQ(outOfRange->type()->kind(), TypeKind::Undefined);
+
+    Value* word = make("word");
+    ASSERT_FALSE(isError(word));
+    Value* words = segment(word, "Hi there");
+    ASSERT_FALSE(isError(words));
+    Value* wordRecord = containing(words, 0);
+    EXPECT_EQ(strOf(f.ctx->getProperty(wordRecord, "segment")), "Hi");
+    EXPECT_TRUE(boolOf(f.ctx->getProperty(wordRecord, "isWordLike")));
+    Value* spaceRecord = containing(words, 2);
+    EXPECT_EQ(strOf(f.ctx->getProperty(spaceRecord, "segment")), " ");
+    EXPECT_FALSE(boolOf(f.ctx->getProperty(spaceRecord, "isWordLike")));
+    Value* thereRecord = containing(words, 3);
+    EXPECT_EQ(strOf(f.ctx->getProperty(thereRecord, "segment")), "there");
+
+    Value* resolved = f.call(word, "resolvedOptions");
+    ASSERT_FALSE(isError(resolved));
+    EXPECT_EQ(strOf(f.ctx->getProperty(resolved, "granularity")), "word");
+}
+
+TEST(IntlTest, SegmenterSentenceAndErrors) {
+    Fixture f;
+    Value* options = f.ctx->createObject();
+    f.ctx->defineProperty(options, "granularity", f.ctx->createString("sentence"));
+    Value* args[2] = {f.ctx->createUndefined(), options};
+    Value* sentence = f.segmenter(2, args);
+    ASSERT_FALSE(isError(sentence));
+
+    Value* segments = f.call1(sentence, "segment", f.ctx->createString("Hi. Bye"));
+    ASSERT_FALSE(isError(segments));
+    Value* first = f.call1(segments, "containing", f.ctx->createNumber(0));
+    ASSERT_FALSE(isError(first));
+    EXPECT_EQ(strOf(f.ctx->getProperty(first, "segment")), "Hi. ");
+    Value* second = f.call1(segments, "containing", f.ctx->createNumber(4));
+    ASSERT_FALSE(isError(second));
+    EXPECT_EQ(strOf(f.ctx->getProperty(second, "segment")), "Bye");
+
+    Value* badOpts = f.ctx->createObject();
+    f.ctx->defineProperty(badOpts, "granularity", f.ctx->createString("bogus"));
+    Value* badArgs[2] = {f.ctx->createUndefined(), badOpts};
+    EXPECT_TRUE(isError(f.segmenter(2, badArgs)));
+
+    Value* obj = f.ctx->createObject();
+    EXPECT_TRUE(isError(f.call1(obj, "segment", f.ctx->createString("x"))));
 }
 
 TEST(IntlTest, ErrorCases) {

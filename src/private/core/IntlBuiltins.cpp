@@ -21,6 +21,9 @@
 #include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlListFormat.h"
 #include "core/types/IntlDisplayNames.h"
+#include "core/types/IntlSegmenter.h"
+#include "core/types/IntlSegments.h"
+#include "unicode/Utf8.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
@@ -2267,6 +2270,265 @@ Value* supportedValuesOf(IContext* ctx, Value* /*self*/, size_t argc,
     return array;
 }
 
+// —— Intl.Segmenter ——
+
+std::vector<uint16_t> toUtf16Units(std::string_view text) {
+    std::vector<uint16_t> units;
+    size_t i = 0;
+    while (i < text.size()) {
+        uint32_t cp = 0;
+        if (!neo::unicode::decodeCodePoint(text, i, cp)) {
+            units.push_back(0xFFFD);
+            ++i;
+            continue;
+        }
+        if (cp > 0xFFFF) {
+            const uint32_t v = cp - 0x10000;
+            units.push_back(static_cast<uint16_t>(0xD800 + (v >> 10)));
+            units.push_back(static_cast<uint16_t>(0xDC00 + (v & 0x3FF)));
+        } else {
+            units.push_back(static_cast<uint16_t>(cp));
+        }
+    }
+    return units;
+}
+
+std::string fromUtf16Units(const std::vector<uint16_t>& units, size_t start,
+                           size_t length) {
+    std::string out;
+    size_t i = start;
+    const size_t end = start + length;
+    while (i < end) {
+        uint32_t cp = units[i];
+        if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < end && units[i + 1] >= 0xDC00 &&
+            units[i + 1] <= 0xDFFF) {
+            cp = neo::unicode::combineSurrogates(cp, units[i + 1]);
+            i += 2;
+        } else {
+            ++i;
+        }
+        neo::unicode::encodeCodePoint(cp, out);
+    }
+    return out;
+}
+
+struct SegmenterOptions {
+    std::string granularity = "grapheme";
+};
+
+Value* parseSegmenterOptions(IContext* ctx, Value* options,
+                             SegmenterOptions& out) {
+    static const char* const kGranularity[] = {"grapheme", "word", "sentence"};
+    return optionString(ctx, options, "granularity", kGranularity, 3, "grapheme",
+                        out.granularity);
+}
+
+void buildSegmenterBackendOptions(
+    const SegmenterOptions& options,
+    std::vector<std::pair<std::string, std::string>>& storage,
+    std::vector<NJS_IntlOption>& out) {
+    storage.clear();
+    storage.emplace_back("granularity", options.granularity);
+    out.clear();
+    out.reserve(storage.size());
+    for (const auto& entry : storage) {
+        out.push_back(NJS_IntlOption{entry.first.c_str(), entry.second.c_str()});
+    }
+}
+
+Value* segmenterConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                          Value* argv[]);
+
+Value* segmenterCall(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return segmenterConstruct(ctx, self, argc, argv);
+}
+
+Value* segmenterConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                          Value* argv[]) {
+    const NJS_IntlBackend* backend = backendOf(ctx);
+    if (backend == nullptr || backend->segmenter_create == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support Segmenter");
+    }
+
+    Value* locales = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* optionsArg = argc > 1 ? argv[1] : ctx->createUndefined();
+    Value* options = nullptr;
+    if (Value* err = getOptions(ctx, optionsArg, options)) return err;
+
+    std::vector<std::string> requested;
+    if (Value* err = canonicalizeLocaleList(ctx, locales, requested)) return err;
+    std::string locale;
+    if (Value* err = resolveLocale(ctx, requested, locale)) return err;
+
+    SegmenterOptions parsed;
+    if (Value* err = parseSegmenterOptions(ctx, options, parsed)) return err;
+
+    std::vector<std::pair<std::string, std::string>> storage;
+    std::vector<NJS_IntlOption> backendOptions;
+    buildSegmenterBackendOptions(parsed, storage, backendOptions);
+
+    NJS_IntlResolved resolved{};
+    NJS_IntlStatus status = NJS_INTL_OK;
+    NJS_IntlSegmenter* segmenter = backend->segmenter_create(
+        backend->user_data, locale.c_str(), backendOptions.data(),
+        backendOptions.size(), &resolved, &status);
+    if (segmenter == nullptr) {
+        return backendStatusError(ctx, status, "Intl.Segmenter options");
+    }
+
+    Value* object = ctx->createIntlSegmenter(backend, segmenter, resolved.locale);
+    if (detail::isErrorValue(object)) return object;
+
+    IntlSegmenterData* d = asIntlSegmenter(object);
+    d->locale = resolved.locale;
+    d->granularity = parsed.granularity;
+    return object;
+}
+
+Value* requireSegmenter(IContext* ctx, Value* self, IntlSegmenterData*& out) {
+    out = asIntlSegmenter(self);
+    if (out == nullptr || out->segmenter == nullptr || out->backend == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.Segmenter method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+Value* segmenterSegment(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlSegmenterData* d = nullptr;
+    if (Value* err = requireSegmenter(ctx, self, d)) return err;
+    Value* inputArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* inputStr = detail::toStringValue(ctx, inputArg);
+    if (detail::isErrorValue(inputStr)) return inputStr;
+    const std::string input = static_cast<StringData*>(inputStr->data())->value;
+
+    const NJS_IntlBackend* backend = d->backend;
+    if (backend->segmenter_segment == nullptr) {
+        return detail::typeError(ctx, "Intl backend does not support segment");
+    }
+    size_t count = 0;
+    NJS_IntlStatus status = backend->segmenter_segment(
+        d->segmenter, input.data(), input.size(), nullptr, &count);
+    if (status != NJS_INTL_OK) {
+        return backendStatusError(ctx, status, "Intl.Segmenter.segment");
+    }
+    std::vector<NJS_IntlSegment> segments(count);
+    if (count > 0) {
+        status = backend->segmenter_segment(d->segmenter, input.data(),
+                                            input.size(), segments.data(), &count);
+        if (status != NJS_INTL_OK) {
+            return backendStatusError(ctx, status, "Intl.Segmenter.segment");
+        }
+        segments.resize(count);
+    }
+
+    const std::vector<uint16_t> units = toUtf16Units(input);
+    Value* records = ctx->createArray();
+    if (detail::isErrorValue(records)) return records;
+    auto* recordsData = static_cast<ArrayData*>(records->data());
+    std::vector<size_t> starts;
+    std::vector<size_t> lengths;
+    starts.reserve(segments.size());
+    lengths.reserve(segments.size());
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const NJS_IntlSegment& segment = segments[i];
+        starts.push_back(segment.index);
+        lengths.push_back(segment.length);
+
+        Value* record = ctx->createObject();
+        if (detail::isErrorValue(record)) return record;
+        auto define = [&](const char* key, Value* value) -> Value* {
+            Value* r = ctx->defineProperty(record, key, value, true, true, true);
+            return detail::isErrorValue(r) ? r : nullptr;
+        };
+        if (Value* err = define(
+                "segment",
+                ctx->createString(fromUtf16Units(units, segment.index,
+                                                 segment.length)))) {
+            return err;
+        }
+        if (Value* err = define("index",
+                                ctx->createNumber(static_cast<double>(segment.index)))) {
+            return err;
+        }
+        if (Value* err = define("input", ctx->createString(input))) return err;
+        if (d->granularity == "word") {
+            if (Value* err = define("isWordLike",
+                                    ctx->createBoolean(segment.is_word_like != 0))) {
+                return err;
+            }
+        }
+        recordsData->setElement(static_cast<uint32_t>(i), record);
+    }
+
+    return ctx->createIntlSegments(input, std::move(starts), std::move(lengths),
+                                   records);
+}
+
+Value* segmenterResolvedOptions(IContext* ctx, Value* self, size_t /*argc*/,
+                                Value* /*argv*/[]) {
+    IntlSegmenterData* d = nullptr;
+    if (Value* err = requireSegmenter(ctx, self, d)) return err;
+    Value* result = ctx->createObject();
+    if (detail::isErrorValue(result)) return result;
+    auto define = [&](const char* key, Value* value) -> Value* {
+        Value* r = ctx->defineProperty(result, key, value, true, true, true);
+        return detail::isErrorValue(r) ? r : nullptr;
+    };
+    if (Value* err = define("locale", ctx->createString(d->locale))) return err;
+    if (Value* err = define("granularity",
+                            ctx->createString(d->granularity))) {
+        return err;
+    }
+    return result;
+}
+
+Value* segmenterSupportedLocalesOf(IContext* ctx, Value* /*self*/, size_t argc,
+                                   Value* argv[]) {
+    return supportedLocalesOfImpl(ctx, argc, argv);
+}
+
+// —— Segments 对象方法 ——
+
+Value* requireSegments(IContext* ctx, Value* self, IntlSegmentsData*& out) {
+    out = asIntlSegments(self);
+    if (out == nullptr) {
+        return detail::typeError(
+            ctx, "Intl.Segmenter Segments method called on incompatible receiver");
+    }
+    return nullptr;
+}
+
+Value* segmentsContaining(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    IntlSegmentsData* d = nullptr;
+    if (Value* err = requireSegments(ctx, self, d)) return err;
+    Value* indexArg = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* number = detail::toNumberValue(ctx, indexArg);
+    if (detail::isErrorValue(number)) return number;
+    const double raw = static_cast<NumberData*>(number->data())->value;
+    if (!std::isfinite(raw)) return ctx->createUndefined();
+    const double truncated = std::trunc(raw);
+    if (truncated < 0) return ctx->createUndefined();
+    const size_t index = static_cast<size_t>(truncated);
+    const size_t inputLength = toUtf16Units(d->input).size();
+    if (index >= inputLength) return ctx->createUndefined();
+
+    for (size_t i = 0; i < d->starts.size(); ++i) {
+        if (index >= d->starts[i] && index < d->starts[i] + d->lengths[i]) {
+            return ctx->getProperty(
+                d->records, ctx->createString(std::to_string(i)));
+        }
+    }
+    return ctx->createUndefined();
+}
+
+Value* segmentsIterator(IContext* ctx, Value* self, size_t /*argc*/,
+                        Value* /*argv*/[]) {
+    IntlSegmentsData* d = nullptr;
+    if (Value* err = requireSegments(ctx, self, d)) return err;
+    return ctx->createArrayIterator(d->records, ArrayIterationKind::Value);
+}
+
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
@@ -2554,6 +2816,61 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
 
+    // —— Intl.Segmenter ——
+    Value* segmentsProto = ctx->createObject();
+    if (segmentsProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(segmentsProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlSegmentsPrototype(segmentsProto);
+    if (!defineMethod(ctx, segmentsProto, "containing", segmentsContaining, 0)) {
+        return false;
+    }
+    if (ctx->defineProperty(segmentsProto,
+                            ctx->getWellKnownSymbol(WellKnownSymbol::Iterator),
+                            ctx->createNativeFunction(segmentsIterator, 0), true,
+                            false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineTag(ctx, segmentsProto, "Intl.Segments")) return false;
+
+    Value* segmenterProto = ctx->createObject();
+    if (segmenterProto == ctx->oomValue()) return false;
+    if (ctx->setPrototype(segmenterProto, ctx->objectPrototype())->type()->kind() ==
+        TypeKind::Exception) {
+        return false;
+    }
+    ctx->setIntlSegmenterPrototype(segmenterProto);
+    if (!defineMethod(ctx, segmenterProto, "segment", segmenterSegment, 0)) {
+        return false;
+    }
+    if (!defineMethod(ctx, segmenterProto, "resolvedOptions",
+                      segmenterResolvedOptions, 0)) {
+        return false;
+    }
+    if (!defineTag(ctx, segmenterProto, "Intl.Segmenter")) return false;
+
+    Value* segmenterCtor = ctx->createNativeFunction(segmenterCall, 0);
+    if (segmenterCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(segmenterCtor, "Segmenter");
+    ctx->setFunctionConstructor(segmenterCtor, segmenterConstruct);
+    if (ctx->defineProperty(segmenterCtor, "prototype", segmenterProto, false,
+                            false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(segmenterProto, "constructor", segmenterCtor, true,
+                            false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (!defineMethod(ctx, segmenterCtor, "supportedLocalesOf",
+                      segmenterSupportedLocalesOf, 0)) {
+        return false;
+    }
+
     // Intl 命名空间
     if (!defineMethod(ctx, intl, "getCanonicalLocales", getCanonicalLocales, 0)) {
         return false;
@@ -2587,6 +2904,10 @@ bool registerIntlBuiltins(IContext* ctx) {
         return false;
     }
     if (ctx->defineProperty(intl, "DisplayNames", displayCtor, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(intl, "Segmenter", segmenterCtor, true, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }

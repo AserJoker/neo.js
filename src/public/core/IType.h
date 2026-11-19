@@ -156,6 +156,10 @@ enum class TypeKind : uint8_t {
     IntlListFormat,
     // Intl.DisplayNames 实例（ECMA-402 §12）：普通对象 + 宿主后端显示名解析器句柄。
     IntlDisplayNames,
+    // Intl.Segmenter 实例（ECMA-402 §18）：普通对象 + 宿主后端分段器句柄。
+    IntlSegmenter,
+    // Intl.Segmenter.prototype.segment 返回的 Segments 对象（ECMA-402 §18.4）。
+    IntlSegments,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -353,6 +357,8 @@ IType* getIntlPluralRulesType();
 IType* getIntlRelativeTimeFormatType();
 IType* getIntlListFormatType();
 IType* getIntlDisplayNamesType();
+IType* getIntlSegmenterType();
+IType* getIntlSegmentsType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

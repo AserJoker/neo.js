@@ -724,6 +724,23 @@ public:
     virtual void setIntlDisplayNamesPrototype(Value* proto) = 0;
     virtual Value* intlDisplayNamesPrototype() const = 0;
 
+    // createIntlSegmenter: 创建 Intl.Segmenter 实例（ECMA-402 §18）。
+    virtual Value* createIntlSegmenter(const NJS_IntlBackend* backend,
+                                       NJS_IntlSegmenter* segmenter,
+                                       std::string_view locale,
+                                       std::string_view bindName = {}) = 0;
+    virtual void setIntlSegmenterPrototype(Value* proto) = 0;
+    virtual Value* intlSegmenterPrototype() const = 0;
+
+    // createIntlSegments: 创建 Segments 对象（ECMA-402 §18.4）。
+    // starts/lengths 以 UTF-16 码元为单位；records 为记录数组。
+    virtual Value* createIntlSegments(std::string_view input,
+                                      std::vector<size_t> starts,
+                                      std::vector<size_t> lengths, Value* records,
+                                      std::string_view bindName = {}) = 0;
+    virtual void setIntlSegmentsPrototype(Value* proto) = 0;
+    virtual Value* intlSegmentsPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。

@@ -56,6 +56,8 @@
 #include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlListFormat.h"
 #include "core/types/IntlDisplayNames.h"
+#include "core/types/IntlSegmenter.h"
+#include "core/types/IntlSegments.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Boolean.h"
 #include "core/types/Coroutine.h"
@@ -2377,6 +2379,47 @@ Value* Context::createIntlDisplayNames(const NJS_IntlBackend* backend,
     if (object != oomValue_ && intlDisplayNamesPrototype_ != nullptr) {
         static_cast<ObjectData*>(object->data())->prototype =
             intlDisplayNamesPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlSegmenter(const NJS_IntlBackend* backend,
+                                    NJS_IntlSegmenter* segmenter,
+                                    std::string_view locale,
+                                    std::string_view bindName) {
+    auto* d = gc_->allocData<IntlSegmenterData>();
+    if (d == nullptr) {
+        if (segmenter != nullptr && backend != nullptr &&
+            backend->segmenter_destroy != nullptr) {
+            backend->segmenter_destroy(segmenter);
+        }
+        return oomValue_;
+    }
+    d->backend = backend;
+    d->segmenter = segmenter;
+    d->locale = std::string(locale);
+    Value* object = createTracked(getIntlSegmenterType(), d, bindName);
+    if (object != oomValue_ && intlSegmenterPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlSegmenterPrototype_;
+    }
+    return object;
+}
+
+Value* Context::createIntlSegments(std::string_view input,
+                                   std::vector<size_t> starts,
+                                   std::vector<size_t> lengths, Value* records,
+                                   std::string_view bindName) {
+    auto* d = gc_->allocData<IntlSegmentsData>();
+    if (d == nullptr) return oomValue_;
+    d->input = std::string(input);
+    d->starts = std::move(starts);
+    d->lengths = std::move(lengths);
+    d->records = records;
+    Value* object = createTracked(getIntlSegmentsType(), d, bindName);
+    if (object != oomValue_ && intlSegmentsPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            intlSegmentsPrototype_;
     }
     return object;
 }

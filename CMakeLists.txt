@@ -163,6 +163,8 @@ add_library(neojs STATIC
     src/private/core/types/IntlRelativeTimeFormat.cpp
     src/private/core/types/IntlListFormat.cpp
     src/private/core/types/IntlDisplayNames.cpp
+    src/private/core/types/IntlSegmenter.cpp
+    src/private/core/types/IntlSegments.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp

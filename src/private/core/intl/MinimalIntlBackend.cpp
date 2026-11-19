@@ -236,6 +236,11 @@ struct NJS_IntlDisplayNames {
     std::string language_display = "dialect";
 };
 
+struct NJS_IntlSegmenter {
+    std::string locale;
+    std::string granularity = "grapheme";
+};
+
 namespace {
 
 const char* findOption(const NJS_IntlOption* opts, size_t nopts, const char* key) {
@@ -1771,6 +1776,190 @@ NJS_IntlStatus supportedValues(void* /*ud*/, const char* key,
     return NJS_INTL_INVALID_OPTION;
 }
 
+// —— Segmenter ——
+
+namespace {
+
+struct CodePointInfo {
+    size_t byte_offset;
+    size_t byte_length;
+    size_t utf16_offset;
+    size_t utf16_length;
+    uint32_t cp;
+};
+
+// 解码 UTF-8 并同时记录字节/UTF-16 偏移。非法字节按单字节 U+FFFD 处理。
+std::vector<CodePointInfo> decodeWithOffsets(const char* text, size_t length) {
+    std::vector<CodePointInfo> out;
+    size_t i = 0;
+    size_t utf16 = 0;
+    while (i < length) {
+        const unsigned char lead = static_cast<unsigned char>(text[i]);
+        size_t width = 1;
+        uint32_t cp = 0xFFFD;
+        if (lead < 0x80) {
+            cp = lead;
+        } else if ((lead & 0xE0) == 0xC0 && i + 1 < length) {
+            cp = (static_cast<uint32_t>(lead & 0x1F) << 6) |
+                 static_cast<uint32_t>(static_cast<unsigned char>(text[i + 1]) & 0x3F);
+            width = 2;
+        } else if ((lead & 0xF0) == 0xE0 && i + 2 < length) {
+            cp = (static_cast<uint32_t>(lead & 0x0F) << 12) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[i + 1]) & 0x3F)
+                  << 6) |
+                 static_cast<uint32_t>(static_cast<unsigned char>(text[i + 2]) & 0x3F);
+            width = 3;
+        } else if ((lead & 0xF8) == 0xF0 && i + 3 < length) {
+            cp = (static_cast<uint32_t>(lead & 0x07) << 18) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[i + 1]) & 0x3F)
+                  << 12) |
+                 (static_cast<uint32_t>(static_cast<unsigned char>(text[i + 2]) & 0x3F)
+                  << 6) |
+                 static_cast<uint32_t>(static_cast<unsigned char>(text[i + 3]) & 0x3F);
+            width = 4;
+        }
+        const size_t units = cp > 0xFFFF ? 2 : 1;
+        out.push_back(CodePointInfo{i, width, utf16, units, cp});
+        i += width;
+        utf16 += units;
+    }
+    return out;
+}
+
+bool isWordCodePoint(uint32_t cp) {
+    if (cp < 0x80) {
+        return (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') ||
+               (cp >= '0' && cp <= '9') || cp == '_';
+    }
+    return true;
+}
+
+bool isSentenceTerminator(uint32_t cp) {
+    return cp == '.' || cp == '!' || cp == '?';
+}
+
+bool isSpaceCodePoint(uint32_t cp) {
+    return cp == ' ' || cp == '\t' || cp == '\n' || cp == '\r';
+}
+
+}  // namespace
+
+NJS_IntlSegmenter* segmenterCreate(void* /*ud*/, const char* locale,
+                                   const NJS_IntlOption* opts, size_t nopts,
+                                   NJS_IntlResolved* resolved,
+                                   NJS_IntlStatus* status) {
+    auto fail = [status](NJS_IntlStatus s) -> NJS_IntlSegmenter* {
+        if (status != nullptr) *status = s;
+        return nullptr;
+    };
+    if (locale == nullptr) return fail(NJS_INTL_INVALID_OPTION);
+
+    auto* s = new (std::nothrow) NJS_IntlSegmenter();
+    if (s == nullptr) return fail(NJS_INTL_INTERNAL);
+    s->locale = locale;
+
+    const char* granularity = findOption(opts, nopts, "granularity");
+    if (granularity != nullptr) {
+        if (!equals(granularity, "grapheme") && !equals(granularity, "word") &&
+            !equals(granularity, "sentence")) {
+            delete s;
+            return fail(NJS_INTL_INVALID_OPTION);
+        }
+        s->granularity = granularity;
+    }
+
+    if (resolved != nullptr) {
+        std::memset(resolved, 0, sizeof *resolved);
+        auto copyFixed = [](char* dst, size_t size, const char* src) {
+            std::snprintf(dst, size, "%s", src);
+        };
+        copyFixed(resolved->locale, sizeof resolved->locale, s->locale.c_str());
+        copyFixed(resolved->numbering_system, sizeof resolved->numbering_system,
+                  "latn");
+        copyFixed(resolved->calendar, sizeof resolved->calendar, "gregory");
+        copyFixed(resolved->time_zone, sizeof resolved->time_zone, "UTC");
+    }
+    if (status != nullptr) *status = NJS_INTL_OK;
+    return s;
+}
+
+NJS_IntlStatus segmenterSegment(NJS_IntlSegmenter* s, const char* text,
+                                size_t text_len, NJS_IntlSegment* segments,
+                                size_t* count) {
+    if (s == nullptr || count == nullptr || (text == nullptr && text_len > 0)) {
+        return NJS_INTL_INTERNAL;
+    }
+    const std::vector<CodePointInfo> codePoints = decodeWithOffsets(text, text_len);
+    std::vector<NJS_IntlSegment> result;
+
+    if (s->granularity == "grapheme") {
+        for (const CodePointInfo& cp : codePoints) {
+            result.push_back(NJS_IntlSegment{cp.utf16_offset, cp.utf16_length,
+                                             isWordCodePoint(cp.cp) ? 1 : 0});
+        }
+    } else if (s->granularity == "word") {
+        size_t start = 0;
+        size_t length = 0;
+        bool wordLike = false;
+        for (const CodePointInfo& cp : codePoints) {
+            const bool current = isWordCodePoint(cp.cp);
+            if (length == 0) {
+                start = cp.utf16_offset;
+                length = cp.utf16_length;
+                wordLike = current;
+            } else if (current == wordLike) {
+                length += cp.utf16_length;
+            } else {
+                result.push_back(NJS_IntlSegment{start, length, wordLike ? 1 : 0});
+                start = cp.utf16_offset;
+                length = cp.utf16_length;
+                wordLike = current;
+            }
+        }
+        if (length > 0) {
+            result.push_back(NJS_IntlSegment{start, length, wordLike ? 1 : 0});
+        }
+    } else {
+        // 句段：终止符（. ! ?）连同其后的空白归入当前段。
+        size_t start = 0;
+        size_t i = 0;
+        while (i < codePoints.size()) {
+            size_t end = i + 1;
+            if (isSentenceTerminator(codePoints[i].cp)) {
+                while (end < codePoints.size() && isSpaceCodePoint(codePoints[end].cp)) {
+                    ++end;
+                }
+                const size_t segmentStart = codePoints[start].utf16_offset;
+                const size_t segmentEnd =
+                    codePoints[end - 1].utf16_offset +
+                    codePoints[end - 1].utf16_length;
+                result.push_back(
+                    NJS_IntlSegment{segmentStart, segmentEnd - segmentStart, 0});
+                start = end;
+            }
+            i = end;
+        }
+        if (start < codePoints.size()) {
+            const size_t segmentStart = codePoints[start].utf16_offset;
+            const size_t segmentEnd =
+                codePoints.back().utf16_offset + codePoints.back().utf16_length;
+            result.push_back(
+                NJS_IntlSegment{segmentStart, segmentEnd - segmentStart, 0});
+        }
+    }
+
+    const size_t needed = result.size();
+    if (segments == nullptr || *count < needed) {
+        *count = needed;
+        return NJS_INTL_OK;
+    }
+    for (size_t i = 0; i < needed; ++i) segments[i] = result[i];
+    *count = needed;
+    return NJS_INTL_OK;
+}
+
+void segmenterDestroy(NJS_IntlSegmenter* segmenter) { delete segmenter; }
+
 void formatterDestroy(NJS_IntlFormatter* formatter) { delete formatter; }
 
 const char* lastError(void* /*ud*/) { return nullptr; }
@@ -1780,7 +1969,8 @@ const NJS_IntlBackend kMinimalBackend = {
     sizeof(NJS_IntlBackend),
     NJS_INTL_CAP_NUMBER | NJS_INTL_CAP_DATETIME | NJS_INTL_CAP_COLLATOR |
         NJS_INTL_CAP_PLURAL | NJS_INTL_CAP_RELATIVE | NJS_INTL_CAP_LIST |
-        NJS_INTL_CAP_DISPLAY_NAMES | NJS_INTL_CAP_FORMAT_TO_PARTS,
+        NJS_INTL_CAP_DISPLAY_NAMES | NJS_INTL_CAP_SEGMENTER |
+        NJS_INTL_CAP_FORMAT_TO_PARTS,
     nullptr,
     canonicalizeLocale,
     availableLocales,
@@ -1808,6 +1998,9 @@ const NJS_IntlBackend kMinimalBackend = {
     displayNamesOf,
     displayNamesDestroy,
     supportedValues,
+    segmenterCreate,
+    segmenterSegment,
+    segmenterDestroy,
 };
 
 }  // namespace

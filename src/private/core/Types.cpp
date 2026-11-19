@@ -29,6 +29,8 @@
 #include "core/types/IntlRelativeTimeFormat.h"
 #include "core/types/IntlListFormat.h"
 #include "core/types/IntlDisplayNames.h"
+#include "core/types/IntlSegmenter.h"
+#include "core/types/IntlSegments.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
@@ -241,6 +243,16 @@ IType* getIntlDisplayNamesType() {
     return &inst;
 }
 
+IType* getIntlSegmenterType() {
+    static IntlSegmenterType inst;
+    return &inst;
+}
+
+IType* getIntlSegmentsType() {
+    static IntlSegmentsType inst;
+    return &inst;
+}
+
 IType* getRegExpStringIteratorType() {
     static RegExpStringIteratorType inst;
     return &inst;
@@ -293,6 +305,8 @@ IType* getTypeByKind(TypeKind k) {
             return getIntlRelativeTimeFormatType();
         case TypeKind::IntlListFormat: return getIntlListFormatType();
         case TypeKind::IntlDisplayNames: return getIntlDisplayNamesType();
+        case TypeKind::IntlSegmenter: return getIntlSegmenterType();
+        case TypeKind::IntlSegments: return getIntlSegmentsType();
     }
     return nullptr;
 }

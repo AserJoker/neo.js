@@ -43,7 +43,7 @@ const char* NJS_Version(void);
 // formatToParts 的 JS 对象组装全部在 core 内完成。
 // ---------------------------------------------------------------------------
 
-#define NJS_INTL_ABI_VERSION 8u
+#define NJS_INTL_ABI_VERSION 9u
 
 typedef enum {
     NJS_INTL_OK = 0,
@@ -117,7 +117,15 @@ typedef struct NJS_IntlPluralRules NJS_IntlPluralRules;
 typedef struct NJS_IntlRelativeTimeFormat NJS_IntlRelativeTimeFormat;
 typedef struct NJS_IntlListFormat NJS_IntlListFormat;
 typedef struct NJS_IntlDisplayNames NJS_IntlDisplayNames;
+typedef struct NJS_IntlSegmenter NJS_IntlSegmenter;
 typedef struct NJS_IntlBackend NJS_IntlBackend;
+
+// 一个分段结果。index/length 以 UTF-16 码元为单位。
+typedef struct {
+    size_t index;
+    size_t length;
+    int is_word_like;
+} NJS_IntlSegment;
 
 struct NJS_IntlBackend {
     uint32_t abi_version;
@@ -228,6 +236,19 @@ struct NJS_IntlBackend {
     // NJS_INTL_INVALID_OPTION。
     NJS_IntlStatus (*supported_values)(void* user_data, const char* key,
                                        const char* const** values, size_t* count);
+
+    // —— ABI v9 追加 ——
+    // 创建/销毁分段器；segment 两段式输出分段结果。
+    NJS_IntlSegmenter* (*segmenter_create)(void* user_data, const char* locale,
+                                           const NJS_IntlOption* opts,
+                                           size_t nopts,
+                                           NJS_IntlResolved* resolved,
+                                           NJS_IntlStatus* status);
+    NJS_IntlStatus (*segmenter_segment)(NJS_IntlSegmenter* segmenter,
+                                        const char* text, size_t text_len,
+                                        NJS_IntlSegment* segments,
+                                        size_t* count);
+    void (*segmenter_destroy)(NJS_IntlSegmenter* segmenter);
 };
 
 // core 内置的最小后端（en / latn / gregory / UTC）。始终可用。
