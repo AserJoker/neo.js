@@ -20,6 +20,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,6 +33,9 @@ struct Code;
 namespace neo::core {
 
 class Context : public IContext {
+    // 线程亲和（多线程模型）：Context/Scope/Value/GC 只允许在创建线程访问。
+    // 跨线程只允许经过 MessageQueue 传递序列化消息。
+    std::thread::id ownerThread_;
     infra::IAllocator* alloc_;              // 注入，无所有权
     std::unique_ptr<IGCEngine> gc_;         // Context 持有所有权
     infra::Console* console_;              // 注入，无所有权
@@ -682,6 +686,8 @@ public:
     void reportUnhandledRejections() override;
 
 private:
+    // 线程亲和断言：debug 构建下校验当前线程是该 Context 的 owner。
+    void assertOwnerThread() const;
     // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。
     uint64_t enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run);
     // 任务实体根的引用计数管理（ADR-042/044）：实体不挂 scope，直接增减 pinRef。

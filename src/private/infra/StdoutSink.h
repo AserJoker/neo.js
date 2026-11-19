@@ -11,14 +11,20 @@
 
 #include "infra/IOutputSink.h"  // public 接口
 
+#include <mutex>
+
 namespace neo::infra {
 
-// 真实实现：包 std::cout（FFI 调用在 .cpp 实现文件内）
+// 真实实现：包 std::cout（FFI 调用在 .cpp 实现文件内）。
+// 默认 StdoutSink 是进程级单例，多 isolate 可能并发写入，故内部加锁。
 class StdoutSink : public IOutputSink {
 public:
     void write(std::string_view text) override;
     void writeLine(std::string_view text) override;
     void flush() override;
+
+private:
+    std::mutex guard_;
 };
 
 }  // namespace neo::infra

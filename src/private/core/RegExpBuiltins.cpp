@@ -111,9 +111,11 @@ regex::RegexHost& regexHost() {
     return host;
 }
 
-// 进程内共享的引擎实例：Program 缓存需要跨调用存活，且缓存有界。
+// 线程内共享的引擎实例：Program 缓存需要跨调用存活，且缓存有界。
+// 多线程模型下每个 isolate 独占一个线程，thread_local 即天然隔离；
+// 缓存中的 Program 是不可变 shared_ptr，即使同线程多 Context 共享也安全。
 regex::RegexEngine& regexEngine() {
-    static regex::RegexEngine engine(regexHost());
+    static thread_local regex::RegexEngine engine(regexHost());
     return engine;
 }
 

@@ -26,14 +26,17 @@ StdoutSink& defaultSink() {
 // --- StdoutSink ---
 void StdoutSink::write(std::string_view text) {
     // 标准库可能在写入时抛异常（如 bad_alloc），由调用方/上层 try-catch 兜底
+    std::lock_guard<std::mutex> lock(guard_);
     std::cout << text;
 }
 
 void StdoutSink::writeLine(std::string_view text) {
+    std::lock_guard<std::mutex> lock(guard_);
     std::cout << text << '\n';
 }
 
 void StdoutSink::flush() {
+    std::lock_guard<std::mutex> lock(guard_);
     std::cout.flush();
 }
 

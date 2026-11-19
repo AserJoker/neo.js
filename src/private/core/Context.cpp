@@ -84,17 +84,20 @@
 #include "vm/Code.h"
 
 #include <algorithm>
+#include <cassert>
 #include <cstdlib>
 #include <limits>
 #include <new>
 #include <string>
+#include <thread>
 #include <unordered_set>
 
 namespace neo::core {
 
 Context::Context(infra::IAllocator* alloc, infra::Console* console,
                  infra::IClock* clock, const NJS_IntlBackend* intl)
-    : alloc_(alloc), gc_(createGcEngine(alloc)), console_(console),
+    : ownerThread_(std::this_thread::get_id()), alloc_(alloc),
+      gc_(createGcEngine(alloc)), console_(console),
       clock_(clock != nullptr ? clock : infra::defaultClock()),
       intlBackend_((intl != nullptr && intl->abi_version == NJS_INTL_ABI_VERSION &&
                     intl->struct_size >= sizeof(NJS_IntlBackend))
@@ -408,9 +411,16 @@ void trackValue(Scope* scope, Value* v, std::string_view name) {
 
 }  // namespace
 
+void Context::assertOwnerThread() const {
+    assert(ownerThread_ == std::this_thread::get_id() &&
+           "Context is thread-affine; cross-thread access must go through a "
+           "MessageQueue");
+}
+
 // 创建 Value 并跟踪：data 已由调用方 allocData 分配。
 // 失败时回收游离 data 并返回 OOM 哨兵（ADR-031）。
 Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
+    assertOwnerThread();
     if (data == nullptr) return oomValue_;
     Value* v = gc_->createValue(type, data);
     if (v == nullptr) {
@@ -3415,6 +3425,7 @@ void Context::insertOrdered(const Task& task) {
 }
 
 uint64_t Context::enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner run) {
+    assertOwnerThread();
     if (entity == nullptr) return 0;
     Task task;
     task.id = nextTaskId_++;
@@ -3429,6 +3440,7 @@ uint64_t Context::enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner
 }
 
 uint64_t Context::postMicrotask(Value* entity, TaskRunner run) {
+    assertOwnerThread();
     if (entity == nullptr) return 0;
     Task task;
     task.id = nextTaskId_++;
@@ -3464,10 +3476,12 @@ bool Context::eraseTask(uint64_t id) {
 }
 
 bool Context::cancelTask(uint64_t id) {
+    assertOwnerThread();
     return eraseTask(id);
 }
 
 bool Context::hasRunnableTask() const {
+    assertOwnerThread();
     // 微任务永远优先：只要微任务队列非空即可运行
     if (!microtasks_.empty()) return true;
     return !macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs();
@@ -3494,6 +3508,7 @@ Value* Context::executeTask(const Task& task) {
 }
 
 Value* Context::runOneTask() {
+    assertOwnerThread();
     // 微任务优先：每次只取一个，排空微任务后才轮到宏任务。
     // 注意：这里**不**做未处理拒绝检查点。检查点是宿主的 microtask checkpoint
     // 职责（§27.2.1.9），时机应是「宏任务结束 / 脚本结束」，而不是「每排空
