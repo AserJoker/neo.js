@@ -228,6 +228,82 @@ TEST(JsWorkerTest, TransfersMessagePortToWorker) {
     EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 42.0);
 }
 
+TEST(JsWorkerTest, AddEventListenerOnMessagePort) {
+    Fixture f;
+    std::string source =
+        "var ch = new MessageChannel();\n"
+        "function onMsg(e) { globalThis.result = e.data; }\n"
+        "ch.port2.addEventListener(\"message\", onMsg);\n"
+        "ch.port1.postMessage(7);\n";
+
+    Value* result = runScript(f, source, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    for (int i = 0; i < 100; ++i) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 7.0);
+}
+
+TEST(JsWorkerTest, RemoveEventListenerStopsDelivery) {
+    Fixture f;
+    std::string source =
+        "var ch = new MessageChannel();\n"
+        "function onMsg(e) { globalThis.result = e.data; }\n"
+        "ch.port2.addEventListener(\"message\", onMsg);\n"
+        "ch.port2.removeEventListener(\"message\", onMsg);\n"
+        "ch.port1.postMessage(9);\n";
+
+    Value* result = runScript(f, source, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    for (int i = 0; i < 100; ++i) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+    }
+    Value* value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
+TEST(JsWorkerTest, ModuleWorkerScript) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_module.js";
+    writeFile(workerPath,
+              "export const marker = 1;\n"
+              "onmessage = function (e) { postMessage(e.data + marker); };\n");
+
+    std::string mainSource =
+        "var w = new Worker(\"" + workerPath.generic_string() +
+        "\", { type: \"module\" });\n"
+        "w.onmessage = function (e) { globalThis.result = e.data; };\n"
+        "w.postMessage(41);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 42.0);
+}
+
 TEST(JsWorkerTest, PostMessageRejectsUncloneableValue) {
     Fixture f;
 

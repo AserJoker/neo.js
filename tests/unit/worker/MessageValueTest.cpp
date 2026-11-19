@@ -215,6 +215,25 @@ TEST(MessageValueTest, TransferListRejectsDuplicatesAndDetached) {
     ASSERT_TRUE(neo::core::detail::isErrorValue(err2));
 }
 
+TEST(MessageValueTest, ClonesErrorObject) {
+    Fixture f;
+    Value* err = f.ctx->createError("boom", "TypeError");
+    f.ctx->defineProperty(err, "name", f.ctx->createString("TypeError"));
+
+    MessageValue mv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), err, mv), nullptr);
+    ASSERT_EQ(mv.kind, MessageValueKind::Error);
+    EXPECT_EQ(mv.string, "TypeError");
+    EXPECT_EQ(mv.string2, "boom");
+    EXPECT_FALSE(mv.stack.empty());
+
+    Value* restored = messageToValue(f.ctx.get(), mv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
+    EXPECT_EQ(restored->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(stringAt(f.ctx->getProperty(restored, "name")), "TypeError");
+    EXPECT_EQ(stringAt(f.ctx->getProperty(restored, "message")), "boom");
+}
+
 TEST(MessageValueTest, UnsupportedTypeThrowsDataCloneError) {
     Fixture f;
     Value* sym = f.ctx->createSymbol("s");

@@ -8,6 +8,7 @@
 
 #include "core/PortBuiltins.h"
 
+#include "core/EventTarget.h"
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/IType.h"
@@ -38,16 +39,19 @@ void dispatchPort(IContext* ctx,
 
     Message msg;
     while (endpoint->channel()->queues[endpoint->side()].tryPop(msg)) {
-        Value* handler = ctx->getProperty(portObject, "onmessage");
-        if (!detail::isCallable(handler)) continue;
-
         Value* data = worker::messageToValue(ctx, msg.value);
         if (detail::isErrorValue(data)) continue;
 
         Value* event = ctx->createObject();
         if (event == ctx->oomValue()) return;
+        ctx->defineProperty(event, "type", ctx->createString("message"));
         ctx->defineProperty(event, "data", data);
-        (void)ctx->call(handler, portObject, 1, &event);
+
+        Value* handler = ctx->getProperty(portObject, "onmessage");
+        if (detail::isCallable(handler)) {
+            (void)ctx->call(handler, portObject, 1, &event);
+        }
+        dispatchEventListeners(ctx, portObject, event);
     }
 }
 
@@ -63,6 +67,7 @@ Value* createPortObject(IContext* ctx,
     // onmessage 先就绪，再安装 wake，避免派发时属性尚未定义。
     ctx->defineProperty(object, "onmessage", ctx->createNull(), true, false,
                         true);
+    initEventListenerStore(ctx, object);
     endpoint->attach(ctx, object, &dispatchPort);
     data->wake = endpoint->wakeSnapshot();
 
@@ -195,6 +200,7 @@ bool registerMessagePortBuiltins(IContext* ctx) {
     }
     if (!defineMethod(ctx, portProto, "start", &portStartMethod, 0)) return false;
     if (!defineMethod(ctx, portProto, "close", &portCloseMethod, 0)) return false;
+    if (!installEventTargetMethods(ctx, portProto)) return false;
 
     ctx->setMessagePortPrototype(portProto);
 

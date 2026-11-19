@@ -45,6 +45,7 @@ enum class MessageValueKind : uint8_t {
     ArrayBuffer,
     DataView,
     TypedArray,
+    Error,        // Error 对象（name/message/stack/cause）
     MessagePort,  // 转移的 MessagePort 端点
     Reference,    // 指向同一消息中 id 为 ref 的已克隆对象（循环/共享引用）
 };
@@ -57,14 +58,16 @@ struct MessageValue {
 
     bool boolean = false;
     double number = 0.0;
-    std::string string;   // String 值 / RegExp source
-    std::string string2;  // RegExp flags
+    std::string string;   // String 值 / RegExp source / Error name
+    std::string string2;  // RegExp flags / Error message
+    std::string stack;    // Error stack（空串表示未定义）
 
     std::vector<MessageValue> array;                              // Array
     std::vector<std::pair<std::string, MessageValue>> object;     // Object
     std::vector<std::pair<MessageValue, MessageValue>> entries;   // Map
     std::vector<MessageValue> items;                              // Set
     std::vector<uint8_t> bytes;                                   // ArrayBuffer
+    std::vector<MessageValue> cause;                              // Error cause（0/1）
 
     // DataView / TypedArray：buffer 恰好含一个 ArrayBuffer 节点。
     std::vector<MessageValue> buffer;

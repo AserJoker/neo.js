@@ -74,6 +74,19 @@ struct CloneContext {
 Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
                   CloneContext& cc);
 
+// 读取 Error 的字符串属性；undefined 视为空。转换失败原样返回错误值。
+Value* readStringProp(IContext* ctx, Value* object, std::string_view key,
+                      std::string& out) {
+    Value* v = ctx->getProperty(object, key);
+    if (core::detail::isErrorValue(v)) return v;
+    out.clear();
+    if (v->type()->kind() == TypeKind::Undefined) return nullptr;
+    Value* s = ctx->toString(v);
+    if (core::detail::isErrorValue(s)) return s;
+    out = static_cast<StringData*>(s->data())->value;
+    return nullptr;
+}
+
 // 对象类节点：已见过则产出 Reference 并返回 true；否则分配 id 写入 out。
 bool beginNode(CloneContext& cc, const Value* value, MessageValue& out,
                MessageValueKind kind) {
@@ -238,6 +251,30 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
             out.byteLength = data->byteLength;
             out.buffer.resize(1);
             return cloneValue(ctx, data->buffer, out.buffer[0], cc);
+        }
+        case TypeKind::Error: {
+            if (beginNode(cc, value, out, MessageValueKind::Error)) {
+                return nullptr;
+            }
+            if (Value* err = readStringProp(ctx, value, "name", out.string)) {
+                return err;
+            }
+            if (Value* err =
+                    readStringProp(ctx, value, "message", out.string2)) {
+                return err;
+            }
+            if (Value* err = readStringProp(ctx, value, "stack", out.stack)) {
+                return err;
+            }
+            Value* cause = ctx->getProperty(value, "cause");
+            if (core::detail::isErrorValue(cause)) return cause;
+            if (cause->type()->kind() != TypeKind::Undefined) {
+                out.cause.resize(1);
+                if (Value* err = cloneValue(ctx, cause, out.cause[0], cc)) {
+                    return err;
+                }
+            }
+            return nullptr;
         }
         case TypeKind::MessagePort: {
             if (cc.transfer == nullptr ||
@@ -406,6 +443,35 @@ Value* restoreValue(IContext* ctx, const MessageValue& value,
                                               value.byteLength);
             if (view != ctx->oomValue()) rc.seen[value.id] = view;
             return view;
+        }
+        case MessageValueKind::Error: {
+            const std::string& name =
+                value.string.empty() ? std::string("Error") : value.string;
+            Value* err = ctx->createError(value.string2, name);
+            if (err == ctx->oomValue()) return err;
+            rc.seen[value.id] = err;
+
+            Value* nameValue = ctx->createString(name);
+            if (nameValue == ctx->oomValue()) return nameValue;
+            Value* defined =
+                ctx->defineProperty(err, "name", nameValue, true, false, true);
+            if (core::detail::isErrorValue(defined)) return defined;
+
+            if (!value.stack.empty()) {
+                Value* stack = ctx->createString(value.stack);
+                if (stack == ctx->oomValue()) return stack;
+                Value* set =
+                    ctx->defineProperty(err, "stack", stack, true, false, true);
+                if (core::detail::isErrorValue(set)) return set;
+            }
+            if (!value.cause.empty()) {
+                Value* cause = restoreValue(ctx, value.cause[0], rc);
+                if (core::detail::isErrorValue(cause)) return cause;
+                Value* set =
+                    ctx->defineProperty(err, "cause", cause, true, false, true);
+                if (core::detail::isErrorValue(set)) return set;
+            }
+            return err;
         }
         case MessageValueKind::MessagePort: {
             if (!value.port) {

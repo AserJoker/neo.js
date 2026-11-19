@@ -37,6 +37,7 @@ struct WorkerState {
     Value* workerObject = nullptr;
     std::string path;
     std::string source;  // 构造时在主线程读入的脚本源码
+    bool module = false; // true = module script（new Worker(path, {type:"module"})）
 };
 
 class WorkerType : public ObjectType {

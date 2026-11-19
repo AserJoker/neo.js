@@ -15,6 +15,7 @@
 #include "core/WorkerBuiltins.h"
 
 #include "compiler/Compiler.h"
+#include "core/EventTarget.h"
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/IType.h"
@@ -71,16 +72,19 @@ void dispatchToMain(IContext* ctx, WorkerState* state) {
 
     Message msg;
     while (state->worker->tryReceive(msg)) {
-        Value* handler = ctx->getProperty(workerObject, "onmessage");
-        if (!detail::isCallable(handler)) continue;
-
         Value* data = worker::messageToValue(ctx, msg.value);
         if (detail::isErrorValue(data)) continue;
 
         Value* event = ctx->createObject();
         if (event == ctx->oomValue()) return;
+        ctx->defineProperty(event, "type", ctx->createString("message"));
         ctx->defineProperty(event, "data", data);
-        (void)ctx->call(handler, workerObject, 1, &event);
+
+        Value* handler = ctx->getProperty(workerObject, "onmessage");
+        if (detail::isCallable(handler)) {
+            (void)ctx->call(handler, workerObject, 1, &event);
+        }
+        dispatchEventListeners(ctx, workerObject, event);
     }
 }
 
@@ -112,11 +116,12 @@ Value* workerPostMessageGlobal(IContext* ctx, Value* /*self*/, size_t argc,
     return ctx->createUndefined();
 }
 
-// worker 线程：执行入口脚本（classic script）。
+// worker 线程：执行入口脚本（classic script 或 module）。
 void runWorkerScript(IContext* ctx, const std::string& source,
-                     const std::string& path) {
-    frontend::Parser parser(source,
-                            frontend::ParserOptions{frontend::SourceType::Script});
+                     const std::string& path, bool module) {
+    frontend::SourceType sourceType =
+        module ? frontend::SourceType::Module : frontend::SourceType::Script;
+    frontend::Parser parser(source, frontend::ParserOptions{sourceType});
     frontend::ParseResult parsed = parser.parseProgram();
     if (!parsed.ok()) {
         reportWorkerError(ctx, "failed to parse " + path);
@@ -135,6 +140,23 @@ void runWorkerScript(IContext* ctx, const std::string& source,
     compiler::CompileResult compiled = compiler.compile();
     if (!compiled.ok()) {
         reportWorkerError(ctx, "failed to compile " + path);
+        return;
+    }
+
+    if (module) {
+        // 模块：登记编译产物后走 importModule 的实例化/链接/求值流程。
+        ModuleCompilation compilation;
+        compilation.code = std::move(compiled.code);
+        compilation.declarePc = compiled.declarePc;
+        compilation.instantiatePc = compiled.instantiatePc;
+        compilation.evaluatePc = compiled.evaluatePc;
+        compilation.imports = std::move(compiled.imports);
+        compilation.exports = std::move(compiled.exports);
+        ctx->setModuleCompilation(path, std::move(compilation));
+        Value* result = ctx->importModule(path);
+        if (result != nullptr && result->type()->kind() == TypeKind::Exception) {
+            reportWorkerError(ctx, "uncaught exception in " + path);
+        }
         return;
     }
 
@@ -163,7 +185,8 @@ void jsWorkerSetup(IContext* ctx, MessageQueue& outbox, void* userdata) {
     // onmessage 初始为 null；脚本通过赋值覆盖。
     ctx->defineGlobal("onmessage", ctx->createNull(), true, false, true);
 
-    runWorkerScript(ctx, (*statePtr)->source, (*statePtr)->path);
+    runWorkerScript(ctx, (*statePtr)->source, (*statePtr)->path,
+                    (*statePtr)->module);
 }
 
 // worker 线程：每条 inbox 消息调用一次 onmessage({data})。
@@ -210,6 +233,18 @@ Value* workerConstruct(IContext* ctx, Value* /*self*/, size_t argc,
     data->state->path = path;
     data->state->source = std::move(source.value());
 
+    // 第二个参数：{ type: "module" } 选择 module script。
+    if (argc > 1 && argv[1]->type()->kind() == TypeKind::Object) {
+        Value* typeValue = ctx->getProperty(argv[1], "type");
+        if (!detail::isErrorValue(typeValue) &&
+            typeValue->type()->kind() != TypeKind::Undefined) {
+            Value* typeString = ctx->toString(typeValue);
+            if (detail::isErrorValue(typeString)) return typeString;
+            data->state->module =
+                static_cast<StringData*>(typeString->data())->value == "module";
+        }
+    }
+
     WorkerCallbacks callbacks;
     callbacks.setup = &jsWorkerSetup;
     callbacks.handler = &jsWorkerHandler;
@@ -229,6 +264,7 @@ Value* workerConstruct(IContext* ctx, Value* /*self*/, size_t argc,
     // onmessage 是普通自有属性（事件处理器属性），初始 null。
     ctx->defineProperty(object, "onmessage", ctx->createNull(), true, false,
                         true);
+    initEventListenerStore(ctx, object);
 
     if (!data->worker->start()) {
         return ctx->createErrorException(ErrorKind::Error,
@@ -313,6 +349,7 @@ bool registerWorkerBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, proto, "terminate", &workerTerminateMethod, 0)) {
         return false;
     }
+    if (!installEventTargetMethods(ctx, proto)) return false;
 
     ctx->setWorkerPrototype(proto);
     ctx->defineGlobal("Worker", ctor, true, false, true);

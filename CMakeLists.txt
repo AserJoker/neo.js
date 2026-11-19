@@ -130,6 +130,7 @@ add_library(neojs STATIC
     src/private/core/TimerBuiltins.cpp
     src/private/core/WorkerBuiltins.cpp
     src/private/core/PortBuiltins.cpp
+    src/private/core/EventTarget.cpp
     src/private/core/EvalBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
     src/private/core/PromiseBuiltins.cpp
