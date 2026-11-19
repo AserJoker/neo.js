@@ -41,6 +41,7 @@
 #include "core/RegExpBuiltins.h"
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
+#include "core/WorkerBuiltins.h"
 #include "core/types/Arguments.h"
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
@@ -285,6 +286,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         std::abort();
     }
 
+    // 12c. 注册 Worker（独立线程 + 消息传递）。
+    if (!registerWorkerBuiltins(this)) {
+        std::abort();
+    }
+
     // 13. 注册 Error 基类（%Error.prototype% + 构造函数）。
     //     依赖 Object.prototype / Function.prototype 已就绪；stack 渲染依赖调用栈。
     if (!registerErrorBuiltins(this)) {
@@ -305,6 +311,13 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
 }
 
 Context::~Context() {
+    // 0. 关闭外部任务队列：Worker 线程此后投递会被拒绝，已排队任务随队列销毁。
+    //    必须先于 GC 销毁（任务可能持有 WorkerState 等跨线程对象）。
+    {
+        std::lock_guard<std::mutex> lk(externalMutex_);
+        externalClosed_ = true;
+        externalTasks_.clear();
+    }
     // 0a. 兜底上报仍待处理的未处理拒绝（ADR-043 M4），并归还它们持有的动态根。
     //     宿主可能没有排空事件循环就销毁 Context，此时未处理拒绝仍需可见。
     reportUnhandledRejections();
@@ -2450,6 +2463,18 @@ Value* Context::createIntlLocale(std::string_view localeName,
     return object;
 }
 
+void Context::retainCode(std::unique_ptr<vm::Code> code) {
+    evalCodes_.push_back(std::move(code));
+}
+
+Value* Context::createWorkerObject(IData* data, std::string_view bindName) {
+    Value* object = createTracked(getWorkerType(), data, bindName);
+    if (object != oomValue_ && workerPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype = workerPrototype_;
+    }
+    return object;
+}
+
 // —— Error 对象（ADR-038）——
 
 namespace {
@@ -3439,6 +3464,15 @@ uint64_t Context::enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner
     return task.id;
 }
 
+bool Context::postExternalTask(std::function<void(IContext*)> task) {
+    // 线程安全：Worker 线程可调用。不触碰任何 Value/Scope。
+    if (!task) return false;
+    std::lock_guard<std::mutex> lk(externalMutex_);
+    if (externalClosed_) return false;
+    externalTasks_.push_back(std::move(task));
+    return true;
+}
+
 uint64_t Context::postMicrotask(Value* entity, TaskRunner run) {
     assertOwnerThread();
     if (entity == nullptr) return 0;
@@ -3484,6 +3518,11 @@ bool Context::hasRunnableTask() const {
     assertOwnerThread();
     // 微任务永远优先：只要微任务队列非空即可运行
     if (!microtasks_.empty()) return true;
+    // 外部任务（Worker 消息）按宏任务处理，无延迟。
+    {
+        std::lock_guard<std::mutex> lk(externalMutex_);
+        if (!externalTasks_.empty()) return true;
+    }
     return !macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs();
 }
 
@@ -3518,6 +3557,19 @@ Value* Context::runOneTask() {
         Task task = microtasks_.front().task;
         microtasks_.erase(microtasks_.begin());
         return executeTask(task);
+    }
+    // 外部任务：先取出再执行（执行期间可能继续投递新任务）。
+    std::function<void(IContext*)> external;
+    {
+        std::lock_guard<std::mutex> lk(externalMutex_);
+        if (!externalTasks_.empty()) {
+            external = std::move(externalTasks_.front());
+            externalTasks_.pop_front();
+        }
+    }
+    if (external) {
+        external(this);
+        return createUndefined();
     }
     if (!macrotasks_.empty() && macrotasks_.front().task.due() <= clock_->nowMs()) {
         Task task = macrotasks_.front().task;

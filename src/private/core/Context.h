@@ -17,7 +17,10 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 
+#include <deque>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -114,6 +117,7 @@ class Context : public IContext {
     Value* intlSegmenterPrototype_ = nullptr;
     Value* intlSegmentsPrototype_ = nullptr;
     Value* intlLocalePrototype_ = nullptr;
+    Value* workerPrototype_ = nullptr;  // %Worker.prototype%
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -138,6 +142,11 @@ class Context : public IContext {
     std::vector<QueuedTask> macrotasks_;
     uint64_t nextTaskId_ = 1;
     uint64_t nextSeq_ = 0;
+    // 外部任务队列（线程安全）：Worker 线程投递，owner 线程 runOneTask 执行。
+    // 作为宏任务处理，排在微任务之后；mutex 保护跨线程 push。
+    mutable std::mutex externalMutex_;
+    std::deque<std::function<void(IContext*)>> externalTasks_;
+    bool externalClosed_ = false;
     // 任务实体作为**动态 GC 根**（ADR-042）：不挂任何 scope，由 Context 直接
     // 增减 pinRef。同一实体被多个任务引用时只 pinRefInc 一次，最后一个出队/
     // 取消时 pinRefDec。析构时由 releaseAllTaskRoots 统一归还。
@@ -225,6 +234,8 @@ public:
         intlLocalePrototype_ = proto;
     }
     Value* intlLocalePrototype() const override { return intlLocalePrototype_; }
+    void setWorkerPrototype(Value* proto) override { workerPrototype_ = proto; }
+    Value* workerPrototype() const override { return workerPrototype_; }
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
@@ -465,6 +476,8 @@ public:
     Value* createIntlLocale(std::string_view localeName,
                             std::string_view timeZone,
                             std::string_view bindName = {}) override;
+    Value* createWorkerObject(IData* data,
+                              std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -659,6 +672,7 @@ public:
     Value* evalSource(Value* source, Scope* callerScope, bool direct) override;
     Value* evalFunction() const override { return evalFunction_; }
     void setEvalFunction(Value* fn) override { evalFunction_ = fn; }
+    void retainCode(std::unique_ptr<vm::Code> code) override;
 
     // 可赋值性（绑定维度）
     void setBindingMutable(Scope* scope, std::string_view name,
@@ -671,13 +685,18 @@ public:
     bool hasFlag(std::string_view name) const override;
 
     // 事件循环
+    bool postExternalTask(std::function<void(IContext*)> task) override;
     uint64_t postMicrotask(Value* entity, TaskRunner run = defaultTaskRunner) override;
     uint64_t postTask(Value* entity, uint64_t timeout = 0,
                       TaskRunner run = defaultTaskRunner) override;
     uint64_t postLoopTask(Value* entity, uint64_t timeout = 0,
                           TaskRunner run = defaultTaskRunner) override;
     bool cancelTask(uint64_t id) override;
-    bool hasTasks() const override { return !microtasks_.empty() || !macrotasks_.empty(); }
+    bool hasTasks() const override {
+        if (!microtasks_.empty() || !macrotasks_.empty()) return true;
+        std::lock_guard<std::mutex> lk(externalMutex_);
+        return !externalTasks_.empty();
+    }
     bool hasRunnableTask() const override;
     Value* runOneTask() override;
 

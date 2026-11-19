@@ -48,13 +48,18 @@ public:
 };
 
 // 回显处理器：同时在 worker 线程上创建/读取一个字符串，验证 Context 可用。
-void echoHandler(IContext* ctx, const Message& in, MessageQueue& outbox) {
+void echoHandler(IContext* ctx, const Message& in, MessageQueue& outbox,
+                 void* /*userdata*/) {
     neo::core::Value* v = ctx->createString("ok");
     auto* s = static_cast<StringData*>(v->data());
     Message reply;
     reply.value = neo::worker::MessageValue::stringValue(
         "echo:" + in.value.string + ":" + s->value);
     outbox.push(std::move(reply));
+}
+
+neo::worker::WorkerCallbacks echoCallbacks() {
+    return neo::worker::WorkerCallbacks{nullptr, &echoHandler, nullptr};
 }
 
 bool receiveWithTimeout(IWorker& w, Message& out, int timeoutMs) {
@@ -115,7 +120,7 @@ TEST(WorkerTest, EchoRoundTrip) {
     NullSink sink;
     Console console(&sink);
 
-    auto w = createWorker(parent.get(), &console, &echoHandler);
+    auto w = createWorker(parent.get(), &console, echoCallbacks());
     ASSERT_TRUE(w->start());
     EXPECT_TRUE(w->running());
 
@@ -137,7 +142,7 @@ TEST(WorkerTest, StopDrainsQueuedMessages) {
     NullSink sink;
     Console console(&sink);
 
-    auto w = createWorker(parent.get(), &console, &echoHandler);
+    auto w = createWorker(parent.get(), &console, echoCallbacks());
     ASSERT_TRUE(w->start());
 
     for (int i = 0; i < 3; ++i) {
@@ -163,7 +168,7 @@ TEST(WorkerTest, ChildAllocatorQuotaReleasedOnJoin) {
     NullSink sink;
     Console console(&sink);
 
-    auto w = createWorker(parent.get(), &console, &echoHandler);
+    auto w = createWorker(parent.get(), &console, echoCallbacks());
     ASSERT_TRUE(w->start());
 
     Message msg;
@@ -188,8 +193,8 @@ TEST(WorkerTest, IndependentWorkers) {
     NullSink sink;
     Console console(&sink);
 
-    auto a = createWorker(parent.get(), &console, &echoHandler);
-    auto b = createWorker(parent.get(), &console, &echoHandler);
+    auto a = createWorker(parent.get(), &console, echoCallbacks());
+    auto b = createWorker(parent.get(), &console, echoCallbacks());
     ASSERT_TRUE(a->start());
     ASSERT_TRUE(b->start());
     EXPECT_NE(a->allocator(), b->allocator());

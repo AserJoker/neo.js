@@ -3,6 +3,7 @@
 add_executable(worker_unit_test
     WorkerTest.cpp
     MessageValueTest.cpp
+    JsWorkerTest.cpp
 )
 target_link_libraries(worker_unit_test
     PRIVATE

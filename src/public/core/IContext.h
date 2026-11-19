@@ -43,6 +43,7 @@
 #include "neojs.h"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -68,6 +69,7 @@ struct Program;
 namespace neo::core {
 
 // 前向声明
+class IData;
 class IGCEngine;
 class Scope;
 class Value;
@@ -749,6 +751,13 @@ public:
     virtual void setIntlLocalePrototype(Value* proto) = 0;
     virtual Value* intlLocalePrototype() const = 0;
 
+    // createWorkerObject: 创建 Worker 实例（WorkerBuiltins 专用）。
+    // data 必须是 WorkerData（gc->allocData 分配），所有权转移给 GC。
+    virtual Value* createWorkerObject(IData* data,
+                                      std::string_view bindName = {}) = 0;
+    virtual void setWorkerPrototype(Value* proto) = 0;
+    virtual Value* workerPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。
@@ -1235,6 +1244,11 @@ public:
     virtual Value* evalFunction() const = 0;
     virtual void setEvalFunction(Value* fn) = 0;
 
+    // retainCode: 接管一段编译产物，生命周期与 Context 一致。
+    // 脚本创建的函数可能逃逸并长期引用 Code（VM/Function 只借用 const Code*），
+    // 故执行前必须把 Code 交给 Context 持有。用于 Worker 脚本等宿主侧执行。
+    virtual void retainCode(std::unique_ptr<vm::Code> code) = 0;
+
     // —— 可赋值性（ADR-030 阶段 5）——
     // mutability 属于作用域绑定而不是 Value：同一个 Value* 可以在不同绑定中
     // 具有不同的可变性（例如 export let 在导入方是只读）。
@@ -1273,6 +1287,11 @@ public:
     // runOneTask: 执行一个可运行任务，返回其执行结果；无任务返回 undefined。
     //           任务抛出的 Exception 由 run 打印为未捕获异常后返回 undefined；
     //           Fatal 原样返回（调用方须透传）。
+    // postExternalTask: 线程安全的外部任务投递（Worker 消息唤醒）。
+    // 任意线程可调用；任务在 owner 线程的 runOneTask 中执行（作为宏任务，
+    // 排在微任务之后）。task 接收 owner 线程的 Context，可安全创建/访问 Value。
+    // 返回 false 表示 Context 已关闭（析构中）。
+    virtual bool postExternalTask(std::function<void(IContext*)> task) = 0;
     virtual uint64_t postMicrotask(Value* entity,
                                    TaskRunner run = defaultTaskRunner) = 0;
     virtual uint64_t postTask(Value* entity, uint64_t timeout = 0,

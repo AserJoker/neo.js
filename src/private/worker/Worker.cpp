@@ -23,11 +23,11 @@ namespace {
 class WorkerImpl final : public IWorker {
 public:
     WorkerImpl(infra::IAllocator* parentAllocator, infra::Console* console,
-               WorkerHandler handler, const WorkerOptions& options)
+               const WorkerCallbacks& callbacks, const WorkerOptions& options)
         : alloc_(infra::createQuotaAllocator(parentAllocator,
                                              options.memoryLimit)),
           console_(console),
-          handler_(handler),
+          callbacks_(callbacks),
           clock_(options.clock),
           intl_(options.intl) {}
 
@@ -74,16 +74,21 @@ private:
         std::unique_ptr<core::IContext> ctx =
             core::createContext(alloc_.get(), console_, clock_, intl_);
 
+        if (callbacks_.setup != nullptr) {
+            callbacks_.setup(ctx.get(), outbox_, callbacks_.userdata);
+        }
         Message msg;
         while (inbox_.waitPop(msg)) {
-            handler_(ctx.get(), msg, outbox_);
+            if (callbacks_.handler != nullptr) {
+                callbacks_.handler(ctx.get(), msg, outbox_, callbacks_.userdata);
+            }
         }
         running_.store(false, std::memory_order_release);
     }
 
     std::unique_ptr<infra::IAllocator> alloc_;
     infra::Console* console_;
-    WorkerHandler handler_;
+    WorkerCallbacks callbacks_;
     infra::IClock* clock_;
     const NJS_IntlBackend* intl_;
 
@@ -98,9 +103,9 @@ private:
 
 std::unique_ptr<IWorker> createWorker(infra::IAllocator* parentAllocator,
                                       infra::Console* console,
-                                      WorkerHandler handler,
+                                      WorkerCallbacks callbacks,
                                       WorkerOptions options) {
-    return std::make_unique<WorkerImpl>(parentAllocator, console, handler,
+    return std::make_unique<WorkerImpl>(parentAllocator, console, callbacks,
                                         options);
 }
 

@@ -162,6 +162,9 @@ enum class TypeKind : uint8_t {
     IntlSegments,
     // Intl.Locale 实例（ECMA-402 §14）：普通对象 + 规范内部槽的字符串化表示。
     IntlLocale,
+    // Worker 对象（HTML Worker 门面）：普通对象 + 原生 worker 句柄与主线程上下文。
+    // 内部槽由 WorkerData 持有；其余对象行为（属性/原型/GC）与普通对象一致。
+    Worker,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -362,6 +365,7 @@ IType* getIntlDisplayNamesType();
 IType* getIntlSegmenterType();
 IType* getIntlSegmentsType();
 IType* getIntlLocaleType();
+IType* getWorkerType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

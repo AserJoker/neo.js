@@ -26,10 +26,22 @@
 
 namespace neo::worker {
 
+// 初始化回调：worker 线程创建 Context 后、消息循环开始前执行一次。
+// 用于注册 worker 专属全局（postMessage/onmessage）并运行入口脚本。
+using WorkerSetup = void (*)(core::IContext* ctx, MessageQueue& outbox,
+                             void* userdata);
+
 // 消息处理器：在 worker 线程上执行。ctx 是该线程独占的 Context；
 // outbox 可随时 push，主线程用 tryReceive 取回。
 using WorkerHandler = void (*)(core::IContext* ctx, const Message& in,
-                               MessageQueue& outbox);
+                               MessageQueue& outbox, void* userdata);
+
+struct WorkerCallbacks {
+    WorkerSetup setup = nullptr;
+    WorkerHandler handler = nullptr;
+    // 调用方持有；必须活到 worker 线程退出（IWorker 析构会 join）。
+    void* userdata = nullptr;
+};
 
 struct WorkerOptions {
     // 该 Worker 的独立内存配额（SIZE_MAX = 不限额）。
@@ -72,7 +84,7 @@ public:
 // console 由调用方持有，所有 Worker 共享；默认 StdoutSink 已线程安全。
 std::unique_ptr<IWorker> createWorker(infra::IAllocator* parentAllocator,
                                       infra::Console* console,
-                                      WorkerHandler handler,
+                                      WorkerCallbacks callbacks,
                                       WorkerOptions options = {});
 
 }  // namespace neo::worker
