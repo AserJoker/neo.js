@@ -42,6 +42,7 @@
 #include "core/SymbolBuiltins.h"
 #include "core/TimerBuiltins.h"
 #include "core/WorkerBuiltins.h"
+#include "core/PortBuiltins.h"
 #include "core/types/Arguments.h"
 #include "core/types/Array.h"
 #include "core/types/AsyncGenerator.h"
@@ -291,6 +292,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         std::abort();
     }
 
+    // 12d. 注册 MessagePort / MessageChannel（跨线程端口通道）。
+    if (!registerMessagePortBuiltins(this)) {
+        std::abort();
+    }
+
     // 13. 注册 Error 基类（%Error.prototype% + 构造函数）。
     //     依赖 Object.prototype / Function.prototype 已就绪；stack 渲染依赖调用栈。
     if (!registerErrorBuiltins(this)) {
@@ -317,6 +323,7 @@ Context::~Context() {
         std::lock_guard<std::mutex> lk(externalMutex_);
         externalClosed_ = true;
         externalTasks_.clear();
+        externalWake_ = nullptr;
     }
     // 0a. 兜底上报仍待处理的未处理拒绝（ADR-043 M4），并归还它们持有的动态根。
     //     宿主可能没有排空事件循环就销毁 Context，此时未处理拒绝仍需可见。
@@ -2475,6 +2482,16 @@ Value* Context::createWorkerObject(IData* data, std::string_view bindName) {
     return object;
 }
 
+Value* Context::createMessagePortObject(IData* data,
+                                        std::string_view bindName) {
+    Value* object = createTracked(getMessagePortType(), data, bindName);
+    if (object != oomValue_ && messagePortPrototype_ != nullptr) {
+        static_cast<ObjectData*>(object->data())->prototype =
+            messagePortPrototype_;
+    }
+    return object;
+}
+
 // —— Error 对象（ADR-038）——
 
 namespace {
@@ -3467,10 +3484,21 @@ uint64_t Context::enqueue(Value* entity, uint64_t timeout, bool loop, TaskRunner
 bool Context::postExternalTask(std::function<void(IContext*)> task) {
     // 线程安全：Worker 线程可调用。不触碰任何 Value/Scope。
     if (!task) return false;
-    std::lock_guard<std::mutex> lk(externalMutex_);
-    if (externalClosed_) return false;
-    externalTasks_.push_back(std::move(task));
+    std::function<void()> wake;
+    {
+        std::lock_guard<std::mutex> lk(externalMutex_);
+        if (externalClosed_) return false;
+        externalTasks_.push_back(std::move(task));
+        wake = externalWake_;
+    }
+    // 唤醒回调在锁外执行（它可能阻塞在消息队列上）。
+    if (wake) wake();
     return true;
+}
+
+void Context::setExternalTaskWake(std::function<void()> wake) {
+    std::lock_guard<std::mutex> lk(externalMutex_);
+    externalWake_ = std::move(wake);
 }
 
 uint64_t Context::postMicrotask(Value* entity, TaskRunner run) {

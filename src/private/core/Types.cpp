@@ -33,6 +33,7 @@
 #include "core/types/IntlSegments.h"
 #include "core/types/IntlLocale.h"
 #include "core/types/Worker.h"
+#include "core/types/MessagePort.h"
 #include "core/types/IntlNumberFormat.h"
 #include "core/types/Iterator.h"
 #include "core/types/Null.h"
@@ -265,6 +266,11 @@ IType* getWorkerType() {
     return &inst;
 }
 
+IType* getMessagePortType() {
+    static MessagePortType inst;
+    return &inst;
+}
+
 IType* getRegExpStringIteratorType() {
     static RegExpStringIteratorType inst;
     return &inst;
@@ -321,6 +327,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IntlSegments: return getIntlSegmentsType();
         case TypeKind::IntlLocale: return getIntlLocaleType();
         case TypeKind::Worker: return getWorkerType();
+        case TypeKind::MessagePort: return getMessagePortType();
     }
     return nullptr;
 }

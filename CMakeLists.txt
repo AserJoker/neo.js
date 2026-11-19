@@ -129,6 +129,7 @@ add_library(neojs STATIC
     src/private/core/OperatorPrimitives.cpp
     src/private/core/TimerBuiltins.cpp
     src/private/core/WorkerBuiltins.cpp
+    src/private/core/PortBuiltins.cpp
     src/private/core/EvalBuiltins.cpp
     src/private/core/ErrorBuiltins.cpp
     src/private/core/PromiseBuiltins.cpp
@@ -168,6 +169,7 @@ add_library(neojs STATIC
     src/private/core/types/IntlSegments.cpp
     src/private/core/types/IntlLocale.cpp
     src/private/core/types/Worker.cpp
+    src/private/core/types/MessagePort.cpp
     src/private/core/types/Error.cpp
     src/private/core/types/PrimitiveWrapper.cpp
     src/private/core/types/Promise.cpp
@@ -211,6 +213,7 @@ add_library(neojs STATIC
     src/private/infra/NativeFileSystem.cpp
     src/private/worker/Worker.cpp
     src/private/worker/MessageValue.cpp
+    src/private/worker/Port.cpp
     src/private/frontend/CharStream.cpp
     src/private/frontend/Lexer.cpp
     src/private/frontend/Node.cpp

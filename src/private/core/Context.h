@@ -118,6 +118,7 @@ class Context : public IContext {
     Value* intlSegmentsPrototype_ = nullptr;
     Value* intlLocalePrototype_ = nullptr;
     Value* workerPrototype_ = nullptr;  // %Worker.prototype%
+    Value* messagePortPrototype_ = nullptr;  // %MessagePort.prototype%
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
@@ -146,6 +147,7 @@ class Context : public IContext {
     // 作为宏任务处理，排在微任务之后；mutex 保护跨线程 push。
     mutable std::mutex externalMutex_;
     std::deque<std::function<void(IContext*)>> externalTasks_;
+    std::function<void()> externalWake_;
     bool externalClosed_ = false;
     // 任务实体作为**动态 GC 根**（ADR-042）：不挂任何 scope，由 Context 直接
     // 增减 pinRef。同一实体被多个任务引用时只 pinRefInc 一次，最后一个出队/
@@ -236,6 +238,12 @@ public:
     Value* intlLocalePrototype() const override { return intlLocalePrototype_; }
     void setWorkerPrototype(Value* proto) override { workerPrototype_ = proto; }
     Value* workerPrototype() const override { return workerPrototype_; }
+    void setMessagePortPrototype(Value* proto) override {
+        messagePortPrototype_ = proto;
+    }
+    Value* messagePortPrototype() const override {
+        return messagePortPrototype_;
+    }
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
@@ -478,6 +486,8 @@ public:
                             std::string_view bindName = {}) override;
     Value* createWorkerObject(IData* data,
                               std::string_view bindName = {}) override;
+    Value* createMessagePortObject(IData* data,
+                                   std::string_view bindName = {}) override;
     Value* createRegExp(std::string_view pattern, std::string_view flags,
                         std::string_view bindName = {}) override;
     Value* createRegExp(
@@ -686,6 +696,7 @@ public:
 
     // 事件循环
     bool postExternalTask(std::function<void(IContext*)> task) override;
+    void setExternalTaskWake(std::function<void()> wake) override;
     uint64_t postMicrotask(Value* entity, TaskRunner run = defaultTaskRunner) override;
     uint64_t postTask(Value* entity, uint64_t timeout = 0,
                       TaskRunner run = defaultTaskRunner) override;

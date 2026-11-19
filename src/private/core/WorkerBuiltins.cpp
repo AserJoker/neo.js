@@ -95,12 +95,8 @@ Value* workerPostMessageGlobal(IContext* ctx, Value* /*self*/, size_t argc,
     }
     MessageValue mv;
     if (Value* err = worker::valueToMessage(ctx, value, mv, transfer)) return err;
-    // 克隆成功后才分离源 ArrayBuffer（失败时不能有副作用）。
-    for (Value* item : transfer) {
-        auto* data = asArrayBuffer(item);
-        data->bytes.clear();
-        data->detached = true;
-    }
+    // 克隆成功后才分离源 transferable（失败时不能有副作用）。
+    worker::applyTransfer(transfer);
     if (t_env.outbox == nullptr) return ctx->createUndefined();
 
     Message msg;
@@ -260,11 +256,7 @@ Value* workerPostMessageMethod(IContext* ctx, Value* self, size_t argc,
     }
     MessageValue mv;
     if (Value* err = worker::valueToMessage(ctx, value, mv, transfer)) return err;
-    for (Value* item : transfer) {
-        auto* buffer = asArrayBuffer(item);
-        buffer->bytes.clear();
-        buffer->detached = true;
-    }
+    worker::applyTransfer(transfer);
 
     Message msg;
     msg.value = std::move(mv);

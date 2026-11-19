@@ -165,6 +165,8 @@ enum class TypeKind : uint8_t {
     // Worker 对象（HTML Worker 门面）：普通对象 + 原生 worker 句柄与主线程上下文。
     // 内部槽由 WorkerData 持有；其余对象行为（属性/原型/GC）与普通对象一致。
     Worker,
+    // MessagePort 对象：普通对象 + 跨线程端口端点（共享通道）。
+    MessagePort,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -366,6 +368,7 @@ IType* getIntlSegmenterType();
 IType* getIntlSegmentsType();
 IType* getIntlLocaleType();
 IType* getWorkerType();
+IType* getMessagePortType();
 
 // —— TypeKind → Type 单例（Types.cpp 中的唯一映射表）——
 // 未注册的 kind 返回 nullptr。新增类型时只需在此加一行映射，

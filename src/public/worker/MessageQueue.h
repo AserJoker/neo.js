@@ -21,8 +21,10 @@
 namespace neo::worker {
 
 // 跨线程消息：载荷是深拷贝后的结构化值。
+// internal=true 是 worker 内部唤醒信号（外部任务入队），不交给消息处理器。
 struct Message {
     MessageValue value;
+    bool internal = false;
 };
 
 // 线程安全 FIFO。close 后不再接受新消息，等待者被唤醒并返回 false。

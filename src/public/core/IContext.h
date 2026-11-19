@@ -758,6 +758,13 @@ public:
     virtual void setWorkerPrototype(Value* proto) = 0;
     virtual Value* workerPrototype() const = 0;
 
+    // createMessagePortObject: 创建 MessagePort 实例（PortBuiltins 专用）。
+    // data 必须是 MessagePortData（gc->allocData 分配），所有权转移给 GC。
+    virtual Value* createMessagePortObject(IData* data,
+                                           std::string_view bindName = {}) = 0;
+    virtual void setMessagePortPrototype(Value* proto) = 0;
+    virtual Value* messagePortPrototype() const = 0;
+
     // createRegExp: 编译 pattern/flags 并创建 RegExp 对象（ES2024 §22.2.3.1）。
     // 编译失败返回 SyntaxError 异常值；成功返回 RegExp（lastIndex 初始化为 0）。
     // 原型自动挂 regexpPrototype()。
@@ -1292,6 +1299,10 @@ public:
     // 排在微任务之后）。task 接收 owner 线程的 Context，可安全创建/访问 Value。
     // 返回 false 表示 Context 已关闭（析构中）。
     virtual bool postExternalTask(std::function<void(IContext*)> task) = 0;
+    // setExternalTaskWake: 设置外部任务入队后的唤醒回调（线程安全）。
+    // Worker 用它把外部任务唤醒映射到自己的阻塞消息循环。回调在投递线程执行，
+    // 不得访问 Context/Value。
+    virtual void setExternalTaskWake(std::function<void()> wake) = 0;
     virtual uint64_t postMicrotask(Value* entity,
                                    TaskRunner run = defaultTaskRunner) = 0;
     virtual uint64_t postTask(Value* entity, uint64_t timeout = 0,

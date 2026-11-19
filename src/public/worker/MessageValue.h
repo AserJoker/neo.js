@@ -20,11 +20,14 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 namespace neo::worker {
+
+class MessagePortEndpoint;
 
 enum class MessageValueKind : uint8_t {
     Undefined,
@@ -42,7 +45,8 @@ enum class MessageValueKind : uint8_t {
     ArrayBuffer,
     DataView,
     TypedArray,
-    Reference,  // 指向同一消息中 id 为 ref 的已克隆对象（循环/共享引用）
+    MessagePort,  // 转移的 MessagePort 端点
+    Reference,    // 指向同一消息中 id 为 ref 的已克隆对象（循环/共享引用）
 };
 
 struct MessageValue {
@@ -68,6 +72,9 @@ struct MessageValue {
     size_t byteLength = 0;    // DataView
     size_t length = 0;        // TypedArray 元素个数
     uint8_t typedArrayKind = 0;
+
+    // MessagePort 转移端点（与 Context 无关的共享句柄）。
+    std::shared_ptr<MessagePortEndpoint> port;
 
     static MessageValue undefined() { return MessageValue{}; }
     static MessageValue null() {

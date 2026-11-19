@@ -13,6 +13,7 @@
 
 #include "core/IContext.h"
 #include "core/IType.h"
+#include "core/PortBuiltins.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
 #include "core/types/ArrayBuffer.h"
@@ -20,12 +21,14 @@
 #include "core/types/Collection.h"
 #include "core/types/DataView.h"
 #include "core/types/Date.h"
+#include "core/types/MessagePort.h"
 #include "core/types/Null.h"
 #include "core/types/Number.h"
 #include "core/types/RegExp.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "core/types/TypedArray.h"
+#include "worker/Port.h"
 
 #include <algorithm>
 #include <string>
@@ -236,6 +239,23 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
             out.buffer.resize(1);
             return cloneValue(ctx, data->buffer, out.buffer[0], cc);
         }
+        case TypeKind::MessagePort: {
+            if (cc.transfer == nullptr ||
+                std::find(cc.transfer->begin(), cc.transfer->end(), value) ==
+                    cc.transfer->end()) {
+                return dataCloneError(ctx,
+                                      "MessagePort must be transferred");
+            }
+            auto* data = core::asMessagePort(value);
+            if (data->detached) {
+                return dataCloneError(ctx, "MessagePort is already detached");
+            }
+            if (beginNode(cc, value, out, MessageValueKind::MessagePort)) {
+                return nullptr;
+            }
+            out.port = data->endpoint;
+            return nullptr;
+        }
         case TypeKind::TypedArray: {
             if (beginNode(cc, value, out, MessageValueKind::TypedArray)) {
                 return nullptr;
@@ -387,6 +407,15 @@ Value* restoreValue(IContext* ctx, const MessageValue& value,
             if (view != ctx->oomValue()) rc.seen[value.id] = view;
             return view;
         }
+        case MessageValueKind::MessagePort: {
+            if (!value.port) {
+                return ctx->createErrorException(ErrorKind::Error,
+                                                 "Invalid message port");
+            }
+            Value* port = core::createTransferredPort(ctx, value.port);
+            if (!core::detail::isErrorValue(port)) rc.seen[value.id] = port;
+            return port;
+        }
         case MessageValueKind::TypedArray: {
             if (value.buffer.empty()) {
                 return ctx->createErrorException(ErrorKind::Error,
@@ -419,12 +448,19 @@ Value* resolveTransferList(IContext* ctx, Value* list,
     for (uint32_t i = 0; i < data->length(); ++i) {
         Value* item = data->elementAt(i);
         if (item == nullptr) continue;
-        if (item->type()->kind() != TypeKind::ArrayBuffer) {
+        TypeKind itemKind = item->type()->kind();
+        if (itemKind == TypeKind::ArrayBuffer) {
+            auto* buffer = core::asArrayBuffer(item);
+            if (buffer->detached) {
+                return dataCloneError(ctx, "ArrayBuffer is already detached");
+            }
+        } else if (itemKind == TypeKind::MessagePort) {
+            auto* port = core::asMessagePort(item);
+            if (port->detached) {
+                return dataCloneError(ctx, "MessagePort is already detached");
+            }
+        } else {
             return dataCloneError(ctx, "Transferable type not supported");
-        }
-        auto* buffer = core::asArrayBuffer(item);
-        if (buffer->detached) {
-            return dataCloneError(ctx, "ArrayBuffer is already detached");
         }
         if (std::find(out.begin(), out.end(), item) != out.end()) {
             return dataCloneError(ctx, "Duplicate transferable");
@@ -432,6 +468,23 @@ Value* resolveTransferList(IContext* ctx, Value* list,
         out.push_back(item);
     }
     return nullptr;
+}
+
+void applyTransfer(const std::vector<Value*>& transfer) {
+    for (Value* item : transfer) {
+        TypeKind kind = item->type()->kind();
+        if (kind == TypeKind::ArrayBuffer) {
+            auto* data = core::asArrayBuffer(item);
+            data->bytes.clear();
+            data->detached = true;
+        } else if (kind == TypeKind::MessagePort) {
+            auto* data = core::asMessagePort(item);
+            if (!data->detached) {
+                data->detached = true;
+                if (data->endpoint) data->endpoint->detachOwner();
+            }
+        }
+    }
 }
 
 Value* valueToMessage(IContext* ctx, Value* value, MessageValue& out,

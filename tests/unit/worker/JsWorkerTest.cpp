@@ -170,6 +170,64 @@ TEST(JsWorkerTest, TransfersArrayBufferToWorker) {
     EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 12.0);
 }
 
+TEST(JsWorkerTest, MessageChannelSameThread) {
+    Fixture f;
+    std::string source =
+        "var ch = new MessageChannel();\n"
+        "ch.port2.onmessage = function (e) { globalThis.result = e.data; };\n"
+        "ch.port1.postMessage(42);\n";
+
+    Value* result = runScript(f, source, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    for (int i = 0; i < 100; ++i) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 42.0);
+}
+
+TEST(JsWorkerTest, TransfersMessagePortToWorker) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_port.js";
+    writeFile(workerPath,
+              "onmessage = function (e) {\n"
+              "  var p = e.data;\n"
+              "  p.onmessage = function (ev) { p.postMessage(ev.data * 2); };\n"
+              "};\n");
+
+    std::string mainSource =
+        "var ch = new MessageChannel();\n"
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.postMessage(ch.port1, [ch.port1]);\n"
+        "ch.port2.onmessage = function (e) { globalThis.result = e.data; };\n"
+        "ch.port2.postMessage(21);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 42.0);
+}
+
 TEST(JsWorkerTest, PostMessageRejectsUncloneableValue) {
     Fixture f;
 

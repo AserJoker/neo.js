@@ -74,14 +74,32 @@ private:
         std::unique_ptr<core::IContext> ctx =
             core::createContext(alloc_.get(), console_, clock_, intl_);
 
+        // 外部任务（如 MessagePort 消息）入队时唤醒阻塞的 inbox 等待。
+        ctx->setExternalTaskWake([this] {
+            Message wake;
+            wake.internal = true;
+            inbox_.push(std::move(wake));
+        });
+
         if (callbacks_.setup != nullptr) {
             callbacks_.setup(ctx.get(), outbox_, callbacks_.userdata);
         }
+
+        auto drainTasks = [&ctx] {
+            while (ctx->hasRunnableTask()) (void)ctx->runOneTask();
+        };
+        drainTasks();
+
         Message msg;
         while (inbox_.waitPop(msg)) {
+            if (msg.internal) {
+                drainTasks();
+                continue;
+            }
             if (callbacks_.handler != nullptr) {
                 callbacks_.handler(ctx.get(), msg, outbox_, callbacks_.userdata);
             }
+            drainTasks();
         }
         running_.store(false, std::memory_order_release);
     }
