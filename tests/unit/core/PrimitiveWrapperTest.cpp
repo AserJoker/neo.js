@@ -18,6 +18,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Boolean.h"
+#include "core/types/Exception.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
 #include "core/types/PrimitiveWrapper.h"
@@ -644,16 +645,28 @@ TEST(PrimitiveWrapperTest, BooleanPrimitivePropertyAccessUsesWrapper) {
     EXPECT_EQ(strOf(ctx->call(toStringFn, b, 0, nullptr)), "true");
 }
 
-TEST(PrimitiveWrapperTest, UndefinedAndNullPropertyAccessReturnsUndefined) {
+TEST(PrimitiveWrapperTest, UndefinedAndNullPropertyAccessThrowsTypeError) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    EXPECT_EQ(ctx->getProperty(ctx->createUndefined(), "x")->type()->kind(),
-              TypeKind::Undefined);
-    EXPECT_EQ(ctx->getProperty(ctx->createNull(), "x")->type()->kind(),
-              TypeKind::Undefined);
+    // null/undefined 无法 ToObject，属性读取抛 TypeError（ES2024 §7.1.18）。
+    Value* undef = ctx->getProperty(ctx->createUndefined(), "x");
+    ASSERT_EQ(undef->type()->kind(), TypeKind::Exception);
+    auto* undefErr = static_cast<neo::core::ExceptionData*>(undef->data());
+    EXPECT_EQ(static_cast<StringData*>(
+                  ctx->getProperty(undefErr->child, "name")->data())
+                  ->value,
+              "TypeError");
+
+    Value* nul = ctx->getProperty(ctx->createNull(), "x");
+    ASSERT_EQ(nul->type()->kind(), TypeKind::Exception);
+    auto* nullErr = static_cast<neo::core::ExceptionData*>(nul->data());
+    EXPECT_EQ(static_cast<StringData*>(
+                  ctx->getProperty(nullErr->child, "name")->data())
+                  ->value,
+              "TypeError");
 }
 
 TEST(PrimitiveWrapperTest, PrimitivePropertyWriteStillRejected) {

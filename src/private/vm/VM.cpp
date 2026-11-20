@@ -166,6 +166,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::ThrowReferenceError: return "throw_reference_error";
         case OpCode::BodyStart:     return "body_start";
         case OpCode::ThrowTypeError: return "throw_type_error";
+        case OpCode::ToPropertyKey: return "to_property_key";
         case OpCode::BindThis:      return "bind_this";
         case OpCode::LoadThis:      return "load_this";
         case OpCode::StoreThis:     return "store_this";
@@ -379,6 +380,7 @@ const VM::Handler* VM::handlers() {
         &VM::opThrowReferenceError,
         &VM::opBodyStart,
         &VM::opThrowTypeError,
+        &VM::opToPropertyKey,
     };
     return table;
 }
@@ -2224,6 +2226,17 @@ Value* VM::opThrowTypeError() {
     return fail(detail::typeError(ctx_, *message));
 }
 
+Value* VM::opToPropertyKey() {
+    if (stack_.empty()) {
+        return badBytecode("to_property_key: operand stack underflow");
+    }
+    Value* key = pop();
+    Value* result = ctx_->toPropertyKey(key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
 Value* VM::opBindThis() {
     if (stack_.size() < 2) {
         return badBytecode("bind_this: operand stack underflow");
@@ -2856,6 +2869,13 @@ Value* VM::opDefinePrivateField() {
     }
     Value* initializer = pop();
     Value* ctor = pop();
+    // `#x;`（无初始化器）与 `#x = undefined` 语义相同：槽位初始化为 undefined。
+    // 编译器对无初始化器直接压 undefined，这里归一为 nullptr，避免把 undefined
+    // 当作可调用初始化器。
+    if (initializer != nullptr &&
+        initializer->type()->kind() == neo::core::TypeKind::Undefined) {
+        initializer = nullptr;
+    }
     neo::core::PrivateName* name = ctx_->ensureClassPrivateName(ctor, *desc);
     bool isStatic = (flags & 1u) != 0;
     if (initializer != nullptr &&

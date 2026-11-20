@@ -2767,6 +2767,20 @@ void Compiler::compileAwaitExpression(const frontend::AwaitExpression& node) {
     code_->awaitValue();
 }
 
+uint32_t Compiler::emitLogicalShortCircuit(
+    frontend::AssignmentOperator op) {
+    switch (op) {
+        case frontend::AssignmentOperator::LogicalAnd:
+            return code_->jfalse();
+        case frontend::AssignmentOperator::LogicalOr:
+            return code_->jtrue();
+        case frontend::AssignmentOperator::Nullish:
+            return code_->jNotNullish();
+        default:
+            return code_->jmp();
+    }
+}
+
 void Compiler::compileAssignmentExpression(
     const frontend::AssignmentExpression& node) {
     if (!node.left) {
@@ -2779,6 +2793,10 @@ void Compiler::compileAssignmentExpression(
         code_->pushUndefined();
         return;
     }
+    const bool logical =
+        node.op == frontend::AssignmentOperator::LogicalAnd ||
+        node.op == frontend::AssignmentOperator::LogicalOr ||
+        node.op == frontend::AssignmentOperator::Nullish;
     if (node.left->kind() == NodeKind::ArrayPattern ||
         node.left->kind() == NodeKind::ObjectPattern) {
         if (node.op != frontend::AssignmentOperator::Assign) {
@@ -2813,6 +2831,22 @@ void Compiler::compileAssignmentExpression(
         }
         if (member.object->kind() == NodeKind::SuperExpression) {
             compileMemberKey(member);
+            if (member.computed) code_->toPropertyKey();
+            if (logical) {
+                code_->dup();
+                code_->getSuperProp();  // [key, old]
+                code_->dup();
+                uint32_t keep = emitLogicalShortCircuit(node.op);  // [key, old]
+                code_->pop();                                      // [key]
+                compileExpression(*node.right);                    // [key, new]
+                code_->setSuperProp();                             // [new]
+                uint32_t end = code_->jmp();
+                code_->patchU32(keep + 2, code_->here());          // [key, old]
+                code_->swap();                                     // [old, key]
+                code_->pop();                                      // [old]
+                code_->patchU32(end + 2, code_->here());
+                return;
+            }
             if (compound) {
                 code_->dup();
                 code_->getSuperProp();
@@ -2827,6 +2861,33 @@ void Compiler::compileAssignmentExpression(
         }
         compileExpression(*member.object);
         compileMemberKey(member);
+        // 基值 RequireObjectCoercible：键表达式已求值，但 ToPropertyKey 延后
+        // 到基值检查之后（与 V8/规范一致）。
+        code_->swap();  // [key, obj]
+        code_->dup();
+        uint32_t coercible = code_->jNotNullish();
+        code_->throwTypeError("Cannot read properties of null or undefined");
+        code_->patchU32(coercible + 2, code_->here());
+        code_->swap();  // [obj, key]
+        if (member.computed) code_->toPropertyKey();
+        if (logical) {
+            // obj/key 只求值一次；短路时丢弃 obj/key，只保留旧值。
+            code_->dup2();
+            code_->getProp();  // [obj, key, old]
+            code_->dup();
+            uint32_t keep = emitLogicalShortCircuit(node.op);  // [obj, key, old]
+            code_->pop();                                      // [obj, key]
+            compileExpression(*node.right);                    // [obj, key, new]
+            code_->setProp();                                  // [new]
+            uint32_t end = code_->jmp();
+            code_->patchU32(keep + 2, code_->here());          // [obj, key, old]
+            code_->swap();                                     // [obj, old, key]
+            code_->pop();                                      // [obj, old]
+            code_->swap();                                     // [old, obj]
+            code_->pop();                                      // [old]
+            code_->patchU32(end + 2, code_->here());
+            return;
+        }
         if (compound) {
             // obj/key 只求值一次：复制一份用于读取旧值。
             code_->dup2();
@@ -2858,6 +2919,21 @@ void Compiler::compileAssignmentExpression(
         }
         code_->dup();
         code_->store(name);
+        return;
+    }
+
+    if (logical) {
+        // x &&= rhs：旧值短路时保留旧值，否则求值 rhs 并写回。
+        code_->load(name);
+        code_->dup();
+        uint32_t keep = emitLogicalShortCircuit(node.op);
+        code_->pop();
+        compileNamedExpression(*node.right, name);
+        code_->dup();
+        code_->store(name);
+        uint32_t end = code_->jmp();
+        code_->patchU32(keep + 2, code_->here());
+        code_->patchU32(end + 2, code_->here());
         return;
     }
 
@@ -3567,6 +3643,35 @@ void Compiler::compilePrivateWrite(
     }
     compileExpression(*member.object);
     bool compound = node.op != frontend::AssignmentOperator::Assign;
+    const bool logical =
+        node.op == frontend::AssignmentOperator::LogicalAnd ||
+        node.op == frontend::AssignmentOperator::LogicalOr ||
+        node.op == frontend::AssignmentOperator::Nullish;
+    if (logical) {
+        code_->dup();
+        if (info->field) {
+            code_->getPrivateField(name);
+        } else if (info->method) {
+            code_->getPrivateMethod(name);
+        } else {
+            code_->getPrivateGetter(name);
+        }
+        code_->dup();  // [obj, old, old]
+        uint32_t keep = emitLogicalShortCircuit(node.op);  // [obj, old]
+        code_->pop();                                      // [obj]
+        compileExpression(*node.right);                    // [obj, new]
+        if (info->field) {
+            code_->setPrivateField(name);
+        } else {
+            code_->setPrivateSetter(name);
+        }                                                  // [new]
+        uint32_t end = code_->jmp();
+        code_->patchU32(keep + 2, code_->here());          // [obj, old]
+        code_->swap();                                     // [old, obj]
+        code_->pop();                                      // [old]
+        code_->patchU32(end + 2, code_->here());
+        return;
+    }
     if (compound) {
         code_->dup();
         if (info->field) {

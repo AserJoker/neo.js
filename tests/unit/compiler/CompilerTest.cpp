@@ -3858,6 +3858,402 @@ TEST(CompilerTest, DeleteVoidAndCallReturnBooleanTrue) {
     EXPECT_TRUE(static_cast<BooleanData*>(side->data())->value);
 }
 
+// ===== 逻辑赋值运算符（§13.15.3）=====
+
+// 场景：x &&= rhs —— 左值为 falsy 时短路，保留旧值且不求值 RHS。
+TEST(CompilerTest, LogicalAndIdentifierShortCircuitsOnFalsy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 0;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x &&= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+// 场景：x &&= rhs —— 左值为 truthy 时求值 RHS 并写回。
+TEST(CompilerTest, LogicalAndIdentifierAssignsOnTruthy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 1;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x &&= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：x ||= rhs —— 左值为 truthy 时短路，保留旧值且不求值 RHS。
+TEST(CompilerTest, LogicalOrIdentifierShortCircuitsOnTruthy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 2;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x ||= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 200.0);
+}
+
+// 场景：x ||= rhs —— 左值为 falsy 时求值 RHS 并写回。
+TEST(CompilerTest, LogicalOrIdentifierAssignsOnFalsy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 0;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x ||= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：x ??= rhs —— 左值非 nullish 时短路（0 也短路），不求值 RHS。
+TEST(CompilerTest, NullishIdentifierShortCircuitsOnNonNullish) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = 0;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x ?\?= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+// 场景：x ??= rhs —— 左值为 null 时求值 RHS 并写回。
+TEST(CompilerTest, NullishIdentifierAssignsOnNullish) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var x = null;"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "x ?\?= rhs();"
+        "result = x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：o.x &&= rhs —— 成员左值 falsy 时短路，保留旧值。
+TEST(CompilerTest, LogicalAndMemberShortCircuitsOnFalsy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 0 };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x &&= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+// 场景：o.x &&= rhs —— 成员左值 truthy 时求值 RHS 并写回。
+TEST(CompilerTest, LogicalAndMemberAssignsOnTruthy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 1 };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x &&= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：o.x ||= rhs —— 成员左值 truthy 时短路，保留旧值。
+TEST(CompilerTest, LogicalOrMemberShortCircuitsOnTruthy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 2 };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x ||= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 200.0);
+}
+
+// 场景：o.x ||= rhs —— 成员左值 falsy 时求值 RHS 并写回。
+TEST(CompilerTest, LogicalOrMemberAssignsOnFalsy) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 0 };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x ||= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：o.x ??= rhs —— 成员左值非 nullish 时短路。
+TEST(CompilerTest, NullishMemberShortCircuitsOnNonNullish) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: 0 };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x ?\?= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+// 场景：o.x ??= rhs —— 成员左值为 null 时求值 RHS 并写回。
+TEST(CompilerTest, NullishMemberAssignsOnNullish) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var o = { x: null };"
+        "var n = 0;"
+        "function rhs() { n = n + 1; return 5; }"
+        "o.x ?\?= rhs();"
+        "result = o.x * 100 + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 501.0);
+}
+
+// 场景：o[k()] ||= 5 —— computed 键表达式只求值一次。
+TEST(CompilerTest, LogicalComputedMemberEvaluatesKeyOnce) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var n = 0;"
+        "var o = { x: 0 };"
+        "function k() { n = n + 1; return 'x'; }"
+        "o[k()] ||= 5;"
+        "result = n * 10 + o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 15.0);
+}
+
+// 场景：o[key] ||= 7（key 为带 toString 的对象）—— ToPropertyKey 只执行一次。
+TEST(CompilerTest, LogicalComputedMemberToPropertyKeyOnce) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "var n = 0;"
+        "var o = { x: 0 };"
+        "var key = { toString: function () { n = n + 1; return 'x'; } };"
+        "o[key] ||= 7;"
+        "result = n * 10 + o.x;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 17.0);
+}
+
+// 场景：null 基值成员逻辑赋值 —— 键表达式求值后、ToPropertyKey 前抛 TypeError。
+TEST(CompilerTest, LogicalMemberAssignmentNullBaseThrowsTypeErrorAfterKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "var n = 0;"
+        "function k() { n = n + 1; return 'x'; }"
+        "var o = null;"
+        "try { o[k()] &&= 1; } catch (e) { result = e.name; }"
+        "result = result + ':' + n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError:1");
+}
+
+// 场景：undefined 基值成员逻辑赋值 —— 抛 TypeError。
+TEST(CompilerTest, LogicalMemberAssignmentUndefinedBaseThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "var o;"
+        "try { o.x ||= 1; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：super.x ||= 4 —— super 成员逻辑赋值走 getter/setter。
+TEST(CompilerTest, LogicalSuperMemberAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { get x() { return 0; } set x(v) { this._x = v; } }"
+        "class B extends A { run() { super.x ||= 4; return this._x; } }"
+        "result = new B().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
+}
+
+// 场景：super[key] ??= 6 —— computed super 成员逻辑赋值。
+TEST(CompilerTest, LogicalSuperComputedMemberAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { get x() { return null; } set x(v) { this._x = v; } }"
+        "class B extends A { run() { super['x'] ?\?= 6; return this._x; } }"
+        "result = new B().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 6.0);
+}
+
+// 场景：class A { #v; } —— 无初始化器私有字段等价于 undefined 槽位。
+TEST(CompilerTest, PrivateFieldWithoutInitializerIsUndefined) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { #v; get() { return this.#v; } }"
+        "result = (new A().get() === void 0) ? 1 : 0;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+// 场景：#v; 后 this.#v ??= 1 —— undefined 槽位被 nullish 赋值写为 1。
+TEST(CompilerTest, PrivateFieldWithoutInitializerNullishAssign) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { #v; run() { this.#v ?\?= 1; return this.#v; } }"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+// 场景：this.#x ||= 5 —— 私有字段逻辑赋值（falsy 时写回）。
+TEST(CompilerTest, PrivateFieldLogicalAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A { #x = 0; run() { this.#x ||= 5; return this.#x; } }"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
+}
+
+// 场景：this.#acc ||= 9 —— 私有访问器逻辑赋值经 getter/setter。
+TEST(CompilerTest, PrivateAccessorLogicalAssignment) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #v = 0;"
+        "  get #x() { return this.#v; }"
+        "  set #x(v) { this.#v = v; }"
+        "  run() { this.#x ||= 9; return this.#v; }"
+        "}"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
+// 场景：this.#m ||= rhs —— 私有方法为 truthy，短路且不执行 RHS。
+TEST(CompilerTest, PrivateMethodLogicalOrShortCircuits) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #m() { return 3; }"
+        "  run() { var n = 0; this.#m ||= (n = 1); return n; }"
+        "}"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 0.0);
+}
+
+// 场景：this.#m &&= 1 —— 私有方法 truthy 不短路，写入不可写私有方法抛 TypeError。
+TEST(CompilerTest, PrivateMethodLogicalAndThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result;"
+        "class A {"
+        "  #m() { return 3; }"
+        "  run() { try { this.#m &&= 1; return 'no-throw'; } catch (e) { return e.name; } }"
+        "}"
+        "result = new A().run();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：null.x —— null 基值属性读取抛 TypeError。
+TEST(CompilerTest, NullPropertyReadThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "try { null.x; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：undefined.x —— undefined 基值属性读取抛 TypeError。
+TEST(CompilerTest, UndefinedPropertyReadThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "try { undefined.x; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
 // ===== 对象解构 RequireObjectCoercible（§13.3.3.5）=====
 
 // 场景：var { x } = null —— 对象解构 null 抛 TypeError。

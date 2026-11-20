@@ -536,6 +536,7 @@ struct Code {
         return pc;
     }
     uint32_t bodyStart() { return emitOp(OpCode::BodyStart); }
+    uint32_t toPropertyKey() { return emitOp(OpCode::ToPropertyKey); }
     uint32_t throwTypeError(std::string_view message) {
         uint32_t pc = emitOp(OpCode::ThrowTypeError);
         emitU32(addString(std::string(message)));

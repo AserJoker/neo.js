@@ -771,12 +771,11 @@ inline Value* propertyKeyString(IContext* ctx, Value* key, std::string& out) {
 // （严格模式下给原始值赋属性报错）。
 // 注：Boolean/Number 的包装对象无自有属性，查找会落到各自 prototype。
 inline Value* primitiveGetProperty(IContext* ctx, Value* self, Value* key) {
-    // undefined/null 无法 ToObject（ES2024 §7.1.18 抛 TypeError）。
-    // 属性读取按 JS 语义返回 undefined（`undefined.x` 在非严格求值下不崩，
-    // 严格模式报错由 VM 阶段处理）。
+    // undefined/null 无法 ToObject（ES2024 §7.1.18）：属性读取抛 TypeError。
     TypeKind k = self->type()->kind();
     if (k == TypeKind::Undefined || k == TypeKind::Null) {
-        return ctx->createUndefined();
+        return typeError(ctx, "Cannot read properties of " +
+                                  std::string(self->type()->name()));
     }
     Value* wrapper = ctx->createPrimitiveWrapper(self);
     if (wrapper->type()->kind() == TypeKind::Exception) return wrapper;

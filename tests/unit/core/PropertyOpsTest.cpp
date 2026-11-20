@@ -17,6 +17,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Function.h"
+#include "core/types/Exception.h"
 #include "core/types/Number.h"
 #include "core/types/Object.h"
 #include "core/types/String.h"
@@ -80,6 +81,24 @@ void expectPrimitiveNoOwnProperty(IContext* ctx, Value* v) {
               TypeKind::Exception);
 }
 
+// null/undefined 属性读取抛 TypeError（ES2024 §7.1.18）；其余属性操作仍按基础类型处理。
+void expectNullishPropertyReadThrows(IContext* ctx, Value* v) {
+    Value* read = ctx->getProperty(v, "x");
+    ASSERT_EQ(read->type()->kind(), TypeKind::Exception);
+    auto* err = static_cast<neo::core::ExceptionData*>(read->data());
+    EXPECT_EQ(static_cast<StringData*>(
+                  ctx->getProperty(err->child, "name")->data())
+                  ->value,
+              "TypeError");
+    EXPECT_EQ(ctx->setProperty(v, "x", ctx->createNumber(1))->type()->kind(),
+              TypeKind::Exception);
+    EXPECT_FALSE(neo::test::hasProperty(ctx, v, "x"));
+    Value* del = ctx->deleteProperty(v, "x");
+    EXPECT_EQ(del->type()->kind(), TypeKind::Boolean);
+    EXPECT_EQ(ctx->defineProperty(v, "x", ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+}
+
 // 透传类型属性操作断言：所有操作返回 self（has 恒 false）
 void expectPassthroughProperty(IContext* ctx, Value* v) {
     EXPECT_EQ(ctx->getProperty(v, "x"), v);
@@ -98,7 +117,7 @@ TEST(PropertyOpsTest, UndefinedHasNoOwnProperty) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
-    expectPrimitiveNoOwnProperty(ctx.get(), ctx->createUndefined());
+    expectNullishPropertyReadThrows(ctx.get(), ctx->createUndefined());
 }
 
 TEST(PropertyOpsTest, NullHasNoOwnProperty) {
@@ -106,7 +125,7 @@ TEST(PropertyOpsTest, NullHasNoOwnProperty) {
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
-    expectPrimitiveNoOwnProperty(ctx.get(), ctx->createNull());
+    expectNullishPropertyReadThrows(ctx.get(), ctx->createNull());
 }
 
 TEST(PropertyOpsTest, BooleanHasNoOwnProperty) {

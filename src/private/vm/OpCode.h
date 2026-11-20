@@ -352,11 +352,13 @@ enum class OpCode : uint16_t {
     BodyStart,
     // u32 messageIndex：构造 TypeError 并抛出（如解构 null/undefined）。
     ThrowTypeError,
+    // [key] → [propertyKey]：ToPropertyKey，保证复合赋值只转换一次。
+    ToPropertyKey,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::ThrowTypeError) + 1;
+    static_cast<size_t>(OpCode::ToPropertyKey) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
