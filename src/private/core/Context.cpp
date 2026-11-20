@@ -621,6 +621,16 @@ Value* Context::getSuperProperty(Value* homeObject, Value* key, Value* receiver)
     return getPropertyWithReceiver(this, base, key, receiver);
 }
 
+Value* Context::getSuperPropertyFromBase(Value* base, Value* key,
+                                         Value* receiver) {
+    return getPropertyWithReceiver(this, base, key, receiver);
+}
+
+Value* Context::setSuperPropertyFromBase(Value* base, Value* key, Value* value,
+                                         Value* receiver) {
+    return setPropertyWithReceiver(this, base, key, value, receiver);
+}
+
 Value* Context::setSuperProperty(Value* homeObject, Value* key, Value* value,
                                  Value* receiver) {
     Value* base = getPrototype(homeObject);
@@ -1195,7 +1205,10 @@ Value* Context::registerClass(const NativeClassDef& def) {
 
 Value* Context::classSuperConstructor(Value* classCtor) {
     ClassData* cd = classDataOfMember(classCtor);
-    return cd != nullptr ? cd->superConstructor : nullptr;
+    if (cd == nullptr) return nullptr;
+    // GetSuperConstructor 取活动函数的 [[Prototype]]（动态，可被
+    // Object.setPrototypeOf 改变），而不是 extends 子句的缓存值。
+    return getPrototype(classCtor);
 }
 
 PrivateName* Context::classPrivateName(Value* classCtor, std::string_view description) {

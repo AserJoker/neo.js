@@ -100,6 +100,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::NewArray:      return "new_array";
         case OpCode::DefineProp:    return "define_prop";
         case OpCode::DefineAccessor: return "define_accessor";
+        case OpCode::SetHomeObject: return "set_home_object";
+        case OpCode::InheritHomeObject: return "inherit_home_object";
         case OpCode::SetProtoLiteral: return "set_proto_literal";
         case OpCode::TemplateObject: return "template_object";
         case OpCode::ArrayAppend:   return "array_append";
@@ -190,6 +192,11 @@ const char* opCodeName(OpCode op) {
         case OpCode::ConstructSuperSpread: return "construct_super_spread";
         case OpCode::GetSuperProp:  return "get_super_prop";
         case OpCode::SetSuperProp:  return "set_super_prop";
+        case OpCode::GetSuperBase:  return "get_super_base";
+        case OpCode::GetSuperPropFromBase: return "get_super_prop_from_base";
+        case OpCode::SetSuperPropFromBase: return "set_super_prop_from_base";
+        case OpCode::SetSuperPropFromBaseKeep:
+            return "set_super_prop_from_base_keep";
         case OpCode::DefineClassMethod: return "define_class_method";
         case OpCode::DefineClassField: return "define_class_field";
         case OpCode::YieldDelegate: return "yield_delegate";
@@ -259,6 +266,8 @@ const VM::Handler* VM::handlers() {
         &VM::opNewArray,
         &VM::opDefineProp,
         &VM::opDefineAccessor,
+        &VM::opSetHomeObject,
+        &VM::opInheritHomeObject,
         &VM::opSetProtoLiteral,
         &VM::opTemplateObject,
         &VM::opArrayAppend,
@@ -341,6 +350,10 @@ const VM::Handler* VM::handlers() {
         &VM::opConstructSuperSpread,
         &VM::opGetSuperProp,
         &VM::opSetSuperProp,
+        &VM::opGetSuperBase,
+        &VM::opGetSuperPropFromBase,
+        &VM::opSetSuperPropFromBase,
+        &VM::opSetSuperPropFromBaseKeep,
         &VM::opDefineClassMethod,
         &VM::opDefineClassField,
         &VM::opYieldDelegate,
@@ -958,7 +971,11 @@ Value* VM::opLoad() {
 
     Value* result = ctx_->load(*name);
     if (detail::isErrorValue(result)) return fail(result);
-    push(result);
+    // 绑定槽位是活引用（赋值原地 replaceMeta），表达式读取须取快照，
+    // 否则值被存入对象/数组后会被后续赋值改写。
+    Value* snapshot = ctx_->cloneValue(result);
+    if (snapshot == ctx_->oomValue()) return fail(snapshot);
+    push(snapshot);
     return nullptr;
 }
 
@@ -977,7 +994,9 @@ Value* VM::opLoadSoft() {
 
     Value* result = ctx_->loadSoft(*name);
     if (detail::isErrorValue(result)) return fail(result);
-    push(result);
+    Value* snapshot = ctx_->cloneValue(result);
+    if (snapshot == ctx_->oomValue()) return fail(snapshot);
+    push(snapshot);
     return nullptr;
 }
 
@@ -1271,6 +1290,33 @@ Value* VM::opDefineAccessor() {
         true, true);
     if (detail::isErrorValue(result)) return fail(result);
     push(object);
+    return nullptr;
+}
+
+Value* VM::opSetHomeObject() {
+    if (stack_.size() < 3) {
+        return badBytecode("set_home_object: operand stack underflow");
+    }
+    Value* fn = stack_.back();
+    Value* homeObject = stack_[stack_.size() - 3];
+    if (fn->type()->kind() == TypeKind::Function) {
+        ctx_->setFunctionHomeObject(fn, homeObject);
+    }
+    return nullptr;
+}
+
+Value* VM::opInheritHomeObject() {
+    if (stack_.empty()) {
+        return badBytecode("inherit_home_object: operand stack underflow");
+    }
+    Value* fn = top();
+    Value* outer = ctx_->currentFunction();
+    if (fn->type()->kind() == TypeKind::Function && outer != nullptr) {
+        Value* homeObject = ctx_->functionHomeObject(outer);
+        if (homeObject != nullptr) {
+            ctx_->setFunctionHomeObject(fn, homeObject);
+        }
+    }
     return nullptr;
 }
 
@@ -2380,7 +2426,8 @@ Value* VM::opDirectEval() {
     Value* fn = pop();
 
     Value* result = nullptr;
-    if (fn == ctx_->evalFunction()) {
+    // 按 data 身份判定：表达式读取会 clone 出新的 Value（共享同一 data）。
+    if (fn->data() == ctx_->evalFunction()->data()) {
         // 直接 eval：在调用方当前作用域执行（§19.2.1.1）。
         Value* source = argc > 0 ? args[0] : ctx_->createUndefined();
         result = ctx_->evalSource(source, ctx_->current(), true);
@@ -2404,7 +2451,7 @@ Value* VM::opDirectEvalSpread() {
     if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
 
     Value* result = nullptr;
-    if (fn == ctx_->evalFunction()) {
+    if (fn->data() == ctx_->evalFunction()->data()) {
         Value* source = args.empty() ? ctx_->createUndefined() : args[0];
         result = ctx_->evalSource(source, ctx_->current(), true);
     } else {
@@ -2794,6 +2841,72 @@ Value* VM::opSetSuperProp() {
         ctx_->setSuperProperty(homeObject, key, value, receiver);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
+    return nullptr;
+}
+
+Value* VM::opGetSuperBase() {
+    Value* fn = ctx_->currentFunction();
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) {
+        return fail(detail::typeError(ctx_, "Cannot read properties of null (reading 'super')"));
+    }
+    Value* homeObject = ctx_->functionHomeObject(fn);
+    if (homeObject == nullptr) {
+        return fail(detail::typeError(ctx_, "Cannot read properties of null (reading 'super')"));
+    }
+    Value* base = ctx_->getPrototype(homeObject);
+    if (detail::isErrorValue(base)) return fail(base);
+    if (base->type()->kind() == TypeKind::Null ||
+        base->type()->kind() == TypeKind::Undefined) {
+        return fail(detail::typeError(ctx_, "Cannot read properties of null (reading 'super')"));
+    }
+    push(base);
+    return nullptr;
+}
+
+Value* VM::opGetSuperPropFromBase() {
+    if (stack_.size() < 2) {
+        return badBytecode("get_super_prop_from_base: operand stack underflow");
+    }
+    Value* key = pop();
+    Value* base = pop();
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result = ctx_->getSuperPropertyFromBase(base, key, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetSuperPropFromBase() {
+    if (stack_.size() < 3) {
+        return badBytecode("set_super_prop_from_base: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* key = pop();
+    Value* base = pop();
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result =
+        ctx_->setSuperPropertyFromBase(base, key, value, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opSetSuperPropFromBaseKeep() {
+    if (stack_.size() < 4) {
+        return badBytecode("set_super_prop_from_base_keep: operand stack underflow");
+    }
+    Value* keep = pop();
+    Value* value = pop();
+    Value* key = pop();
+    Value* base = pop();
+    Value* receiver = ctx_->getThis();
+    if (detail::isErrorValue(receiver)) return fail(receiver);
+    Value* result =
+        ctx_->setSuperPropertyFromBase(base, key, value, receiver);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(keep);
     return nullptr;
 }
 

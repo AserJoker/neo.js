@@ -2469,6 +2469,9 @@ void Compiler::compileMemberExpression(
         return;
     }
     if (node.object->kind() == NodeKind::SuperExpression) {
+        // GetThisBinding 先于属性表达式求值（§13.3.7.1 步骤 2）。
+        code_->loadThis();
+        code_->pop();
         compileMemberKey(node);
         code_->getSuperProp();
         return;
@@ -2602,6 +2605,7 @@ void Compiler::compileObjectExpression(
                 } else {
                     code_->pushUndefined();
                 }
+                code_->setHomeObject();
                 code_->pushNull();
             } else {
                 if (prop.value) {
@@ -2613,6 +2617,7 @@ void Compiler::compileObjectExpression(
                 } else {
                     code_->pushUndefined();
                 }
+                code_->setHomeObject();
                 code_->pushNull();
                 code_->swap();  // [obj, key, setter, null] → [obj, key, null, setter]
             }
@@ -2650,6 +2655,8 @@ void Compiler::compileObjectExpression(
         } else {
             code_->pushUndefined();
         }
+        // 简洁方法定义 [[HomeObject]] 为对象字面量本身（§13.2.5.5）。
+        if (prop.method) code_->setHomeObject();
         code_->defineProp();
         code_->pop();
     }
@@ -2830,32 +2837,41 @@ void Compiler::compileAssignmentExpression(
             return;
         }
         if (member.object->kind() == NodeKind::SuperExpression) {
+            // GetThisBinding 先于属性表达式求值（§13.3.7.1 步骤 2）。
+            code_->loadThis();
+            code_->pop();
             compileMemberKey(member);
+            // GetSuperBase 先于 ToPropertyKey（§13.3.7.3 MakeSuperPropertyReference）：
+            // 键的 toString 可能改变原型，base 必须在此之前固定。
+            code_->getSuperBase();  // [key, base]
+            code_->swap();          // [base, key]
             if (member.computed) code_->toPropertyKey();
             if (logical) {
+                code_->dup2();                    // [base, key, base, key]
+                code_->getSuperPropFromBase();    // [base, key, old]
                 code_->dup();
-                code_->getSuperProp();  // [key, old]
-                code_->dup();
-                uint32_t keep = emitLogicalShortCircuit(node.op);  // [key, old]
-                code_->pop();                                      // [key]
-                compileExpression(*node.right);                    // [key, new]
-                code_->setSuperProp();                             // [new]
+                uint32_t keep = emitLogicalShortCircuit(node.op);
+                code_->pop();                     // [base, key]
+                compileExpression(*node.right);   // [base, key, new]
+                code_->setSuperPropFromBase();    // [new]
                 uint32_t end = code_->jmp();
-                code_->patchU32(keep + 2, code_->here());          // [key, old]
-                code_->swap();                                     // [old, key]
-                code_->pop();                                      // [old]
+                code_->patchU32(keep + 2, code_->here());  // [base, key, old]
+                code_->swap();                    // [base, old, key]
+                code_->pop();                     // [base, old]
+                code_->swap();                    // [old, base]
+                code_->pop();                     // [old]
                 code_->patchU32(end + 2, code_->here());
                 return;
             }
             if (compound) {
-                code_->dup();
-                code_->getSuperProp();
+                code_->dup2();                    // [base, key, base, key]
+                code_->getSuperPropFromBase();    // [base, key, old]
                 compileExpression(*node.right);
                 if (!emitCompoundBinary(node.op, node)) return;
-                code_->setSuperProp();
+                code_->setSuperPropFromBase();    // [new]
             } else {
-                compileExpression(*node.right);
-                code_->setSuperProp();
+                compileExpression(*node.right);   // [base, key, value]
+                code_->setSuperPropFromBase();    // [value]
             }
             return;
         }
@@ -3014,9 +3030,15 @@ void Compiler::compileUpdateExpression(
             return;
         }
         if (member.object->kind() == NodeKind::SuperExpression) {
+            // GetThisBinding 先于属性表达式求值（§13.3.7.1 步骤 2）。
+            code_->loadThis();
+            code_->pop();
             compileMemberKey(member);
-            code_->dup();
-            code_->getSuperProp();
+            code_->getSuperBase();  // [key, base]
+            code_->swap();          // [base, key]
+            if (member.computed) code_->toPropertyKey();
+            code_->dup2();                    // [base, key, base, key]
+            code_->getSuperPropFromBase();    // [base, key, old]
             if (!node.prefix) code_->clone();
             code_->push(1.0);
             if (node.op == frontend::UpdateOperator::Increment) {
@@ -3025,11 +3047,11 @@ void Compiler::compileUpdateExpression(
                 code_->sub();
             }
             if (node.prefix) {
-                code_->setSuperProp();
+                code_->setSuperPropFromBase();  // [new]
             } else {
-                // 后缀：栈为 [key, old, new]，交换成 [key, new, old] 供 set_*_keep。
+                // 后缀：栈为 [base, key, old, new]，交换成 [base, key, new, old]。
                 code_->swap();
-                code_->setSuperPropKeep();
+                code_->setSuperPropFromBaseKeep();  // [old]
             }
             return;
         }
@@ -4088,8 +4110,10 @@ void Compiler::compileFunctionObject(const Node& node,
         }
     }
 
-    // 箭头函数在定义点焊死外层 this（class 方法不绑定）。
+    // 箭头函数在定义点焊死外层 this（class 方法不绑定），并继承外层
+    // [[HomeObject]]（箭头自身没有，super 解析走外层方法）。
     if (arrow && !method) {
+        code_->inheritHomeObject();
         code_->loadThis();
         code_->bindThis();
     }

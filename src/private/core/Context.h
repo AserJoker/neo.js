@@ -333,6 +333,10 @@ public:
     bool isThisInitialized() override;
     Value* newTarget() override { return newTarget_; }
     Value* getSuperProperty(Value* homeObject, Value* key, Value* receiver) override;
+    Value* getSuperPropertyFromBase(Value* base, Value* key,
+                                    Value* receiver) override;
+    Value* setSuperPropertyFromBase(Value* base, Value* key, Value* value,
+                                    Value* receiver) override;
     Value* setSuperProperty(Value* homeObject, Value* key, Value* value,
                             Value* receiver) override;
     Value* createUninitialized() override;

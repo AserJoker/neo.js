@@ -377,6 +377,8 @@ bool defineGlobalFunction(IContext* ctx, const char* name, NativeFn fn,
                           size_t minArgc, int lengthOverride) {
     Value* f = ctx->createNativeFunction(fn, minArgc);
     if (f == ctx->oomValue()) return false;
+    // 全局函数均不是构造器（ES2024 §19.2.4 等）。
+    ctx->setFunctionConstructible(f, false);
     ctx->setFunctionName(f, name);
     if (lengthOverride >= 0) {
         Value* len = ctx->createNumber(static_cast<double>(lengthOverride));

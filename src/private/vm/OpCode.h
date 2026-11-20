@@ -45,6 +45,12 @@
 //   new_array N   d → d + 1        （创建 length=N 的数组）
 //   define_prop   d → d - 2        （弹 value、key、obj，压 obj）
 //   define_accessor d → d - 3      （u32 flags；弹 setter、getter、key、obj，压 obj）
+//   set_home_object d → d          （把栈倒数第三个对象设为栈顶函数的 [[HomeObject]]）
+//   inherit_home_object d → d      （箭头函数继承外层函数 [[HomeObject]]）
+//   get_super_base d → d + 1       （GetSuperBase，RequireObjectCoercible）
+//   get_super_prop_from_base [base,key] → [value]
+//   set_super_prop_from_base [base,key,value] → [value]
+//   set_super_prop_from_base_keep [base,key,value,keep] → [keep]
 //   set_proto_literal d → d - 1    （弹 proto、obj，压 obj；非对象/null 为 no-op）
 //   add/sub/mul/div  d → d - 1     （弹右、左，压结果）
 //   lt/gt/le/ge   d → d - 1        （弹右、左，压 Boolean）
@@ -128,6 +134,13 @@ enum class OpCode : uint16_t {
     // u32 flags（bit0=hasGetter, bit1=hasSetter）：[obj, key, getter, setter] → [obj]。
     // 缺失的一侧不修改已有描述符（对象字面量 get/set 合并）。
     DefineAccessor,
+    // [obj, key, fn] → [obj, key, fn]：把 obj（栈倒数第三个）设为 fn 的
+    // [[HomeObject]]（对象字面量方法/访问器定义，§13.2.5.5 MakeMethod）。
+    // fn 非函数时 no-op。
+    SetHomeObject,
+    // [fn] → [fn]：箭头函数继承定义点外层函数的 [[HomeObject]]（箭头自身无
+    // [[HomeObject]]，super 解析走外层方法）。外层无 homeObject 时 no-op。
+    InheritHomeObject,
     // [obj, proto] → [obj]：对象字面量 __proto__ 设原型；非对象/null 的 proto 为 no-op。
     SetProtoLiteral,
     // 标签模板对象（§13.2.8.2）：u32 count + count × (u32 cookedIndex, u32 rawIndex)。
@@ -271,6 +284,15 @@ enum class OpCode : uint16_t {
     // get_super_prop：[key] → [value]；set_super_prop：[key,value] → [value]。
     GetSuperProp,
     SetSuperProp,
+    // [] → [base]：GetSuperBase，取当前函数 [[HomeObject]] 的原型并
+    // RequireObjectCoercible（null/undefined 抛 TypeError）。
+    GetSuperBase,
+    // [base,key] → [value]：从已求值的 base 读取（GetSuperBase 先于 ToPropertyKey）。
+    GetSuperPropFromBase,
+    // [base,key,value] → [value]：写回已求值的 base。
+    SetSuperPropFromBase,
+    // [base,key,value,keep] → [keep]：写回后保留 keep（后缀更新）。
+    SetSuperPropFromBaseKeep,
     // define_class_method u32 flags：[ctor,key,fn] → [ctor]。
     // flags: bit0=isStatic, bit1..2=kind(0 data/1 getter/2 setter)。
     DefineClassMethod,

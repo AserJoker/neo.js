@@ -343,6 +343,11 @@ public:
     virtual Value* getSuperProperty(Value* homeObject, Value* key, Value* receiver) = 0;
     virtual Value* setSuperProperty(Value* homeObject, Value* key, Value* value,
                                     Value* receiver) = 0;
+    // 已求值 super base 的读写：GetSuperBase 先于 ToPropertyKey 时使用。
+    virtual Value* getSuperPropertyFromBase(Value* base, Value* key,
+                                            Value* receiver) = 0;
+    virtual Value* setSuperPropertyFromBase(Value* base, Value* key,
+                                            Value* value, Value* receiver) = 0;
 
     // createUninitialized: 创建 TDZ 哨兵（派生类 this 初始化前使用）。
     virtual Value* createUninitialized() = 0;

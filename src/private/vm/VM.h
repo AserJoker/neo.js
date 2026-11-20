@@ -169,6 +169,8 @@ private:
     neo::core::Value* opNewArray();
     neo::core::Value* opDefineProp();
     neo::core::Value* opDefineAccessor();
+    neo::core::Value* opSetHomeObject();
+    neo::core::Value* opInheritHomeObject();
     neo::core::Value* opSetProtoLiteral();
     neo::core::Value* opTemplateObject();
     neo::core::Value* opArrayAppend();
@@ -256,6 +258,10 @@ private:
     neo::core::Value* opConstructSuperSpread();
     neo::core::Value* opGetSuperProp();
     neo::core::Value* opSetSuperProp();
+    neo::core::Value* opGetSuperBase();
+    neo::core::Value* opGetSuperPropFromBase();
+    neo::core::Value* opSetSuperPropFromBase();
+    neo::core::Value* opSetSuperPropFromBaseKeep();
     neo::core::Value* opDefineClassMethod();
     neo::core::Value* opDefineClassField();
     neo::core::Value* opDefinePrivateField();

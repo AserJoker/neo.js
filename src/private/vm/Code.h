@@ -319,6 +319,18 @@ struct Code {
         return pc;
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
+    uint32_t getSuperBase() { return emitOp(OpCode::GetSuperBase); }
+    uint32_t getSuperPropFromBase() {
+        return emitOp(OpCode::GetSuperPropFromBase);
+    }
+    uint32_t setSuperPropFromBase() {
+        return emitOp(OpCode::SetSuperPropFromBase);
+    }
+    uint32_t setSuperPropFromBaseKeep() {
+        return emitOp(OpCode::SetSuperPropFromBaseKeep);
+    }
+    uint32_t setHomeObject() { return emitOp(OpCode::SetHomeObject); }
+    uint32_t inheritHomeObject() { return emitOp(OpCode::InheritHomeObject); }
     uint32_t setProtoLiteral() { return emitOp(OpCode::SetProtoLiteral); }
     uint32_t defineAccessor(bool hasGetter, bool hasSetter) {
         uint32_t pc = emitOp(OpCode::DefineAccessor);
