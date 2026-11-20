@@ -18,6 +18,7 @@
 #include "infra/IAllocator.h"
 #include "infra/MallocAllocator.h"
 #include "sema/Sema.h"
+#include "vm/OpCode.h"
 #include "vm/VM.h"
 
 #include <gtest/gtest.h>
@@ -85,6 +86,7 @@ using neo::infra::IOutputSink;
 using neo::infra::createMallocAllocator;
 using neo::sema::SemaResult;
 using neo::sema::runSema;
+using neo::vm::OpCode;
 using neo::vm::VM;
 
 class NullSink : public IOutputSink {
@@ -3699,6 +3701,57 @@ TEST(CompilerTest, StaticBlockAccessesPrivate) {
     EXPECT_DOUBLE_EQ(numberValue(value), 4.0);
 }
 
+TEST(CompilerTest, CompilesRemainingBinaryOperators) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "result += (1 == '1') ? 'a' : 'x';"
+        "result += (1 != '1') ? 'x' : 'b';"
+        "result += (5 % 3 === 2) ? 'c' : 'x';"
+        "result += (2 ** 3 === 8) ? 'd' : 'x';"
+        "result += ((1 << 2) === 4) ? 'e' : 'x';"
+        "result += ((8 >> 2) === 2) ? 'f' : 'x';"
+        "result += ((-1 >>> 0) === 4294967295) ? 'g' : 'x';"
+        "result += ((6 & 3) === 2) ? 'h' : 'x';"
+        "result += ((4 | 1) === 5) ? 'i' : 'x';"
+        "result += ((6 ^ 3) === 5) ? 'j' : 'x';");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "abcdefghij");
+}
+
+TEST(CompilerTest, CompilesCompoundBinaryAssignments) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var a = 5; a %= 3;"
+        "var b = 2; b **= 3;"
+        "var c = 1; c <<= 2;"
+        "var d = 8; d >>= 2;"
+        "var e = -1; e >>>= 0;"
+        "var f = 6; f &= 3;"
+        "var g = 4; g |= 1;"
+        "var h = 6; h ^= 3;"
+        "var result = a === 2 && b === 8 && c === 4 && d === 2 &&"
+        "  e === 4294967295 && f === 2 && g === 5 && h === 5;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(value->data())->value);
+}
+
+TEST(CompilerTest, CompilesInstanceOfOperator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function C() {}"
+        "var o = new C();"
+        "var result = (o instanceof C) && !({} instanceof C);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<neo::core::BooleanData*>(value->data())->value);
+}
+
 TEST(CompilerTest, PrivateAccessOutsideClassIsRejected) {
     Fixture f;
     CompileResult result = compileSource(
@@ -3706,4 +3759,70 @@ TEST(CompilerTest, PrivateAccessOutsideClassIsRejected) {
         "var a = new A();"
         "result = a.#x;");
     EXPECT_FALSE(result.ok());
+}
+
+// ===== NamedEvaluation：匿名函数/类按绑定名取名 =====
+
+namespace {
+
+// 在扁平字节码中查找「opcode + u32 字符串下标」形式、且下标指向指定名字的指令。
+// 操作数字节可能恰好等于某 opcode 的值，故同时校验常量表内容，避免误判。
+bool bytecodeHasOpWithName(const neo::vm::Code& code, OpCode op,
+                           const std::string& name) {
+    const uint16_t target = static_cast<uint16_t>(op);
+    for (size_t pc = 0; pc + 6 <= code.bytecode.size(); ++pc) {
+        const uint16_t current = static_cast<uint16_t>(
+            static_cast<uint16_t>(code.bytecode[pc]) |
+            (static_cast<uint16_t>(code.bytecode[pc + 1]) << 8));
+        if (current != target) continue;
+        const uint32_t index =
+            static_cast<uint32_t>(code.bytecode[pc + 2]) |
+            (static_cast<uint32_t>(code.bytecode[pc + 3]) << 8) |
+            (static_cast<uint32_t>(code.bytecode[pc + 4]) << 16) |
+            (static_cast<uint32_t>(code.bytecode[pc + 5]) << 24);
+        if (index < code.strings.size() && code.strings[index] == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+// 场景：var f = function() {}; —— 匿名函数表达式按声明名 f 命名。
+TEST(CompilerTest, NamesAnonymousFunctionInVarDeclaration) {
+    CompileResult result = compileSource("var f = function() {};");
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "f"));
+}
+
+// 场景：var a = () => {}; —— 匿名箭头函数按声明名 a 命名。
+TEST(CompilerTest, NamesAnonymousArrowInVarDeclaration) {
+    CompileResult result = compileSource("var a = () => {};");
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "a"));
+}
+
+// 场景：var g = class {}; —— 匿名类按声明名 g 命名，使用不覆盖静态 name 的
+// SetFuncNameIfAbsent，而非覆盖式 SetFuncName。
+TEST(CompilerTest, NamesAnonymousClassWithIfAbsent) {
+    CompileResult result = compileSource("var g = class {};");
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(
+        bytecodeHasOpWithName(*result.code, OpCode::SetFuncNameIfAbsent, "g"));
+    EXPECT_FALSE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "g"));
+}
+
+// 场景：({ m: function() {} }); —— 对象字面量匿名函数属性按静态键名 m 命名。
+TEST(CompilerTest, NamesAnonymousFunctionObjectProperty) {
+    CompileResult result = compileSource("({ m: function() {} });");
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "m"));
+}
+
+// 场景：[x = function() {}] = []; —— 解构默认值匿名函数按绑定目标名 x 命名。
+TEST(CompilerTest, NamesAnonymousFunctionDestructuringDefault) {
+    CompileResult result = compileSource("[x = function() {}] = [];");
+    ASSERT_TRUE(result.ok());
+    EXPECT_TRUE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "x"));
 }

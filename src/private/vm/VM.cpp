@@ -123,6 +123,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::Ge:            return "ge";
         case OpCode::StrictEqual:   return "strict_equal";
         case OpCode::In:            return "in";
+        case OpCode::InstanceOf:    return "instance_of";
+        case OpCode::Binary:        return "binary";
         case OpCode::Unary:         return "unary";
         case OpCode::ToString:      return "to_string";
         case OpCode::Jmp:           return "jmp";
@@ -159,6 +161,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetParamNames: return "set_param_names";
         case OpCode::SetClosure:    return "set_closure";
         case OpCode::SetFuncName:   return "set_func_name";
+        case OpCode::SetFuncNameIfAbsent: return "set_func_name_if_absent";
+        case OpCode::SetFuncNameFromKey:  return "set_func_name_from_key";
         case OpCode::BindThis:      return "bind_this";
         case OpCode::LoadThis:      return "load_this";
         case OpCode::StoreThis:     return "store_this";
@@ -365,6 +369,10 @@ const VM::Handler* VM::handlers() {
         &VM::opDirectEval,
         &VM::opDirectEvalSpread,
         &VM::opSetScopeStrict,
+        &VM::opInstanceOf,
+        &VM::opBinary,
+        &VM::opSetFuncNameIfAbsent,
+        &VM::opSetFuncNameFromKey,
     };
     return table;
 }
@@ -1574,6 +1582,28 @@ Value* VM::opIn() {
     return nullptr;
 }
 
+Value* VM::opInstanceOf() {
+    if (stack_.size() < 2) {
+        return badBytecode("instance_of: operand stack underflow");
+    }
+    Value* right = pop();
+    Value* left = pop();
+    Value* result = ctx_->instanceOf(left, right);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opBinary() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("binary: truncated operand");
+    }
+    const uint32_t op = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    return binary(static_cast<BinaryOperator>(op));
+}
+
 Value* VM::opUnary() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (bytes.size() - pc_ < 4) return badBytecode("unary: truncated operand");
@@ -2101,6 +2131,46 @@ Value* VM::opSetFuncName() {
     if (stack_.empty()) return badBytecode("set_func_name: operand stack underflow");
 
     ctx_->setFunctionName(top(), *name);
+    return nullptr;
+}
+
+Value* VM::opSetFuncNameIfAbsent() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_func_name_if_absent: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("set_func_name_if_absent: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("set_func_name_if_absent: operand stack underflow");
+    }
+
+    ctx_->setFunctionNameIfAbsent(top(), *name);
+    return nullptr;
+}
+
+Value* VM::opSetFuncNameFromKey() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_func_name_from_key: truncated operand");
+    }
+    uint32_t prefixIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* prefix = stringOperand(prefixIndex);
+    if (prefix == nullptr) {
+        return badBytecode("set_func_name_from_key: prefix index out of range");
+    }
+    // 栈：[..., key, fn]；只读不弹。
+    if (stack_.size() < 2) {
+        return badBytecode("set_func_name_from_key: operand stack underflow");
+    }
+    ctx_->setFunctionNameFromKey(stack_[stack_.size() - 1],
+                                 stack_[stack_.size() - 2], *prefix);
     return nullptr;
 }
 

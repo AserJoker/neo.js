@@ -194,6 +194,8 @@ private:
     neo::core::Value* opGe();
     neo::core::Value* opStrictEqual();
     neo::core::Value* opIn();
+    neo::core::Value* opInstanceOf();
+    neo::core::Value* opBinary();
     neo::core::Value* opUnary();
     neo::core::Value* opToString();
     neo::core::Value* opJmp();
@@ -223,6 +225,8 @@ private:
     neo::core::Value* opSetParamNames();
     neo::core::Value* opSetClosure();
     neo::core::Value* opSetFuncName();
+    neo::core::Value* opSetFuncNameIfAbsent();
+    neo::core::Value* opSetFuncNameFromKey();
     neo::core::Value* opBindThis();
     neo::core::Value* opLoadThis();
     neo::core::Value* opStoreThis();

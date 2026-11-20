@@ -1358,9 +1358,9 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     }
 
     // —— 函数名作为 "name" 属性（ES2024 §20.2.4.2）——
-    // writable=false / enumerable=false / configurable=true；缺省 "<anonymous>"，
+    // writable=false / enumerable=false / configurable=true；规范缺省为空串，
     // 由 setFunctionName 更新（对应 VM 的 setname 字节码）。
-    Value* anonName = createString("<anonymous>");
+    Value* anonName = createString("");
     if (anonName == oomValue_) return anonName;
     if (defineProperty(fnValue, "name", anonName, false, false, true)->type()->kind() ==
         TypeKind::Exception) {
@@ -1662,6 +1662,47 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
     Value* nameValue = createString(name);
     if (nameValue == oomValue_) return;
     defineProperty(fn, "name", nameValue, false, false, true);
+}
+
+void Context::setFunctionNameIfAbsent(Value* fn, std::string_view name) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    Value* key = createString("name");
+    if (key == oomValue_) return;
+    PropertyKey pk;
+    if (neo::core::toPropertyKey(this, key, pk) != nullptr) return;
+    bool exists = false;
+    Property desc;
+    if (fn->type()->getOwnProperty(this, fn, pk, exists, desc) != nullptr) return;
+    if (exists) {
+        // 引擎创建匿名函数时预置了占位名 "<anonymous>"；它不算规范意义上的
+        // 自有 "name"，可被 NamedEvaluation 覆盖。真正的自有 name（如 class
+        // 的静态 name 方法）则保持不动。
+        if (desc.value == nullptr ||
+            desc.value->type()->kind() != TypeKind::String) {
+            return;
+        }
+        const std::string& current =
+            static_cast<StringData*>(desc.value->data())->value;
+        if (current != "<anonymous>" && !current.empty()) return;
+    }
+    setFunctionName(fn, name);
+}
+
+void Context::setFunctionNameFromKey(Value* fn, Value* key,
+                                     std::string_view prefix) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    PropertyKey pk;
+    if (neo::core::toPropertyKey(this, key, pk) != nullptr) return;
+    std::string name(prefix);
+    if (pk.isSymbol) {
+        const auto* data = static_cast<const SymbolData*>(pk.value->data());
+        if (!data->description.empty()) {
+            name += "[" + data->description + "]";
+        }
+    } else {
+        name += pk.name;
+    }
+    setFunctionName(fn, name);
 }
 
 void Context::setFunctionStrict(Value* fn) {

@@ -458,7 +458,7 @@ public:
     //   rootScope = 当前 root scope（借用）；
     //   minArgc = 最少参数数量（调用时校验）；
     //   bindName = 变量绑定名（非空则 bind 到 current scope）。
-    // 函数名不在此设置（缺省 "<anonymous>"），由 setFunctionName 单独设置——
+    // 函数名不在此设置（缺省空串），由 setFunctionName 单独设置——
     // 对应 VM 字节码序列 define → store → setname。
     // 同时自动创建 fn.prototype（普通对象）并定义 proto.constructor 指回函数（ADR-034）。
     // 返回 Value*：正常函数值，或 OOM 哨兵（ADR-031）。
@@ -481,6 +481,16 @@ public:
     // setFunctionName: 设置函数名（FunctionData.name）。仅对 Function 类型有效，
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
+
+    // NamedEvaluation（§8.5.4）：仅当函数没有自有 "name" 属性时设置名字。
+    // 用于 class 表达式——静态 name 方法会占用该属性，此时不得覆盖。
+    virtual void setFunctionNameIfAbsent(Value* fn, std::string_view name) = 0;
+
+    // SetFunctionName(fn, propKey)：propKey 是 Symbol 时名字为
+    // "[" + description + "]"（无描述则为空串），否则 ToString 后设置。
+    // 用于 computed 属性键的 NamedEvaluation，键在运行时才确定。
+    virtual void setFunctionNameFromKey(Value* fn, Value* key,
+                                        std::string_view prefix = {}) = 0;
 
     // setFunctionStrict: 把函数标记为严格模式（在 closureScope 上标注 "strict"）。
     // 用于内部算法（如 Object.assign）需要 Throw=true 的 Set 语义，

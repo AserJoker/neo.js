@@ -26,7 +26,7 @@
 //
 // 函数名不是 data 字段，而是函数对象上的 "name" 属性（writable=false /
 // enumerable=false / configurable=true，ES2024 §20.2.4.2），由 createNativeFunction
-// 初始化为 "<anonymous>"、setFunctionName 更新。
+// 初始化为空串、setFunctionName 更新。
 //
 // Function 是孤立的：Sema 收集穿透的闭包变量，绑定到 closureScope，
 // 运行时查找 closureScope → rootScope → global，不依赖定义时的中间词法链（ADR-013 §3）。

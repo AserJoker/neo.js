@@ -92,6 +92,17 @@ private:
     void compileModule();
     void compileStatement(const frontend::Node& node);
     void compileExpression(const frontend::Node& node);
+    // NamedEvaluation（§8.5.4）：编译表达式后，若其是匿名函数/箭头/匿名类，
+    // 用 name 设置函数名；其他表达式原样求值。name 为空时等同 compileExpression。
+    void compileNamedExpression(const frontend::Node& node,
+                                std::string_view name);
+    // computed 键版本：键已在栈上（[key, value]），按运行时键设置名字。
+    void compileNamedExpressionForKey(const frontend::Node& node,
+                                      std::string_view prefix = {});
+    // IsAnonymousFunctionDefinition（§8.5.4）：匿名函数/箭头/匿名类。
+    static bool isAnonymousFunctionDefinition(const frontend::Node& node);
+    // 非 computed 属性键的静态名字；无法静态确定时返回空串。
+    static std::string staticKeyName(const frontend::Node* key);
 
     // —— 语句 ——
     void compileBlockStatement(const frontend::BlockStatement& node);
@@ -215,7 +226,8 @@ private:
     // 字段初始化器：无参函数，返回表达式值（this 为实例/构造器）。
     // owner 为 PropertyDefinition 的节点 id（Sema 捕获标注挂在该节点）。
     void compileFieldInitializer(const frontend::Node& value,
-                                 frontend::NodeId owner);
+                                 frontend::NodeId owner,
+                                 std::string_view name = {});
     // 访问器/方法函数：method=true（不可构造、无 prototype、严格）。
     void compileMethodFunction(const frontend::FunctionExpression& function,
                                std::string_view name);

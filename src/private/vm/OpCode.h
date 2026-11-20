@@ -336,11 +336,21 @@ enum class OpCode : uint16_t {
     DirectEvalSpread,
     // [] → []：把当前作用域标注为严格模式（严格 eval 的 eval 词法作用域）。
     SetScopeStrict,
+    // [left, right] → [bool]：left instanceof right（§13.10.2）。
+    InstanceOf,
+    // u32 core::BinaryOperator：[left, right] → [result]。
+    // 未单独设指令的二元运算符（==、%、**、位运算、移位）走统一入口。
+    Binary,
+    // u32 nameIndex：[fn] → [fn]：仅当 fn 无自有 "name" 时设置名字
+    // （NamedEvaluation，class 表达式用）。
+    SetFuncNameIfAbsent,
+    // [fn, key] → [fn, key]：按运行时属性键设置函数名（computed 键）。
+    SetFuncNameFromKey,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::SetScopeStrict) + 1;
+    static_cast<size_t>(OpCode::SetFuncNameFromKey) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

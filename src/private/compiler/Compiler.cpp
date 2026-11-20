@@ -506,6 +506,52 @@ void Compiler::compileExpression(const Node& node) {
     mapNode(node, begin);
 }
 
+bool Compiler::isAnonymousFunctionDefinition(const frontend::Node& node) {
+    switch (node.kind()) {
+        case NodeKind::FunctionExpression:
+            return static_cast<const frontend::FunctionExpression&>(node).id ==
+                   nullptr;
+        case NodeKind::ArrowFunctionExpression:
+            return true;
+        case NodeKind::ClassExpression:
+            return static_cast<const frontend::ClassExpression&>(node).id ==
+                   nullptr;
+        default:
+            return false;
+    }
+}
+
+void Compiler::compileNamedExpression(const frontend::Node& node,
+                                      std::string_view name) {
+    compileExpression(node);
+    if (name.empty() || !isAnonymousFunctionDefinition(node)) return;
+    if (node.kind() == NodeKind::ClassExpression) {
+        // class 可能有静态 name 方法占用自有 "name"，不得覆盖。
+        code_->setFuncNameIfAbsent(name);
+    } else {
+        code_->setFuncName(name);
+    }
+}
+
+void Compiler::compileNamedExpressionForKey(const frontend::Node& node,
+                                            std::string_view prefix) {
+    compileExpression(node);
+    if (!isAnonymousFunctionDefinition(node)) return;
+    code_->setFuncNameFromKey(prefix);
+}
+
+std::string Compiler::staticKeyName(const frontend::Node* key) {
+    if (!key) return {};
+    switch (key->kind()) {
+        case NodeKind::Identifier:
+            return static_cast<const frontend::Identifier&>(*key).name;
+        case NodeKind::StringLiteral:
+            return static_cast<const frontend::StringLiteral&>(*key).value;
+        default:
+            return {};
+    }
+}
+
 // —— 语句 ——
 
 void Compiler::compileBlockStatement(const frontend::BlockStatement& node) {
@@ -1743,6 +1789,7 @@ void Compiler::compileExportDefaultDeclaration(
         const bool named =
             klass.id && klass.id->kind() == NodeKind::Identifier;
         compileClassDeclaration(klass, !named);
+        if (!named) code_->setFuncName("default");
         if (named) {
             const std::string& name =
                 static_cast<const frontend::Identifier&>(*klass.id).name;
@@ -1757,7 +1804,8 @@ void Compiler::compileExportDefaultDeclaration(
     }
 
     // export default <expression>：求值后存入隐藏槽位。
-    compileExpression(declaration);
+    // 匿名函数/类按 NamedEvaluation 取名字 "default"。
+    compileNamedExpression(declaration, "default");
     code_->initialize(kDefaultSlot);
     exports_.push_back(neo::core::ModuleExportBinding{
         "default", std::string(kDefaultSlot), {}, {}, false});
@@ -1859,6 +1907,47 @@ void Compiler::compileBinaryExpression(
         case frontend::BinaryOperator::GreaterThanEqual: code_->ge(); break;
         case frontend::BinaryOperator::StrictEqual:      code_->strictEqual(); break;
         case frontend::BinaryOperator::In:               code_->in(); break;
+        case frontend::BinaryOperator::InstanceOf:       code_->instanceOf(); break;
+        case frontend::BinaryOperator::Remainder:
+            code_->binary(static_cast<uint32_t>(neo::core::BinaryOperator::Mod));
+            break;
+        case frontend::BinaryOperator::Exponentiate:
+            code_->binary(static_cast<uint32_t>(neo::core::BinaryOperator::Exp));
+            break;
+        case frontend::BinaryOperator::Equal:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::AbstractEqual));
+            break;
+        case frontend::BinaryOperator::NotEqual:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::AbstractEqual));
+            code_->unary(static_cast<uint32_t>(
+                neo::core::UnaryOperator::LogicalNot));
+            break;
+        case frontend::BinaryOperator::LeftShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::ShiftLeft));
+            break;
+        case frontend::BinaryOperator::RightShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::ShiftRight));
+            break;
+        case frontend::BinaryOperator::UnsignedRightShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::UnsignedShiftRight));
+            break;
+        case frontend::BinaryOperator::BitAnd:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitAnd));
+            break;
+        case frontend::BinaryOperator::BitOr:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitOr));
+            break;
+        case frontend::BinaryOperator::BitXor:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitXor));
+            break;
         case frontend::BinaryOperator::StrictNotEqual:
             code_->strictEqual();
             code_->unary(static_cast<uint32_t>(
@@ -2496,20 +2585,35 @@ void Compiler::compileObjectExpression(
             compilePropertyKey(prop);
             const bool getter =
                 prop.propertyKind == frontend::PropertyKind::Get;
+            const std::string accessorKey =
+                prop.computed ? std::string() : staticKeyName(prop.key.get());
+            const std::string accessorName =
+                accessorKey.empty()
+                    ? std::string()
+                    : (getter ? "get " + accessorKey : "set " + accessorKey);
             if (getter) {
                 if (prop.value) {
-                    compileExpression(*prop.value);
+                    if (prop.computed) {
+                        compileNamedExpressionForKey(*prop.value, "get ");
+                    } else {
+                        compileNamedExpression(*prop.value, accessorName);
+                    }
                 } else {
                     code_->pushUndefined();
                 }
                 code_->pushNull();
             } else {
-                code_->pushNull();
                 if (prop.value) {
-                    compileExpression(*prop.value);
+                    if (prop.computed) {
+                        compileNamedExpressionForKey(*prop.value, "set ");
+                    } else {
+                        compileNamedExpression(*prop.value, accessorName);
+                    }
                 } else {
                     code_->pushUndefined();
                 }
+                code_->pushNull();
+                code_->swap();  // [obj, key, setter, null] → [obj, key, null, setter]
             }
             code_->defineAccessor(getter, !getter);
             code_->pop();
@@ -2536,7 +2640,12 @@ void Compiler::compileObjectExpression(
         code_->dup();
         compilePropertyKey(prop);
         if (prop.value) {
-            compileExpression(*prop.value);
+            if (prop.computed) {
+                compileNamedExpressionForKey(*prop.value);
+            } else {
+                compileNamedExpression(*prop.value,
+                                       staticKeyName(prop.key.get()));
+            }
         } else {
             code_->pushUndefined();
         }
@@ -2725,6 +2834,7 @@ void Compiler::compileAssignmentExpression(
             if (!emitCompoundBinary(node.op, node)) return;
             code_->setProp();
         } else {
+            // 成员赋值不是 IdentifierRef，不触发 NamedEvaluation。
             compileExpression(*node.right);
             code_->setProp();
         }
@@ -2739,7 +2849,12 @@ void Compiler::compileAssignmentExpression(
         static_cast<const frontend::Identifier&>(*node.left).name;
 
     if (node.op == frontend::AssignmentOperator::Assign) {
-        compileExpression(*node.right);
+        // (fn) = ... 不是 IdentifierRef，不做 NamedEvaluation。
+        if (node.left->isParenthesized()) {
+            compileExpression(*node.right);
+        } else {
+            compileNamedExpression(*node.right, name);
+        }
         code_->dup();
         code_->store(name);
         return;
@@ -2760,6 +2875,36 @@ bool Compiler::emitCompoundBinary(frontend::AssignmentOperator op,
         case frontend::AssignmentOperator::Subtract: code_->sub(); return true;
         case frontend::AssignmentOperator::Multiply: code_->mul(); return true;
         case frontend::AssignmentOperator::Divide:   code_->div(); return true;
+        case frontend::AssignmentOperator::Remainder:
+            code_->binary(static_cast<uint32_t>(neo::core::BinaryOperator::Mod));
+            return true;
+        case frontend::AssignmentOperator::Exponentiate:
+            code_->binary(static_cast<uint32_t>(neo::core::BinaryOperator::Exp));
+            return true;
+        case frontend::AssignmentOperator::LeftShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::ShiftLeft));
+            return true;
+        case frontend::AssignmentOperator::RightShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::ShiftRight));
+            return true;
+        case frontend::AssignmentOperator::UnsignedRightShift:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::UnsignedShiftRight));
+            return true;
+        case frontend::AssignmentOperator::BitAnd:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitAnd));
+            return true;
+        case frontend::AssignmentOperator::BitOr:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitOr));
+            return true;
+        case frontend::AssignmentOperator::BitXor:
+            code_->binary(static_cast<uint32_t>(
+                neo::core::BinaryOperator::BitXor));
+            return true;
         default:
             error(node, "compiler: unsupported assignment operator " +
                             std::to_string(static_cast<int>(op)));
@@ -2893,7 +3038,15 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
             uint32_t keep = code_->jfalse();
             code_->pop();
             if (node.right) {
-                compileExpression(*node.right);
+                // [f = function(){}]：默认值按绑定目标名做 NamedEvaluation。
+                if (node.left->kind() == NodeKind::Identifier) {
+                    compileNamedExpression(
+                        *node.right,
+                        static_cast<const frontend::Identifier&>(*node.left)
+                            .name);
+                } else {
+                    compileExpression(*node.right);
+                }
             } else {
                 code_->pushUndefined();
             }
@@ -3139,7 +3292,13 @@ void Compiler::compileVariableDeclaration(
         }
 
         if (decl.init) {
-            compileExpression(*decl.init);
+            if (decl.id->kind() == NodeKind::Identifier) {
+                compileNamedExpression(
+                    *decl.init,
+                    static_cast<const frontend::Identifier&>(*decl.id).name);
+            } else {
+                compileExpression(*decl.init);
+            }
         } else {
             code_->pushUndefined();
         }
@@ -3576,6 +3735,7 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                 }
                 compileClassKey(*method.key, method.computed);
                 compileMethodFunction(function, methodName);
+                if (method.computed) code_->setFuncNameFromKey();
                 uint32_t kind = 0;
                 if (method.methodKind == frontend::MethodKind::Get) kind = 1;
                 if (method.methodKind == frontend::MethodKind::Set) kind = 2;
@@ -3593,7 +3753,8 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                             *field.key)
                             .name;
                     if (field.value) {
-                        compileFieldInitializer(*field.value, field.id());
+                        compileFieldInitializer(*field.value, field.id(),
+                                                "#" + privateName);
                     } else {
                         code_->pushUndefined();
                     }
@@ -3608,7 +3769,10 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                     code_->pushUndefined();
                 }
                 if (field.value) {
-                    compileFieldInitializer(*field.value, field.id());
+                    compileFieldInitializer(
+                        *field.value, field.id(),
+                        field.computed ? std::string()
+                                       : staticKeyName(field.key.get()));
                 } else {
                     code_->pushUndefined();
                 }
@@ -3665,12 +3829,13 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
 }
 
 void Compiler::compileFieldInitializer(const frontend::Node& value,
-                                       frontend::NodeId owner) {
+                                       frontend::NodeId owner,
+                                       std::string_view name) {
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
     code_->storeThis();
     code_->pushScope();
-    compileExpression(value);
+    compileNamedExpression(value, name);
     code_->ret();
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
@@ -3773,7 +3938,16 @@ void Compiler::compileFunctionObject(const Node& node,
     if (!arrow) flags |= vm::kFunctionHasArguments;
     if (mapped) flags |= vm::kFunctionArgumentsMapped;
     if (method) {
-        // class 方法/字段初始化器：不可构造、无 prototype。
+        // class 方法/字段初始化器：不可构造；生成器方法仍有 prototype
+        // （挂 %GeneratorPrototype% / %AsyncGeneratorPrototype%）。
+        if (generator && async) {
+            flags |= vm::kFunctionGenerator | vm::kFunctionAsyncGenerator |
+                     vm::kFunctionHasPrototype;
+        } else if (generator) {
+            flags |= vm::kFunctionGenerator | vm::kFunctionHasPrototype;
+        } else if (async) {
+            flags |= vm::kFunctionAsync;
+        }
     } else if (generator && async) {
         // async generator：不可构造，有 prototype（挂 %AsyncGeneratorPrototype%）。
         flags |= vm::kFunctionGenerator | vm::kFunctionAsyncGenerator |

@@ -116,7 +116,7 @@ TEST(FunctionTest, DefaultNameIsAnonymous) {
     // 函数名是 "name" 属性，不是 data 字段
     Value* name = ctx->getProperty(fn, "name");
     ASSERT_EQ(name->type()->kind(), TypeKind::String);
-    EXPECT_EQ(static_cast<StringData*>(name->data())->value, "<anonymous>");
+    EXPECT_EQ(static_cast<StringData*>(name->data())->value, "");
 }
 
 TEST(FunctionTest, SetFunctionName) {
@@ -127,7 +127,7 @@ TEST(FunctionTest, SetFunctionName) {
 
     Value* fn = ctx->createNativeFunction(argcFn, 0);
     EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
-              "<anonymous>");
+              "");
 
     ctx->setFunctionName(fn, "myFunc");
     EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
@@ -171,9 +171,9 @@ TEST(FunctionTest, CreateWithBindNameBinds) {
     // 第 3 参数是绑定名
     Value* fn = ctx->createNativeFunction(argcFn, 0, "f");
     EXPECT_EQ(ctx->current()->lookup("f"), fn);
-    // 创建时函数名缺省 <anonymous>
+    // 创建时函数名缺省空串（ES2024 §20.2.4.2）
     EXPECT_EQ(static_cast<StringData*>(ctx->getProperty(fn, "name")->data())->value,
-              "<anonymous>");
+              "");
 }
 
 TEST(FunctionTest, FunctionNameAndBindNameAreSeparate) {

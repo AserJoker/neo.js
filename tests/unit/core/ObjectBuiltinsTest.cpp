@@ -517,7 +517,7 @@ TEST(ObjectBuiltinsTest, FunctionProtoBindReturnsBoundFunction) {
     Value* name = ctx->getProperty(bound, "name");
     ASSERT_EQ(name->type()->kind(), TypeKind::String);
     EXPECT_EQ(static_cast<neo::core::StringData*>(name->data())->value,
-              "bound <anonymous>");
+              "bound ");
 }
 
 TEST(ObjectBuiltinsTest, FunctionProtoBindPrependsArgs) {

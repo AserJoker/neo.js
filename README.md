@@ -56,6 +56,7 @@ third_party/icu/download/
 - [项目规划](docs/plan.md) — 愿景与里程碑
 - [架构决策](docs/decisions/) — ADR 001-026
 - [设计文档](docs/design/) — 模块设计（M1 起充实）
+- [Test262 合规跑批](docs/test262.md) — M6-1 runner 与基线工作流
 
 ## 许可证
 

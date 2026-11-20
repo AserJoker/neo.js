@@ -387,6 +387,13 @@ struct Code {
     uint32_t ge() { return emitOp(OpCode::Ge); }
     uint32_t strictEqual() { return emitOp(OpCode::StrictEqual); }
     uint32_t in() { return emitOp(OpCode::In); }
+    uint32_t instanceOf() { return emitOp(OpCode::InstanceOf); }
+    // 通用二元运算：操作数为 core::BinaryOperator 的数值。
+    uint32_t binary(uint32_t op) {
+        uint32_t pc = emitOp(OpCode::Binary);
+        emitU32(op);
+        return pc;
+    }
 
     // 跳转：target 为字节偏移。前向跳转先以 0 占位，稍后 patchU32(pc + 2, target)。
     uint32_t jmp(uint32_t target = 0) {
@@ -521,6 +528,16 @@ struct Code {
     uint32_t setFuncName(std::string_view name) {
         uint32_t pc = emitOp(OpCode::SetFuncName);
         emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setFuncNameIfAbsent(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetFuncNameIfAbsent);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t setFuncNameFromKey(std::string_view prefix = {}) {
+        uint32_t pc = emitOp(OpCode::SetFuncNameFromKey);
+        emitU32(addString(std::string(prefix)));
         return pc;
     }
     uint32_t bindThis() { return emitOp(OpCode::BindThis); }
