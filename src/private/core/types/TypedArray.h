@@ -63,6 +63,11 @@ Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index);
 Value* typedArrayWriteElement(IContext* ctx, TypedArrayData* d, size_t index,
                               Value* value);
 
+// 元素原始位与 JS 值互转（Atomics 原子操作复用同一套转换语义）。
+Value* typedArrayRawToValue(IContext* ctx, TypedArrayKind kind, uint64_t raw);
+Value* typedArrayValueToRaw(IContext* ctx, TypedArrayKind kind, Value* value,
+                            uint64_t& raw);
+
 }  // namespace neo::core
 
 #endif  // NEO_CORE_PRIVATE_TYPES_TYPED_ARRAY_H

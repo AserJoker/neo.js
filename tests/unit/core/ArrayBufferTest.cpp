@@ -184,3 +184,41 @@ TEST(ArrayBufferTest, BoundsAndTypeErrors) {
     Value* offsetArgs[1] = {f.ctx->createNumber(5.0)};
     EXPECT_TRUE(isError(f.dataView(buffer, 2, offsetArgs)));
 }
+
+TEST(ArrayBufferTest, SharedArrayBufferBasics) {
+    Fixture f;
+    Value* args[1] = {f.ctx->createNumber(8.0)};
+    Value* sab = f.ctx->construct(f.ctor("SharedArrayBuffer"), 1, args);
+    ASSERT_FALSE(isError(sab));
+    EXPECT_EQ(sab->type()->kind(), TypeKind::SharedArrayBuffer);
+    EXPECT_EQ(numOf(f.ctx->getProperty(sab, "byteLength")), 8.0);
+
+    // TypedArray 视图直接读写共享块。
+    Value* taCtor = f.ctor("Uint8Array");
+    Value* taArgs[1] = {sab};
+    Value* view = f.ctx->construct(taCtor, 1, taArgs);
+    ASSERT_FALSE(isError(view));
+    f.ctx->setProperty(view, "0", f.ctx->createNumber(200.0));
+    EXPECT_EQ(numOf(f.ctx->getProperty(view, "0")), 200.0);
+
+    // DataView 与 TypedArray 看到同一块内存。
+    Value* dv = f.dataView(sab);
+    ASSERT_FALSE(isError(dv));
+    f.call2(dv, "setUint8", f.ctx->createNumber(1), f.ctx->createNumber(7.0));
+    EXPECT_EQ(numOf(f.call1(dv, "getUint8", f.ctx->createNumber(1))), 7.0);
+    EXPECT_EQ(numOf(f.ctx->getProperty(view, "1")), 7.0);
+
+    // slice 返回新的 SharedArrayBuffer，并复制当前内容。
+    Value* sliced = f.call(sab, "slice", 0);
+    ASSERT_FALSE(isError(sliced));
+    EXPECT_EQ(sliced->type()->kind(), TypeKind::SharedArrayBuffer);
+    EXPECT_EQ(numOf(f.ctx->getProperty(sliced, "byteLength")), 8.0);
+    Value* slicedArgs[1] = {sliced};
+    Value* slicedView = f.ctx->construct(taCtor, 1, slicedArgs);
+    ASSERT_FALSE(isError(slicedView));
+    EXPECT_EQ(numOf(f.ctx->getProperty(slicedView, "1")), 7.0);
+
+    // 构造器必须用 new。
+    EXPECT_TRUE(isError(f.ctx->call(f.ctor("SharedArrayBuffer"),
+                                    f.ctx->createUndefined(), 1, args)));
+}

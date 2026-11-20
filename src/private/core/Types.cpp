@@ -161,6 +161,11 @@ IType* getArrayBufferType() {
     return &inst;
 }
 
+IType* getSharedArrayBufferType() {
+    static SharedArrayBufferType inst;
+    return &inst;
+}
+
 IType* getDataViewType() {
     static DataViewType inst;
     return &inst;
@@ -302,6 +307,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::CollectionIterator: return getCollectionIteratorType();
         case TypeKind::Date:             return getDateType();
         case TypeKind::ArrayBuffer:      return getArrayBufferType();
+        case TypeKind::SharedArrayBuffer: return getSharedArrayBufferType();
         case TypeKind::DataView:         return getDataViewType();
         case TypeKind::TypedArray:       return getTypedArrayType();
         case TypeKind::Error:            return getErrorType();

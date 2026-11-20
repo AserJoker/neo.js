@@ -21,6 +21,7 @@
 #include "core/ConsoleBuiltins.h"
 #include "core/DateBuiltins.h"
 #include "core/ArrayBufferBuiltins.h"
+#include "core/AtomicsBuiltins.h"
 #include "core/TypedArrayBuiltins.h"
 #include "core/IntlBuiltins.h"
 #include "core/intl/MinimalIntlBackend.h"
@@ -237,7 +238,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         std::abort();
     }
 
-    // 11a. 注册 ArrayBuffer/DataView（ES2024 §25）。依赖 Object.prototype。
+    // 11a. 注册 ArrayBuffer/SharedArrayBuffer/DataView（ES2024 §25）。
+    // 依赖 Object.prototype。
     if (!registerArrayBufferBuiltins(this)) {
         std::abort();
     }
@@ -245,6 +247,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 11a. 注册 TypedArray（ES2024 §25.2）。依赖 Object.prototype 与
     //      %Iterator.prototype%（迭代器复用 createArrayIterator）。
     if (!registerTypedArrayBuiltins(this)) {
+        std::abort();
+    }
+
+    // 11a. 注册 Atomics（ES2024 §25.4）。依赖 SharedArrayBuffer/TypedArray。
+    if (!registerAtomicsBuiltins(this)) {
         std::abort();
     }
 
@@ -2218,6 +2225,20 @@ Value* Context::createArrayBuffer(size_t byteLength, std::string_view bindName) 
     Value* buffer = createTracked(getArrayBufferType(), d, bindName);
     if (buffer != oomValue_ && arrayBufferPrototype_ != nullptr) {
         static_cast<ObjectData*>(buffer->data())->prototype = arrayBufferPrototype_;
+    }
+    return buffer;
+}
+
+Value* Context::createSharedArrayBuffer(std::shared_ptr<SharedBufferBlock> block,
+                                        std::string_view bindName) {
+    if (!block) return oomValue_;
+    auto* d = gc_->allocData<ArrayBufferData>();
+    if (d == nullptr) return oomValue_;
+    d->shared = std::move(block);
+    Value* buffer = createTracked(getSharedArrayBufferType(), d, bindName);
+    if (buffer != oomValue_ && sharedArrayBufferPrototype_ != nullptr) {
+        static_cast<ObjectData*>(buffer->data())->prototype =
+            sharedArrayBufferPrototype_;
     }
     return buffer;
 }

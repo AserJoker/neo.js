@@ -24,6 +24,9 @@ enum class InterruptKind : uint8_t {
     TryBodyEnd,  // VM 专用：try 块正常完成，由 VM 裁决 finally/try_end
     CatchEnd,    // VM 专用：catch 块正常完成，由 VM 裁决 finally/try_end
     FinallyEnd,  // VM 专用：finally 块完成，由 VM 裁决 res/try_end
+    // VM 专用：Context 收到停止请求（worker terminate / 调试器暂停）。
+    // 不可被 JS try/catch 捕获；VM 每条指令后检查停止标记并返回本信号。
+    Terminate,
 };
 
 // 挂起信号：函数返回后必须保留现场（execScope/断点），等待 runner 恢复。

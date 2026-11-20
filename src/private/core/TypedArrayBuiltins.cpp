@@ -154,7 +154,9 @@ Value* typedArrayConstruct(IContext* ctx, TypedArrayKind kind, size_t argc,
     if (argc == 0) return makeTypedArray(ctx, kind, 0);
 
     Value* first = argv[0];
-    if (first->type()->kind() == TypeKind::ArrayBuffer) {
+    TypeKind firstKind = first->type()->kind();
+    if (firstKind == TypeKind::ArrayBuffer ||
+        firstKind == TypeKind::SharedArrayBuffer) {
         ArrayBufferData* buffer = asArrayBuffer(first);
         if (buffer == nullptr || buffer->detached) {
             return detail::typeError(ctx, "Cannot construct on a detached ArrayBuffer");
@@ -166,13 +168,14 @@ Value* typedArrayConstruct(IContext* ctx, TypedArrayKind kind, size_t argc,
         if (offset % elemSize != 0) {
             return detail::rangeError(ctx, "Start offset is not a multiple of element size");
         }
-        if (offset > buffer->bytes.size()) {
+        const size_t bufferLength = buffer->byteLength();
+        if (offset > bufferLength) {
             return detail::rangeError(ctx, "Start offset is outside the bounds of the buffer");
         }
-        size_t length = (buffer->bytes.size() - offset) / elemSize;
+        size_t length = (bufferLength - offset) / elemSize;
         if (argc > 2 && !isUndefined(argv[2])) {
             if (Value* err = toIndex(ctx, argv[2], length)) return err;
-            if (offset + length * elemSize > buffer->bytes.size()) {
+            if (offset + length * elemSize > bufferLength) {
                 return detail::rangeError(ctx, "Invalid typed array length");
             }
         }

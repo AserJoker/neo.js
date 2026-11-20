@@ -52,7 +52,10 @@ private:
     uint64_t markEpoch_ = 0;     // 当前标记代数（每轮 collect 递增，Value 记录最近标记代数）
 
     double memThreshold_   = 0.8;     // 内存阈值（used/limit，limit==SIZE_MAX 时不生效）
-    size_t countThreshold_ = 10000;   // Value 数量阈值（无限额时兜底自动 GC）
+    // Value 数量阈值（无限额时兜底自动 GC）。必须显著高于 bootstrap 后的
+    // 常驻 Value 数（当前约 10k）：否则内建注册完成后每次 createValue 都会
+    // 触发 collect，且未挂到作用域的临时 Value 会被提前回收。
+    size_t countThreshold_ = 100000;
 };
 
 }  // namespace neo::core

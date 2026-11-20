@@ -617,6 +617,12 @@ Value* VM::execute() {
 
     const Handler* table = handlers();
     while (pc_ < bytes.size()) {
+        // 停止标记：worker terminate / 调试器复用。每条指令后检查一次；
+        // 终止是不可捕获的控制信号，不进入 try 展开。
+        if (ctx_->isStopRequested()) {
+            return ctx_->createInterrupt(neo::core::InterruptKind::Terminate,
+                                         pc_, nullptr);
+        }
         if (bytes.size() - pc_ < 2) {
             return badBytecode("truncated opcode");
         }

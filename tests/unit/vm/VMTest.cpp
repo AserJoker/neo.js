@@ -10,9 +10,11 @@
 #include "core/IContext.h"
 #include "core/Scope.h"
 #include "core/types/Exception.h"
+#include "core/types/Interrupt.h"
 #include "core/types/Number.h"
 #include "core/types/RegExp.h"
 #include "core/types/String.h"
+#include "core/types/TypeBehavior.h"
 #include "infra/Console.h"
 #include "infra/IAllocator.h"
 #include "infra/MallocAllocator.h"
@@ -22,8 +24,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -818,4 +822,35 @@ TEST(VMTest, FinallyReturnOverridesPendingThrow) {
     ASSERT_NE(result, nullptr);
     ASSERT_EQ(result->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(result), 3.0);
+}
+
+TEST(VMTest, StopRequestTerminatesBytecode) {
+    Fixture f;
+    Code code;
+    const uint32_t loop = code.here();
+    code.emitOp(OpCode::Jmp);
+    code.emitU32(loop);
+
+    std::thread stopper([&f] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        f.ctx->requestStop();
+    });
+
+    VM vm(f.ctx.get(), &code);
+    Value* result = vm.run();
+    stopper.join();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_TRUE(neo::core::detail::isInterruptValue(result));
+    EXPECT_EQ(neo::core::asInterrupt(result)->kind,
+              neo::core::InterruptKind::Terminate);
+}
+
+TEST(VMTest, StopFlagCanBeCleared) {
+    Fixture f;
+    EXPECT_FALSE(f.ctx->isStopRequested());
+    f.ctx->requestStop();
+    EXPECT_TRUE(f.ctx->isStopRequested());
+    f.ctx->clearStopRequest();
+    EXPECT_FALSE(f.ctx->isStopRequested());
 }

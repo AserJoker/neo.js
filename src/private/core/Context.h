@@ -17,6 +17,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 
+#include <atomic>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -39,6 +40,10 @@ class Context : public IContext {
     // 线程亲和（多线程模型）：Context/Scope/Value/GC 只允许在创建线程访问。
     // 跨线程只允许经过 MessageQueue 传递序列化消息。
     std::thread::id ownerThread_;
+    // true = Worker 线程内创建的上下文（宿主策略用，如 Atomics.wait）。
+    bool isWorkerContext_ = false;
+    // VM 停止标记：跨线程写入（worker terminate / 调试器），VM 每条指令后读取。
+    std::atomic<bool> stopRequested_ {false};
     infra::IAllocator* alloc_;              // 注入，无所有权
     std::unique_ptr<IGCEngine> gc_;         // Context 持有所有权
     infra::Console* console_;              // 注入，无所有权
@@ -101,6 +106,7 @@ class Context : public IContext {
     Value* setIteratorPrototype_ = nullptr;
     Value* datePrototype_ = nullptr;
     Value* arrayBufferPrototype_ = nullptr;
+    Value* sharedArrayBufferPrototype_ = nullptr;
     Value* dataViewPrototype_ = nullptr;
     // %Int8Array.prototype% … %BigUint64Array.prototype%，
     // 每种元素类型一个（下标即 TypedArrayKind）。
@@ -247,6 +253,17 @@ public:
 
     Scope* global() const override { return global_; }
     Value* globalObject() const override { return globalObject_; }
+    bool isWorkerContext() const override { return isWorkerContext_; }
+    void setWorkerContext(bool worker) override { isWorkerContext_ = worker; }
+    void requestStop() override {
+        stopRequested_.store(true, std::memory_order_release);
+    }
+    bool isStopRequested() const override {
+        return stopRequested_.load(std::memory_order_acquire);
+    }
+    void clearStopRequest() override {
+        stopRequested_.store(false, std::memory_order_release);
+    }
     Scope* root() const override { return root_; }
     Scope* current() const override { return current_; }
 
@@ -441,6 +458,8 @@ public:
     Value* createDate(double timeValue, std::string_view bindName = {}) override;
     Value* createArrayBuffer(size_t byteLength,
                              std::string_view bindName = {}) override;
+    Value* createSharedArrayBuffer(std::shared_ptr<SharedBufferBlock> block,
+                                   std::string_view bindName = {}) override;
     Value* createDataView(Value* buffer, size_t byteOffset, size_t byteLength,
                           std::string_view bindName = {}) override;
     Value* createTypedArray(Value* buffer, size_t byteOffset, size_t length,
@@ -608,6 +627,9 @@ public:
     Value* datePrototype() const override { return datePrototype_; }
     void setArrayBufferPrototype(Value* proto) override {
         arrayBufferPrototype_ = proto;
+    }
+    void setSharedArrayBufferPrototype(Value* proto) override {
+        sharedArrayBufferPrototype_ = proto;
     }
     void setDataViewPrototype(Value* proto) override { dataViewPrototype_ = proto; }
     void setTypedArrayPrototype(TypedArrayKind kind, Value* proto) override {

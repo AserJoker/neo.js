@@ -4,8 +4,8 @@
 // 再次访问同一 Value 时产出 Reference，从而支持循环引用与共享引用。
 //
 // 支持：原始值、Array、普通对象、Date、Map、Set、RegExp、ArrayBuffer、
-// DataView、TypedArray。函数/symbol/bigint/Proxy/WeakMap/WeakSet 等抛
-// DataCloneError。
+// SharedArrayBuffer（共享块引用）、DataView、TypedArray。函数/symbol/
+// bigint/Proxy/WeakMap/WeakSet 等抛 DataCloneError。
 //
 // 关联 ADR: 006（异常即值）、028（infra）
 
@@ -242,6 +242,18 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
             }
             return nullptr;
         }
+        case TypeKind::SharedArrayBuffer: {
+            auto* data = core::asSharedArrayBuffer(value);
+            if (data == nullptr || !data->shared) {
+                return dataCloneError(ctx, "Invalid SharedArrayBuffer");
+            }
+            if (beginNode(cc, value, out, MessageValueKind::SharedArrayBuffer)) {
+                return nullptr;
+            }
+            // 共享块不复制内存：消息持有一个 shared_ptr 引用。
+            out.shared = data->shared;
+            return nullptr;
+        }
         case TypeKind::DataView: {
             if (beginNode(cc, value, out, MessageValueKind::DataView)) {
                 return nullptr;
@@ -430,6 +442,15 @@ Value* restoreValue(IContext* ctx, const MessageValue& value,
             if (buffer == ctx->oomValue()) return buffer;
             rc.seen[value.id] = buffer;
             core::asArrayBuffer(buffer)->bytes = value.bytes;
+            return buffer;
+        }
+        case MessageValueKind::SharedArrayBuffer: {
+            if (!value.shared) {
+                return ctx->createErrorException(ErrorKind::Error,
+                                                 "Invalid shared buffer");
+            }
+            Value* buffer = ctx->createSharedArrayBuffer(value.shared);
+            if (buffer != ctx->oomValue()) rc.seen[value.id] = buffer;
             return buffer;
         }
         case MessageValueKind::DataView: {

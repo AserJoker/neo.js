@@ -4,7 +4,8 @@
 //   - ArrayBuffer 持 vector<uint8_t>；DataView 以 Value* 引用它并直接读写；
 //   - DataView 默认大端，littleEndian 参数按 ToBoolean 解释；
 //   - 越界访问抛 RangeError；BigInt 读写要求参数为 BigInt（ToBigInt 语义）；
-//   - 暂不实现 SharedArrayBuffer / Atomics / 分离（detach）。
+//   - SharedArrayBuffer 与 ArrayBuffer 共用 byteLength()/data() 访问路径；
+//   - 暂不实现 Atomics / 分离（detach）。
 //
 // 关联 ADR: 020（标准库组织）、006（异常即值）
 
@@ -70,15 +71,19 @@ Value* arrayBufferByteLengthGet(IContext* ctx, Value* self, size_t /*argc*/,
     if (d == nullptr) {
         return detail::typeError(ctx, "this is not an ArrayBuffer");
     }
-    return ctx->createNumber(static_cast<double>(d->bytes.size()));
+    return ctx->createNumber(static_cast<double>(d->byteLength()));
 }
 
-Value* arrayBufferSlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+// ArrayBuffer / SharedArrayBuffer 共用的 slice 实现：shared 决定结果类型。
+Value* sliceBuffer(IContext* ctx, Value* self, size_t argc, Value* argv[],
+                   bool shared) {
     ArrayBufferData* d = asArrayBuffer(self);
     if (d == nullptr) {
-        return detail::typeError(ctx, "this is not an ArrayBuffer");
+        return detail::typeError(
+            ctx, shared ? "this is not a SharedArrayBuffer"
+                        : "this is not an ArrayBuffer");
     }
-    const size_t len = d->bytes.size();
+    const size_t len = d->byteLength();
     auto clamp = [len](double v) -> size_t {
         if (std::isnan(v) || v <= 0.0) return 0;
         if (v >= static_cast<double>(len)) return len;
@@ -110,19 +115,74 @@ Value* arrayBufferSlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) 
         }
     }
     if (end < start) end = start;
-    Value* result = ctx->createArrayBuffer(end - start);
+
+    Value* result = nullptr;
+    if (shared) {
+        std::shared_ptr<SharedBufferBlock> block;
+        try {
+            block = SharedBufferBlock::create(end - start);
+        } catch (...) {
+            return ctx->oomValue();
+        }
+        result = ctx->createSharedArrayBuffer(std::move(block));
+    } else {
+        result = ctx->createArrayBuffer(end - start);
+    }
     if (detail::isErrorValue(result)) return result;
+
     ArrayBufferData* rd = asArrayBuffer(result);
     if (rd != nullptr && end > start) {
-        std::memcpy(rd->bytes.data(), d->bytes.data() + start, end - start);
+        std::memcpy(rd->data(), d->data() + start, end - start);
     }
     return result;
+}
+
+Value* arrayBufferSlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return sliceBuffer(ctx, self, argc, argv, false);
+}
+
+// —— SharedArrayBuffer ——
+
+Value* sharedArrayBufferCtorCall(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                                 Value* /*argv*/[]) {
+    return detail::typeError(ctx,
+                             "Constructor SharedArrayBuffer requires 'new'");
+}
+
+Value* sharedArrayBufferConstruct(IContext* ctx, Value* /*self*/, size_t argc,
+                                  Value* argv[]) {
+    size_t length = 0;
+    if (Value* err = toIndex(ctx, argOrUndefined(ctx, argc, argv, 0), length)) {
+        return err;
+    }
+    std::shared_ptr<SharedBufferBlock> block;
+    try {
+        block = SharedBufferBlock::create(length);
+    } catch (...) {
+        return ctx->oomValue();
+    }
+    return ctx->createSharedArrayBuffer(std::move(block));
+}
+
+Value* sharedArrayBufferByteLengthGet(IContext* ctx, Value* self, size_t /*argc*/,
+                                      Value* /*argv*/[]) {
+    ArrayBufferData* d = asSharedArrayBuffer(self);
+    if (d == nullptr) {
+        return detail::typeError(ctx, "this is not a SharedArrayBuffer");
+    }
+    return ctx->createNumber(static_cast<double>(d->byteLength()));
+}
+
+Value* sharedArrayBufferSlice(IContext* ctx, Value* self, size_t argc,
+                              Value* argv[]) {
+    return sliceBuffer(ctx, self, argc, argv, true);
 }
 
 Value* arrayBufferIsView(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
     TypeKind k = argv[0]->type()->kind();
-    return ctx->createBoolean(k == TypeKind::DataView);
+    return ctx->createBoolean(k == TypeKind::DataView ||
+                              k == TypeKind::TypedArray);
 }
 
 // —— DataView ——
@@ -145,7 +205,7 @@ Value* dataViewConstruct(IContext* ctx, Value* /*self*/, size_t argc,
     if (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined) {
         if (Value* err = toIndex(ctx, argv[1], offset)) return err;
     }
-    const size_t bufferLength = buffer->bytes.size();
+    const size_t bufferLength = buffer->byteLength();
     if (offset > bufferLength) {
         return detail::rangeError(ctx, "DataView offset is out of bounds");
     }
@@ -203,7 +263,7 @@ Value* viewLocation(IContext* ctx, Value* self, size_t argc, Value* argv[],
     return nullptr;
 }
 
-uint64_t readBytes(const std::vector<uint8_t>& bytes, size_t index, size_t size,
+uint64_t readBytes(const uint8_t* bytes, size_t index, size_t size,
                    bool littleEndian) {
     uint64_t value = 0;
     for (size_t i = 0; i < size; ++i) {
@@ -213,8 +273,8 @@ uint64_t readBytes(const std::vector<uint8_t>& bytes, size_t index, size_t size,
     return value;
 }
 
-void writeBytes(std::vector<uint8_t>& bytes, size_t index, size_t size,
-                uint64_t value, bool littleEndian) {
+void writeBytes(uint8_t* bytes, size_t index, size_t size, uint64_t value,
+                bool littleEndian) {
     for (size_t i = 0; i < size; ++i) {
         const size_t pos = littleEndian ? i : size - 1 - i;
         bytes[index + pos] = static_cast<uint8_t>((value >> (8 * i)) & 0xFFu);
@@ -229,7 +289,7 @@ Value* dataViewGetInt(IContext* ctx, Value* self, size_t argc, Value* argv[],
         return err;
     }
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    const uint64_t raw = readBytes(buffer->bytes, index, size, little);
+    const uint64_t raw = readBytes(buffer->data(), index, size, little);
     if (!isSigned) return ctx->createNumber(static_cast<double>(raw));
     // 符号扩展
     const uint64_t signBit = 1ULL << (size * 8 - 1);
@@ -248,7 +308,7 @@ Value* dataViewGetFloat(IContext* ctx, Value* self, size_t argc, Value* argv[],
         return err;
     }
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    const uint64_t raw = readBytes(buffer->bytes, index, size, little);
+    const uint64_t raw = readBytes(buffer->data(), index, size, little);
     if (size == 4) {
         const uint32_t bits = static_cast<uint32_t>(raw);
         float f = 0.0f;
@@ -268,7 +328,7 @@ Value* dataViewGetBigInt(IContext* ctx, Value* self, size_t argc, Value* argv[],
         return err;
     }
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    const uint64_t raw = readBytes(buffer->bytes, index, 8, little);
+    const uint64_t raw = readBytes(buffer->data(), index, 8, little);
     if (isSigned) {
         return ctx->createBigInt(neo::bigint::BigInt(static_cast<int64_t>(raw)));
     }
@@ -287,7 +347,7 @@ Value* dataViewSetInt(IContext* ctx, Value* self, size_t argc, Value* argv[],
     const double n = static_cast<NumberData*>(nv->data())->value;
     const int64_t integer = std::isfinite(n) ? static_cast<int64_t>(std::trunc(n)) : 0;
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    writeBytes(buffer->bytes, index, size, static_cast<uint64_t>(integer), little);
+    writeBytes(buffer->data(), index, size, static_cast<uint64_t>(integer), little);
     return ctx->createUndefined();
 }
 
@@ -311,7 +371,7 @@ Value* dataViewSetFloat(IContext* ctx, Value* self, size_t argc, Value* argv[],
         std::memcpy(&raw, &n, sizeof raw);
     }
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    writeBytes(buffer->bytes, index, size, raw, little);
+    writeBytes(buffer->data(), index, size, raw, little);
     return ctx->createUndefined();
 }
 
@@ -327,7 +387,7 @@ Value* dataViewSetBigInt(IContext* ctx, Value* self, size_t argc, Value* argv[])
     }
     const uint64_t raw = detail::bigIntValue(value).toUint64();
     ArrayBufferData* buffer = asArrayBuffer(asDataView(self)->buffer);
-    writeBytes(buffer->bytes, index, 8, raw, little);
+    writeBytes(buffer->data(), index, 8, raw, little);
     return ctx->createUndefined();
 }
 
@@ -431,15 +491,20 @@ bool registerCtor(IContext* ctx, const char* name, NativeFn call, NativeFn const
 bool registerArrayBufferBuiltins(IContext* ctx) {
     // —— 1. 原型 ——
     Value* abProto = ctx->createObject();
+    Value* sabProto = ctx->createObject();
     Value* dvProto = ctx->createObject();
-    if (abProto == ctx->oomValue() || dvProto == ctx->oomValue()) return false;
-    for (Value* proto : {abProto, dvProto}) {
+    if (abProto == ctx->oomValue() || sabProto == ctx->oomValue() ||
+        dvProto == ctx->oomValue()) {
+        return false;
+    }
+    for (Value* proto : {abProto, sabProto, dvProto}) {
         if (ctx->setPrototype(proto, ctx->objectPrototype())->type()->kind() ==
             TypeKind::Exception) {
             return false;
         }
     }
     ctx->setArrayBufferPrototype(abProto);
+    ctx->setSharedArrayBufferPrototype(sabProto);
     ctx->setDataViewPrototype(dvProto);
 
     // —— 2. ArrayBuffer.prototype ——
@@ -448,6 +513,16 @@ bool registerArrayBufferBuiltins(IContext* ctx) {
     }
     if (!defineMethod(ctx, abProto, "slice", arrayBufferSlice, 0)) return false;
     if (!defineTag(ctx, abProto, "ArrayBuffer")) return false;
+
+    // —— 2b. SharedArrayBuffer.prototype ——
+    if (!defineGetter(ctx, sabProto, "byteLength",
+                      sharedArrayBufferByteLengthGet)) {
+        return false;
+    }
+    if (!defineMethod(ctx, sabProto, "slice", sharedArrayBufferSlice, 0)) {
+        return false;
+    }
+    if (!defineTag(ctx, sabProto, "SharedArrayBuffer")) return false;
 
     // —— 3. DataView.prototype ——
     if (!defineGetter(ctx, dvProto, "buffer", dataViewBufferGet)) return false;
@@ -481,6 +556,10 @@ bool registerArrayBufferBuiltins(IContext* ctx) {
     // —— 4. 构造函数 ——
     if (!registerCtor(ctx, "ArrayBuffer", arrayBufferCtorCall, arrayBufferConstruct,
                       abProto)) {
+        return false;
+    }
+    if (!registerCtor(ctx, "SharedArrayBuffer", sharedArrayBufferCtorCall,
+                      sharedArrayBufferConstruct, sabProto)) {
         return false;
     }
     if (!registerCtor(ctx, "DataView", dataViewCtorCall, dataViewConstruct, dvProto)) {

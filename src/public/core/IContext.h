@@ -34,6 +34,7 @@
 #include "core/Module.h"
 #include "core/OperatorKind.h"
 #include "core/PrivateName.h"
+#include "core/SharedBuffer.h"
 #include "core/SourceText.h"
 #include "core/Task.h"
 #include "core/WellKnownSymbol.h"
@@ -167,6 +168,19 @@ public:
     virtual Scope* current() const = 0;
     // 唯一的 JS 全局对象（Global Environment Record 的对象记录）。
     virtual Value* globalObject() const = 0;
+
+    // —— 线程角色 ——
+    // 嵌入方通过 createContext 创建的主上下文为 false；Worker 线程内创建的
+    // 上下文为 true。用于宿主策略（如 Atomics.wait 仅 worker 可阻塞）。
+    virtual bool isWorkerContext() const = 0;
+    virtual void setWorkerContext(bool worker) = 0;
+
+    // —— VM 停止标记（worker terminate / 调试器复用）——
+    // 跨线程可请求停止当前 Context 的字节码执行；VM 在每条指令后检查。
+    // 调试器后续可在同一检查点实现暂停/单步（扩展为带原因的标记即可）。
+    virtual void requestStop() = 0;
+    virtual bool isStopRequested() const = 0;
+    virtual void clearStopRequest() = 0;
 
     // —— scope 切换（ADR-022 函数调用）——
     // Scope 的 parent 链本身就是作用域栈，Context 只需保存 root/current 两个指针，无须额外栈。
@@ -647,8 +661,16 @@ public:
                                   size_t byteLength,
                                   std::string_view bindName = {}) = 0;
 
+    // createSharedArrayBuffer: 创建 SharedArrayBuffer（ES2024 §25.1.3.1）。
+    // 共享块由调用方提供（构造时新建，还原消息时复用发送方的 block）；
+    // 包装对象持有 block 的一个 shared_ptr 引用。
+    virtual Value* createSharedArrayBuffer(
+        std::shared_ptr<SharedBufferBlock> block,
+        std::string_view bindName = {}) = 0;
+
     // setArrayBufferPrototype / setDataViewPrototype: bootstrap 专用。
     virtual void setArrayBufferPrototype(Value* proto) = 0;
+    virtual void setSharedArrayBufferPrototype(Value* proto) = 0;
     virtual void setDataViewPrototype(Value* proto) = 0;
 
     // createTypedArray: 创建 TypedArray 视图（ES2024 §25.2.5.1）。

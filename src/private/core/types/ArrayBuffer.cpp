@@ -7,7 +7,18 @@
 namespace neo::core {
 
 ArrayBufferData* asArrayBuffer(Value* v) {
-    if (v == nullptr || v->type()->kind() != TypeKind::ArrayBuffer) return nullptr;
+    if (v == nullptr) return nullptr;
+    TypeKind kind = v->type()->kind();
+    if (kind != TypeKind::ArrayBuffer && kind != TypeKind::SharedArrayBuffer) {
+        return nullptr;
+    }
+    return static_cast<ArrayBufferData*>(v->data());
+}
+
+ArrayBufferData* asSharedArrayBuffer(Value* v) {
+    if (v == nullptr || v->type()->kind() != TypeKind::SharedArrayBuffer) {
+        return nullptr;
+    }
     return static_cast<ArrayBufferData*>(v->data());
 }
 

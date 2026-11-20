@@ -167,6 +167,9 @@ enum class TypeKind : uint8_t {
     Worker,
     // MessagePort 对象：普通对象 + 跨线程端口端点（共享通道）。
     MessagePort,
+    // SharedArrayBuffer（ES2024 §25.1）：跨 isolate 共享的字节块，不可分离。
+    // 追加在末尾，避免扰动既有 TypeKind 的数值。
+    SharedArrayBuffer,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -346,6 +349,7 @@ IType* getCollectionType();
 IType* getCollectionIteratorType();
 IType* getDateType();
 IType* getArrayBufferType();
+IType* getSharedArrayBufferType();
 IType* getDataViewType();
 IType* getTypedArrayType();
 IType* getErrorType();

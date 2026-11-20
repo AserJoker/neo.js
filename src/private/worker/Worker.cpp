@@ -13,6 +13,7 @@
 #include "infra/QuotaAllocator.h"
 
 #include <atomic>
+#include <mutex>
 #include <thread>
 #include <utility>
 
@@ -52,7 +53,12 @@ public:
     }
 
     void requestStop() override {
+        stopRequested_.store(true, std::memory_order_release);
         inbox_.close();
+        // 若 worker 已在执行脚本，置 Context 停止标记；VM 每条指令后检查。
+        // mutex 保证不会与 run() 末尾的 Context 销毁竞争。
+        std::lock_guard<std::mutex> lock(ctxMutex_);
+        if (ctx_ != nullptr) ctx_->requestStop();
     }
 
     void join() override {
@@ -73,6 +79,14 @@ private:
         // Context 必须在本线程创建：ownerThread_ 在构造时捕获。
         std::unique_ptr<core::IContext> ctx =
             core::createContext(alloc_.get(), console_, clock_, intl_);
+        // 标记为 worker 上下文：Atomics.wait 等仅 worker 可阻塞。
+        ctx->setWorkerContext(true);
+        {
+            std::lock_guard<std::mutex> lock(ctxMutex_);
+            ctx_ = ctx.get();
+        }
+        // start 后立即 terminate：Context 尚未创建时已收到停止请求。
+        if (stopRequested_.load(std::memory_order_acquire)) ctx->requestStop();
 
         // 外部任务（如 MessagePort 消息）入队时唤醒阻塞的 inbox 等待。
         ctx->setExternalTaskWake([this] {
@@ -101,6 +115,10 @@ private:
             }
             drainTasks();
         }
+        {
+            std::lock_guard<std::mutex> lock(ctxMutex_);
+            ctx_ = nullptr;
+        }
         running_.store(false, std::memory_order_release);
     }
 
@@ -115,6 +133,11 @@ private:
 
     std::thread thread_;
     std::atomic<bool> running_ {false};
+    std::atomic<bool> stopRequested_ {false};
+    // worker 线程创建 Context 后写入；requestStop 跨线程读取并置停止标记。
+    // mutex 保护 ctx_ 的读写与 Context 销毁的先后关系。
+    std::mutex ctxMutex_;
+    core::IContext* ctx_ = nullptr;
 };
 
 }  // namespace

@@ -20,7 +20,7 @@ namespace neo::core {
 
 namespace {
 
-uint64_t readRaw(const std::vector<uint8_t>& bytes, size_t index, size_t size) {
+uint64_t readRaw(const uint8_t* bytes, size_t index, size_t size) {
     uint64_t value = 0;
     for (size_t i = 0; i < size; ++i) {
         value |= static_cast<uint64_t>(bytes[index + i]) << (8 * i);
@@ -28,8 +28,7 @@ uint64_t readRaw(const std::vector<uint8_t>& bytes, size_t index, size_t size) {
     return value;
 }
 
-void writeRaw(std::vector<uint8_t>& bytes, size_t index, size_t size,
-              uint64_t value) {
+void writeRaw(uint8_t* bytes, size_t index, size_t size, uint64_t value) {
     for (size_t i = 0; i < size; ++i) {
         bytes[index + i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFFu);
     }
@@ -63,13 +62,8 @@ TypedArrayData* asTypedArray(Value* v) {
     return static_cast<TypedArrayData*>(v->data());
 }
 
-Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index) {
-    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
-    if (buffer == nullptr || index >= d->length) return ctx->createUndefined();
-    const size_t size = typedArrayElementSize(d->kind);
-    const size_t pos = d->byteOffset + index * size;
-    const uint64_t raw = readRaw(buffer->bytes, pos, size);
-    switch (d->kind) {
+Value* typedArrayRawToValue(IContext* ctx, TypedArrayKind kind, uint64_t raw) {
+    switch (kind) {
         case TypedArrayKind::Int8:
             return ctx->createNumber(static_cast<double>(static_cast<int8_t>(raw)));
         case TypedArrayKind::Uint8:
@@ -103,72 +97,87 @@ Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index) {
     return ctx->createUndefined();
 }
 
-Value* typedArrayWriteElement(IContext* ctx, TypedArrayData* d, size_t index,
-                              Value* value) {
-    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
-    if (buffer == nullptr || index >= d->length) return nullptr;
-    const size_t size = typedArrayElementSize(d->kind);
-    const size_t pos = d->byteOffset + index * size;
-    uint64_t raw = 0;
-
-    if (typedArrayIsBigInt(d->kind)) {
+Value* typedArrayValueToRaw(IContext* ctx, TypedArrayKind kind, Value* value,
+                            uint64_t& raw) {
+    raw = 0;
+    if (typedArrayIsBigInt(kind)) {
         if (value->type()->kind() != TypeKind::BigInt) {
             return detail::typeError(ctx, "Cannot convert value to a BigInt");
         }
         raw = detail::bigIntValue(value).toUint64();
-    } else {
-        Value* nv = detail::toNumberValue(ctx, value);
-        if (detail::isErrorValue(nv)) return nv;
-        const double n = static_cast<NumberData*>(nv->data())->value;
-        switch (d->kind) {
-            case TypedArrayKind::Int8:
-            case TypedArrayKind::Uint8: {
-                const int64_t i = std::isfinite(n) ? static_cast<int64_t>(std::trunc(n))
-                                                   : 0;
-                raw = static_cast<uint64_t>(i) & 0xFFu;
-                break;
-            }
-            case TypedArrayKind::Uint8Clamped: {
-                double clamped = 0.0;
-                if (std::isnan(n) || n <= 0.0) {
-                    clamped = 0.0;
-                } else if (n >= 255.0) {
-                    clamped = 255.0;
-                } else {
-                    clamped = std::nearbyint(n);
-                }
-                raw = static_cast<uint64_t>(clamped);
-                break;
-            }
-            case TypedArrayKind::Int16:
-            case TypedArrayKind::Uint16: {
-                const int64_t i = std::isfinite(n) ? static_cast<int64_t>(std::trunc(n))
-                                                   : 0;
-                raw = static_cast<uint64_t>(i) & 0xFFFFu;
-                break;
-            }
-            case TypedArrayKind::Int32:
-            case TypedArrayKind::Uint32: {
-                const int64_t i = std::isfinite(n) ? static_cast<int64_t>(std::trunc(n))
-                                                   : 0;
-                raw = static_cast<uint64_t>(i) & 0xFFFFFFFFu;
-                break;
-            }
-            case TypedArrayKind::Float32: {
-                const float f = static_cast<float>(n);
-                uint32_t bits = 0;
-                std::memcpy(&bits, &f, sizeof bits);
-                raw = bits;
-                break;
-            }
-            case TypedArrayKind::Float64: {
-                std::memcpy(&raw, &n, sizeof raw);
-                break;
-            }
-            default: break;
-        }
+        return nullptr;
     }
-    writeRaw(buffer->bytes, pos, size, raw);
+
+    Value* nv = detail::toNumberValue(ctx, value);
+    if (detail::isErrorValue(nv)) return nv;
+    const double n = static_cast<NumberData*>(nv->data())->value;
+    switch (kind) {
+        case TypedArrayKind::Int8:
+        case TypedArrayKind::Uint8: {
+            const int64_t i =
+                std::isfinite(n) ? static_cast<int64_t>(std::trunc(n)) : 0;
+            raw = static_cast<uint64_t>(i) & 0xFFu;
+            break;
+        }
+        case TypedArrayKind::Uint8Clamped: {
+            double clamped = 0.0;
+            if (std::isnan(n) || n <= 0.0) {
+                clamped = 0.0;
+            } else if (n >= 255.0) {
+                clamped = 255.0;
+            } else {
+                clamped = std::nearbyint(n);
+            }
+            raw = static_cast<uint64_t>(clamped);
+            break;
+        }
+        case TypedArrayKind::Int16:
+        case TypedArrayKind::Uint16: {
+            const int64_t i =
+                std::isfinite(n) ? static_cast<int64_t>(std::trunc(n)) : 0;
+            raw = static_cast<uint64_t>(i) & 0xFFFFu;
+            break;
+        }
+        case TypedArrayKind::Int32:
+        case TypedArrayKind::Uint32: {
+            const int64_t i =
+                std::isfinite(n) ? static_cast<int64_t>(std::trunc(n)) : 0;
+            raw = static_cast<uint64_t>(i) & 0xFFFFFFFFu;
+            break;
+        }
+        case TypedArrayKind::Float32: {
+            const float f = static_cast<float>(n);
+            uint32_t bits = 0;
+            std::memcpy(&bits, &f, sizeof bits);
+            raw = bits;
+            break;
+        }
+        case TypedArrayKind::Float64: {
+            std::memcpy(&raw, &n, sizeof raw);
+            break;
+        }
+        default: break;
+    }
+    return nullptr;
+}
+
+Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index) {
+    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
+    if (buffer == nullptr || index >= d->length) return ctx->createUndefined();
+    const size_t size = typedArrayElementSize(d->kind);
+    const size_t pos = d->byteOffset + index * size;
+    return typedArrayRawToValue(ctx, d->kind, readRaw(buffer->data(), pos, size));
+}
+
+Value* typedArrayWriteElement(IContext* ctx, TypedArrayData* d, size_t index,
+                              Value* value) {
+    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
+    if (buffer == nullptr || index >= d->length) return nullptr;
+    uint64_t raw = 0;
+    if (Value* err = typedArrayValueToRaw(ctx, d->kind, value, raw)) return err;
+    const size_t size = typedArrayElementSize(d->kind);
+    const size_t pos = d->byteOffset + index * size;
+    writeRaw(buffer->data(), pos, size, raw);
     return nullptr;
 }
 

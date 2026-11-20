@@ -342,3 +342,42 @@ TEST(MessageValueTest, ClonesArrayBufferAndTypedArray) {
     auto* restoredBuf = neo::core::asArrayBuffer(data->buffer);
     EXPECT_EQ(restoredBuf->bytes, bufData->bytes);
 }
+
+TEST(MessageValueTest, SharedArrayBufferCloneSharesBlock) {
+    Fixture f;
+    Value* sab = f.ctx->createSharedArrayBuffer(
+        neo::core::SharedBufferBlock::create(4));
+    ASSERT_FALSE(neo::core::detail::isErrorValue(sab));
+    ASSERT_EQ(sab->type()->kind(), TypeKind::SharedArrayBuffer);
+
+    auto* data = neo::core::asSharedArrayBuffer(sab);
+    data->data()[0] = 5;
+
+    MessageValue mv;
+    ASSERT_EQ(valueToMessage(f.ctx.get(), sab, mv), nullptr);
+    ASSERT_EQ(mv.kind, MessageValueKind::SharedArrayBuffer);
+    // 克隆只增加引用，不复制内存。
+    EXPECT_EQ(mv.shared, data->shared);
+
+    Value* restored = messageToValue(f.ctx.get(), mv);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
+    auto* restoredData = neo::core::asSharedArrayBuffer(restored);
+    ASSERT_NE(restoredData, nullptr);
+    EXPECT_EQ(restoredData->shared, data->shared);
+
+    // 两个包装对象指向同一块内存。
+    restoredData->data()[1] = 9;
+    EXPECT_EQ(data->data()[1], 9);
+}
+
+TEST(MessageValueTest, TransferListRejectsSharedArrayBuffer) {
+    Fixture f;
+    Value* sab = f.ctx->createSharedArrayBuffer(
+        neo::core::SharedBufferBlock::create(4));
+
+    Value* list = f.ctx->createArray();
+    f.ctx->arrayAppend(list, sab);
+    std::vector<Value*> transfer;
+    Value* err = neo::worker::resolveTransferList(f.ctx.get(), list, transfer);
+    ASSERT_TRUE(neo::core::detail::isErrorValue(err));
+}

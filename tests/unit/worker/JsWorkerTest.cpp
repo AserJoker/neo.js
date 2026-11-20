@@ -326,3 +326,167 @@ TEST(JsWorkerTest, PostMessageRejectsUncloneableValue) {
     ASSERT_EQ(value->type()->kind(), TypeKind::String);
     EXPECT_EQ(static_cast<StringData*>(value->data())->value, "DataCloneError");
 }
+
+TEST(JsWorkerTest, SharesSharedArrayBufferWithWorker) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_sab.js";
+    writeFile(workerPath,
+              "onmessage = function (e) {\n"
+              "  var a = new Uint8Array(e.data);\n"
+              "  a[0] = 99;\n"
+              "  postMessage(\"done\");\n"
+              "};\n");
+
+    std::string mainSource =
+        "var sab = new SharedArrayBuffer(4);\n"
+        "var a = new Uint8Array(sab);\n"
+        "a[0] = 1;\n"
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.onmessage = function () { globalThis.result = a[0]; };\n"
+        "w.postMessage(sab);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 99.0);
+}
+
+TEST(JsWorkerTest, AtomicsWaitNotifyAcrossThreads) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_atomics.js";
+    writeFile(workerPath,
+              "onmessage = function (e) {\n"
+              "  var ta = new Int32Array(e.data);\n"
+              "  postMessage(\"ready\");\n"
+              "  while (Atomics.load(ta, 1) === 0) {\n"
+              "    Atomics.wait(ta, 1, 0, 1000);\n"
+              "  }\n"
+              "  Atomics.store(ta, 0, 7);\n"
+              "  postMessage(\"done\");\n"
+              "};\n");
+
+    std::string mainSource =
+        "var sab = new SharedArrayBuffer(8);\n"
+        "var ta = new Int32Array(sab);\n"
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.onmessage = function (e) {\n"
+        "  if (e.data === \"ready\") {\n"
+        "    Atomics.store(ta, 1, 1);\n"
+        "    Atomics.notify(ta, 1, 1);\n"
+        "  } else {\n"
+        "    globalThis.result = ta[0];\n"
+        "  }\n"
+        "};\n"
+        "w.postMessage(sab);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 7.0);
+}
+
+// terminate 必须能中断 worker 中正在执行的字节码（VM 每条指令后检查停止标记）。
+TEST(JsWorkerTest, TerminateStopsBusyLoop) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_busy.js";
+    writeFile(workerPath,
+              "onmessage = function () {\n"
+              "  postMessage(\"started\");\n"
+              "  while (true) {}\n"
+              "};\n");
+
+    const std::string mainSource =
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.onmessage = function () {\n"
+        "  w.terminate();\n"
+        "  globalThis.result = 1;\n"
+        "};\n"
+        "w.postMessage(0);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 1.0);
+}
+
+// terminate 必须能唤醒 worker 中无限等待的 Atomics.wait。
+TEST(JsWorkerTest, TerminateStopsInfiniteAtomicsWait) {
+    Fixture f;
+
+    const auto workerPath =
+        std::filesystem::temp_directory_path() / "neojs_worker_wait.js";
+    writeFile(workerPath,
+              "onmessage = function (e) {\n"
+              "  var ta = new Int32Array(e.data);\n"
+              "  postMessage(\"waiting\");\n"
+              "  Atomics.wait(ta, 0, 0);\n"
+              "};\n");
+
+    const std::string mainSource =
+        "var sab = new SharedArrayBuffer(4);\n"
+        "var w = new Worker(\"" + workerPath.generic_string() + "\");\n"
+        "w.onmessage = function () {\n"
+        "  w.terminate();\n"
+        "  globalThis.result = 1;\n"
+        "};\n"
+        "w.postMessage(sab);\n";
+
+    Value* result = runScript(f, mainSource, "main.js");
+    ASSERT_NE(result, nullptr);
+    ASSERT_FALSE(neo::core::detail::isErrorValue(result));
+
+    Value* value = nullptr;
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(10);
+    while (std::chrono::steady_clock::now() < deadline) {
+        while (f.ctx->hasRunnableTask()) (void)f.ctx->runOneTask();
+        value = f.ctx->getProperty(f.ctx->globalObject(), "result");
+        if (value != nullptr && value->type()->kind() == TypeKind::Number) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(static_cast<NumberData*>(value->data())->value, 1.0);
+}

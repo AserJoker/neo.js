@@ -191,6 +191,7 @@ add_library(neojs STATIC
     src/private/core/ConsoleBuiltins.cpp
     src/private/core/DateBuiltins.cpp
     src/private/core/ArrayBufferBuiltins.cpp
+    src/private/core/AtomicsBuiltins.cpp
     src/private/core/TypedArrayBuiltins.cpp
     src/private/core/IntlBuiltins.cpp
     src/private/core/intl/MinimalIntlBackend.cpp

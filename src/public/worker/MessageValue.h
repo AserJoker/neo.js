@@ -5,8 +5,9 @@
 // 两边不共享任何 Value*/data。
 //
 // 支持：undefined / null / boolean / number / string / array / 普通对象 /
-// Date / Map / Set / RegExp / ArrayBuffer / DataView / TypedArray，
-// 以及循环引用与共享引用（对象图用 id + Reference 表示）。
+// Date / Map / Set / RegExp / ArrayBuffer / SharedArrayBuffer / DataView /
+// TypedArray，以及循环引用与共享引用（对象图用 id + Reference 表示）。
+// SharedArrayBuffer 不复制内存：消息持有一个共享块引用。
 //
 // 不支持：函数、symbol、bigint、Proxy、WeakMap/WeakSet、Error 等，抛
 // DataCloneError。transfer list / MessagePort 转移在后续阶段实现。
@@ -17,6 +18,8 @@
 
 #ifndef NEO_WORKER_MESSAGEVALUE_H
 #define NEO_WORKER_MESSAGEVALUE_H
+
+#include "core/SharedBuffer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +46,7 @@ enum class MessageValueKind : uint8_t {
     Set,
     RegExp,
     ArrayBuffer,
+    SharedArrayBuffer,  // 共享块：克隆只增引用，不复制内存
     DataView,
     TypedArray,
     Error,        // Error 对象（name/message/stack/cause）
@@ -78,6 +82,9 @@ struct MessageValue {
 
     // MessagePort 转移端点（与 Context 无关的共享句柄）。
     std::shared_ptr<MessagePortEndpoint> port;
+
+    // SharedArrayBuffer 的共享块；消息在队列中期间持有引用，还原后交给包装对象。
+    std::shared_ptr<core::SharedBufferBlock> shared;
 
     static MessageValue undefined() { return MessageValue{}; }
     static MessageValue null() {
