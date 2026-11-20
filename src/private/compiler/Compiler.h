@@ -300,6 +300,8 @@ private:
     std::vector<std::vector<uint32_t>> chainEndPatches_;
     // 每层 class 的私有名表（支持嵌套 class 的词法解析）。
     std::vector<std::unordered_map<std::string, PrivateInfo>> privateScopes_;
+    // 当前编译点处于 with 体内的深度：标识符赋值须在 RHS 前解析引用。
+    int withDepth_ = 0;
     // delete 可选链：短路出口压 true，最外层成员改为 delete_prop。
     bool deleteChain_ = false;
     bool deleteChainTarget_ = false;

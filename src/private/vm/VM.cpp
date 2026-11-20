@@ -94,6 +94,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::DefineIfMissing: return "define_if_missing";
         case OpCode::Store:         return "store";
         case OpCode::StoreVar:      return "store_var";
+        case OpCode::ResolveWithRef: return "resolve_with_ref";
+        case OpCode::StoreWithRef:  return "store_with_ref";
+        case OpCode::LoadWithRef:   return "load_with_ref";
+        case OpCode::StoreWithRefKeep: return "store_with_ref_keep";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
         case OpCode::NewObject:     return "new_object";
@@ -260,6 +264,10 @@ const VM::Handler* VM::handlers() {
         &VM::opDefineIfMissing,
         &VM::opStore,
         &VM::opStoreVar,
+        &VM::opResolveWithRef,
+        &VM::opStoreWithRef,
+        &VM::opLoadWithRef,
+        &VM::opStoreWithRefKeep,
         &VM::opGetProp,
         &VM::opSetProp,
         &VM::opNewObject,
@@ -1201,6 +1209,109 @@ Value* VM::opStoreVar() {
 
     Value* result = ctx_->storeVar(*name, pop());
     if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opResolveWithRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("resolve_with_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("resolve_with_ref: name index out of range");
+    }
+    Value* object = ctx_->resolveWithObject(*name);
+    if (object != nullptr && detail::isErrorValue(object)) return fail(object);
+    push(object != nullptr ? object : ctx_->createUndefined());
+    return nullptr;
+}
+
+Value* VM::opStoreWithRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_with_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_with_ref: name index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("store_with_ref: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* object = pop();
+    Value* result = nullptr;
+    if (object->type()->kind() != TypeKind::Undefined) {
+        result = ctx_->setProperty(object, *name, value);
+    } else {
+        result = ctx_->store(*name, value);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    push(value);
+    return nullptr;
+}
+
+Value* VM::opLoadWithRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_with_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_with_ref: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("load_with_ref: operand stack underflow");
+    }
+    Value* object = top();
+    Value* result = nullptr;
+    if (object->type()->kind() != TypeKind::Undefined) {
+        Value* key = ctx_->createString(*name);
+        if (key == ctx_->oomValue()) return fail(key);
+        result = ctx_->getProperty(object, key);
+    } else {
+        result = ctx_->load(*name);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    // 与 load 一致：绑定槽位是活引用，表达式读取取快照。
+    Value* snapshot = ctx_->cloneValue(result);
+    if (snapshot == ctx_->oomValue()) return fail(snapshot);
+    push(snapshot);
+    return nullptr;
+}
+
+Value* VM::opStoreWithRefKeep() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_with_ref_keep: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_with_ref_keep: name index out of range");
+    }
+    if (stack_.size() < 3) {
+        return badBytecode("store_with_ref_keep: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* old = pop();
+    Value* object = pop();
+    Value* result = nullptr;
+    if (object->type()->kind() != TypeKind::Undefined) {
+        result = ctx_->setProperty(object, *name, value);
+    } else {
+        result = ctx_->store(*name, value);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    push(old);
     return nullptr;
 }
 

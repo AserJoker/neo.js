@@ -185,7 +185,10 @@ TEST(NativeClassTest, RegisterBaseClassWithFieldsMethodsAndPrivate) {
 
     Value* cls = ctx->registerClass(def);
     ASSERT_EQ(cls->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(ctx->classSuperConstructor(cls), nullptr);
+    // GetSuperConstructor 取构造器的 [[Prototype]]（基类为 Function.prototype）。
+    Value* superCtor = ctx->classSuperConstructor(cls);
+    ASSERT_NE(superCtor, nullptr);
+    EXPECT_EQ(superCtor, ctx->getPrototype(cls));
 
     // 原型/描述符
     Value* proto = ctx->getProperty(cls, "prototype");

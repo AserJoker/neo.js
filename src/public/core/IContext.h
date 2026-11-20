@@ -441,6 +441,9 @@ public:
     // 解析）。供 native 方法体取 this.#x 的 PrivateName*；未找到返回 nullptr。
     virtual PrivateName* classPrivateName(Value* classCtor,
                                           std::string_view description) = 0;
+    // resolveWithObject: 沿当前作用域链查找以 with 对象绑定 name 的作用域，
+    // 命中返回该 with 对象，否则 nullptr；出错返回 Exception/Fatal。
+    virtual Value* resolveWithObject(std::string_view name) = 0;
     // resolvePrivateName: 从函数所属 class 起沿定义点外层 class 链解析私有名
     // （内部函数/嵌套 class 可访问外层 class 的私有元素）。未找到返回 nullptr。
     virtual PrivateName* resolvePrivateName(Value* fn,

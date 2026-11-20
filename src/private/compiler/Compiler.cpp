@@ -1458,7 +1458,9 @@ void Compiler::compileWithStatement(const frontend::WithStatement& node) {
         tryBeginPc = code_->tryBegin();
         emitClearCompletion();
     }
+    ++withDepth_;
     if (node.body) compileStatement(*node.body);
+    --withDepth_;
     if (evalCompletion_) {
         emitCompletionToUndefined();
         code_->tryBodyEnd();
@@ -2927,6 +2929,18 @@ void Compiler::compileAssignmentExpression(
         static_cast<const frontend::Identifier&>(*node.left).name;
 
     if (node.op == frontend::AssignmentOperator::Assign) {
+        if (withDepth_ > 0) {
+            // with 内：赋值引用在 RHS 求值前解析（§13.15.2），RHS 删除属性
+            // 后仍写回同一个 with 对象。
+            code_->resolveWithRef(name);
+            if (node.left->isParenthesized()) {
+                compileExpression(*node.right);
+            } else {
+                compileNamedExpression(*node.right, name);
+            }
+            code_->storeWithRef(name);
+            return;
+        }
         // (fn) = ... 不是 IdentifierRef，不做 NamedEvaluation。
         if (node.left->isParenthesized()) {
             compileExpression(*node.right);
@@ -2953,6 +2967,15 @@ void Compiler::compileAssignmentExpression(
         return;
     }
 
+    if (withDepth_ > 0) {
+        // with 内：引用在 GetValue/RHS 前解析，写回同一对象（§13.15.2）。
+        code_->resolveWithRef(name);
+        code_->loadWithRef(name);
+        compileExpression(*node.right);
+        if (!emitCompoundBinary(node.op, node)) return;
+        code_->storeWithRef(name);
+        return;
+    }
     // 复合赋值：load 旧值 → 右值 → 运算 → dup（表达式值）→ store。
     code_->load(name);
     compileExpression(*node.right);
@@ -3083,6 +3106,30 @@ void Compiler::compileUpdateExpression(
     const std::string& name =
         static_cast<const frontend::Identifier&>(*node.argument).name;
 
+    if (withDepth_ > 0) {
+        // with 内：引用在 GetValue 前解析，写回同一对象（§13.4.4/§13.4.5）。
+        code_->resolveWithRef(name);
+        code_->loadWithRef(name);  // [obj, old]
+        if (node.prefix) {
+            code_->push(1.0);
+            if (node.op == frontend::UpdateOperator::Increment) {
+                code_->add();
+            } else {
+                code_->sub();
+            }
+            code_->storeWithRef(name);  // [new]（storeWithRef 已压回新值）
+        } else {
+            code_->dup();  // [obj, old, old]
+            code_->push(1.0);
+            if (node.op == frontend::UpdateOperator::Increment) {
+                code_->add();
+            } else {
+                code_->sub();
+            }
+            code_->storeWithRefKeep(name);  // [old]
+        }
+        return;
+    }
     code_->load(name);
     if (node.prefix) {
         code_->push(1.0);
@@ -4532,6 +4579,13 @@ void Compiler::collectVarNames(const frontend::Node& statement,
         case NodeKind::LabeledStatement: {
             const auto& node =
                 static_cast<const frontend::LabeledStatement&>(statement);
+            if (node.body) collectVarNames(*node.body, names);
+            break;
+        }
+        case NodeKind::WithStatement: {
+            // with 不建立变量环境，体内 var 仍提升到外层函数/全局。
+            const auto& node =
+                static_cast<const frontend::WithStatement&>(statement);
             if (node.body) collectVarNames(*node.body, names);
             break;
         }

@@ -319,6 +319,26 @@ struct Code {
         return pc;
     }
     uint32_t defineProp() { return emitOp(OpCode::DefineProp); }
+    uint32_t resolveWithRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::ResolveWithRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t storeWithRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreWithRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t loadWithRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::LoadWithRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t storeWithRefKeep(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreWithRefKeep);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t getSuperBase() { return emitOp(OpCode::GetSuperBase); }
     uint32_t getSuperPropFromBase() {
         return emitOp(OpCode::GetSuperPropFromBase);

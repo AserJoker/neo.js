@@ -39,6 +39,8 @@
 //   initialize    d → d - 1        （弹值，解除 TDZ）
 //   load          d → d + 1
 //   store         d → d - 1        （弹值，写绑定）
+//   resolve_with_ref d → d + 1     （压 with 对象或 undefined）
+//   store_with_ref [obj,value] → [value]
 //   get_prop      d → d - 1        （弹 key、obj，压属性值）
 //   set_prop      d → d - 2        （弹 value、key、obj，压 RHS 值）
 //   new_object    d → d + 1
@@ -123,6 +125,17 @@ enum class OpCode : uint16_t {
     // u32 名字：[value] → []，写入变量环境绑定（跳过词法作用域）。
     // Annex B.3.3 块级函数同步到外层 var 绑定用。
     StoreVar,
+    // u32 名字：[] → [obj]：赋值引用在 RHS 前解析；命中 with 对象压该对象，
+    // 否则压 undefined。RHS 求值后由 StoreWithRef 写回同一引用。
+    ResolveWithRef,
+    // u32 名字：[obj, value] → [value]：obj 非 undefined 时写其属性，
+    // 否则按普通绑定写入。
+    StoreWithRef,
+    // u32 名字：[obj] → [obj, value]：obj 非 undefined 时读其属性（GetValue），
+    // 否则按普通绑定读取。复合/更新赋值在 RHS 前读取已解析的引用。
+    LoadWithRef,
+    // u32 名字：[obj, old, new] → [old]：写回同一引用并保留旧值（后缀更新）。
+    StoreWithRefKeep,
 
     // 属性访问：[obj, key] → [value] / [obj, key, value] → [value]
     GetProp,

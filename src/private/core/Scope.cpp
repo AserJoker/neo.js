@@ -222,6 +222,17 @@ Value* WithScope::lookup(std::string_view name) const {
     return Scope::lookup(name);
 }
 
+Value* WithScope::withBindingObject(std::string_view name) const {
+    IContext* ctx = context();
+    if (ctx == nullptr) return nullptr;
+    Value* key = ctx->createString(name);
+    if (key == ctx->oomValue()) return key;
+    bool bound = false;
+    Value* err = resolveWithBinding(ctx, withObject_, key, bound);
+    if (err != nullptr) return err;
+    return bound ? withObject_ : nullptr;
+}
+
 Scope::StoreOutcome WithScope::store(IContext* ctx, std::string_view name,
                                      Value* source, Value*& result) {
     Value* key = ctx->createString(name);

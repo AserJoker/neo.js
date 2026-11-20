@@ -1243,6 +1243,16 @@ Value* Context::classSuperConstructor(Value* classCtor) {
     return getPrototype(classCtor);
 }
 
+Value* Context::resolveWithObject(std::string_view name) {
+    for (Scope* s = current_; s != nullptr; s = s->parent()) {
+        Value* obj = s->withBindingObject(name);
+        if (obj == nullptr) continue;
+        if (detail::isErrorValue(obj)) return obj;
+        return obj;
+    }
+    return nullptr;
+}
+
 PrivateName* Context::resolvePrivateName(Value* fn,
                                          std::string_view description) {
     Value* cls = nullptr;

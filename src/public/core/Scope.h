@@ -353,6 +353,12 @@ public:
     // with 对象（非 WithScope 返回 nullptr）。Context::store 据此分派对象属性写入。
     virtual Value* withObject() const { return nullptr; }
 
+    // 本作用域是否以 with 对象绑定 name（考虑 @@unscopables）：
+    // 是则返回 with 对象，否则 nullptr。用于赋值引用在 RHS 求值前解析。
+    virtual Value* withBindingObject(std::string_view /*name*/) const {
+        return nullptr;
+    }
+
     // 本作用域内绑定种类（不解析、不查 parent）。
     BindingKind bindingKind(std::string_view name) const {
         if (namedValues_.find(std::string(name)) != namedValues_.end()) {
@@ -485,6 +491,8 @@ public:
 
     // 读取：with 对象有该属性（含原型链）则返回属性值，否则回退普通绑定。
     Value* lookup(std::string_view name) const override;
+
+    Value* withBindingObject(std::string_view name) const override;
 
     // 写入：with 对象有该属性则 setProperty；否则 NotFound 交给外层。
     StoreOutcome store(IContext* ctx, std::string_view name, Value* source,

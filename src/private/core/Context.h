@@ -379,6 +379,7 @@ public:
     Value* classSuperConstructor(Value* classCtor) override;
     PrivateName* classPrivateName(Value* classCtor,
                                   std::string_view description) override;
+    Value* resolveWithObject(std::string_view name) override;
     PrivateName* resolvePrivateName(Value* fn,
                                     std::string_view description) override;
     Value* functionHomeObject(Value* fn) override;
