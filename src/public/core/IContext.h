@@ -94,6 +94,8 @@ struct FunctionCreateOptions {
     Value* homeObject = nullptr;       // [[HomeObject]]（借用，GC 由函数遍历）
     Value* superConstructor = nullptr; // 派生类父构造器（借用，GC 由 ClassData 遍历）
     Value* ownerClass = nullptr;       // 所属 class 构造器（方法/字段初始化器，GC 遍历）
+    // 定义点外层 class 构造器（私有名词法可见性）；未给出时创建期自动继承。
+    Value* outerOwnerClass = nullptr;  // GC 遍历
     SourceSlice source{};              // 函数源码切片（创建时 retain）
 };
 
@@ -439,6 +441,10 @@ public:
     // 解析）。供 native 方法体取 this.#x 的 PrivateName*；未找到返回 nullptr。
     virtual PrivateName* classPrivateName(Value* classCtor,
                                           std::string_view description) = 0;
+    // resolvePrivateName: 从函数所属 class 起沿定义点外层 class 链解析私有名
+    // （内部函数/嵌套 class 可访问外层 class 的私有元素）。未找到返回 nullptr。
+    virtual PrivateName* resolvePrivateName(Value* fn,
+                                            std::string_view description) = 0;
     // functionHomeObject: 取函数的 [[HomeObject]]；无则 nullptr。
     virtual Value* functionHomeObject(Value* fn) = 0;
 

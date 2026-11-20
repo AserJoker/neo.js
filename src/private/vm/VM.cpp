@@ -3040,7 +3040,7 @@ namespace {
 // 解析当前函数所属 class 的私有名；未声明返回 nullptr。
 neo::core::PrivateName* resolvePrivateName(neo::core::IContext* ctx,
                                 std::string_view description) {
-    return ctx->classPrivateName(ctx->currentFunction(), description);
+    return ctx->resolvePrivateName(ctx->currentFunction(), description);
 }
 }  // namespace
 

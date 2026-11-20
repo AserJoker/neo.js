@@ -139,6 +139,9 @@ public:
     Value* homeObject = nullptr;  // GC 需遍历
     // 所属 class 构造器（方法/字段初始化器）：native 扩展库据此取回 class 元数据。
     Value* ownerClass = nullptr;  // GC 需遍历
+    // 定义点外层 class 构造器：私有名是词法作用域，内部函数/嵌套 class 沿此链
+    // 访问外层 class 的私有元素。
+    Value* outerOwnerClass = nullptr;  // GC 需遍历
     // 函数源码切片（ADR-047 §6）：Function.prototype.toString 按需生成字符串。
     SourceSlice source;
     size_t activeCalls = 0;  // 进行中调用数（重入计数，闭包作用域挂载/摘除用）

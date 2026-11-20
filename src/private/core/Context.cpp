@@ -688,6 +688,12 @@ Value* privateMemberError(IContext* ctx, PrivateName* name, const char* what) {
 void Context::addInstanceField(Value* classCtor, Value* key, Value* initializer) {
     ClassData* cd = classDataOf(classCtor);
     if (cd == nullptr) return;
+    // 字段初始化器是 class 作用域内的函数：私有名/super 都按本 class 解析。
+    if (initializer != nullptr &&
+        initializer->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(initializer->data());
+        if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+    }
     InstanceElement e;
     e.kind = InstanceElement::Kind::PublicField;
     e.key = key;
@@ -771,6 +777,11 @@ void Context::addPrivateField(Value* classCtor, PrivateName* name, Value* initia
     ClassData* cd = classDataOf(classCtor);
     if (cd == nullptr || name == nullptr) return;
     ::neo::core::retainPrivateName(name);
+    if (initializer != nullptr &&
+        initializer->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(initializer->data());
+        if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+    }
     InstanceElement e;
     e.kind = InstanceElement::Kind::PrivateField;
     e.name = name;
@@ -783,6 +794,11 @@ void Context::addStaticPrivateField(Value* classCtor, PrivateName* name,
     ClassData* cd = classDataOf(classCtor);
     if (cd == nullptr || name == nullptr) return;
     ::neo::core::retainPrivateName(name);
+    if (initializer != nullptr &&
+        initializer->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(initializer->data());
+        if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+    }
     cd->staticPrivateFields.push_back({name, initializer});
 }
 
@@ -982,37 +998,53 @@ const PrivateElement* lookupPrivateElement(ClassData* cd, Value* /*classCtor*/,
 
 namespace {
 // classCtor 可以是构造器本身或 class 成员函数；统一取真正的构造器。
-Value* actualClassConstructor(Value* classCtor) {
-    if (classCtor != nullptr &&
-        classCtor->type()->kind() == TypeKind::Function) {
+// 私有元素所属的 class：从函数所属 class 起沿定义点外层 class 链查找
+// （内部函数/嵌套 class 可访问外层 class 的私有方法/访问器）。
+struct PrivateOwner {
+    ClassData* cd = nullptr;
+    Value* ctor = nullptr;
+};
+
+PrivateOwner findPrivateOwner(Value* classCtor, PrivateName* name) {
+    Value* cls = nullptr;
+    if (classCtor != nullptr && classCtor->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(classCtor->data());
-        if (!d->isClassConstructor && d->ownerClass != nullptr) {
-            return d->ownerClass;
+        if (d->isClassConstructor) {
+            cls = classCtor;
+        } else {
+            cls = d->ownerClass != nullptr ? d->ownerClass : d->outerOwnerClass;
         }
     }
-    return classCtor;
+    while (cls != nullptr) {
+        ClassData* cd = classDataOfMember(cls);
+        if (cd != nullptr &&
+            (findPrivateElement(cd->privateElements, name) != nullptr ||
+             findPrivateElement(cd->staticPrivateElements, name) != nullptr)) {
+            return {cd, cls};
+        }
+        if (cls->type()->kind() != TypeKind::Function) break;
+        cls = static_cast<FunctionData*>(cls->data())->outerOwnerClass;
+    }
+    return {};
 }
 }  // namespace
 
 Value* Context::getPrivateMethod(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOfMember(classCtor);
-    Value* owner = actualClassConstructor(classCtor);
+    PrivateOwner owner = findPrivateOwner(classCtor, name);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, owner, obj, name), 0);
+                                lookupPrivateElement(owner.cd, owner.ctor, obj, name), 0);
 }
 
 Value* Context::getPrivateGetter(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOfMember(classCtor);
-    Value* owner = actualClassConstructor(classCtor);
+    PrivateOwner owner = findPrivateOwner(classCtor, name);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, owner, obj, name), 1);
+                                lookupPrivateElement(owner.cd, owner.ctor, obj, name), 1);
 }
 
 Value* Context::getPrivateSetter(Value* classCtor, Value* obj, PrivateName* name) {
-    ClassData* cd = classDataOfMember(classCtor);
-    Value* owner = actualClassConstructor(classCtor);
+    PrivateOwner owner = findPrivateOwner(classCtor, name);
     return privateElementAccess(this, obj, name,
-                                lookupPrivateElement(cd, owner, obj, name), 2);
+                                lookupPrivateElement(owner.cd, owner.ctor, obj, name), 2);
 }
 
 void Context::setFunctionClassConstructor(Value* fn, bool isDerived, Value* superCtor) {
@@ -1211,6 +1243,22 @@ Value* Context::classSuperConstructor(Value* classCtor) {
     return getPrototype(classCtor);
 }
 
+PrivateName* Context::resolvePrivateName(Value* fn,
+                                         std::string_view description) {
+    Value* cls = nullptr;
+    if (fn != nullptr && fn->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(fn->data());
+        cls = d->ownerClass != nullptr ? d->ownerClass : d->outerOwnerClass;
+    }
+    while (cls != nullptr) {
+        PrivateName* name = classPrivateName(cls, description);
+        if (name != nullptr) return name;
+        if (cls->type()->kind() != TypeKind::Function) break;
+        cls = static_cast<FunctionData*>(cls->data())->outerOwnerClass;
+    }
+    return nullptr;
+}
+
 PrivateName* Context::classPrivateName(Value* classCtor, std::string_view description) {
     ClassData* cd = classDataOfMember(classCtor);
     if (cd == nullptr) return nullptr;
@@ -1348,6 +1396,14 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     d->isClassConstructor = opts.isClassConstructor;
     d->homeObject = opts.homeObject;
     d->ownerClass = opts.ownerClass;
+    // 私有名词法可见性：默认继承定义点函数所属的最近 class。
+    d->outerOwnerClass = opts.outerOwnerClass;
+    if (d->outerOwnerClass == nullptr && currentFunction_ != nullptr &&
+        currentFunction_->type()->kind() == TypeKind::Function) {
+        auto* cur = static_cast<FunctionData*>(currentFunction_->data());
+        d->outerOwnerClass =
+            cur->ownerClass != nullptr ? cur->ownerClass : cur->outerOwnerClass;
+    }
     d->source = opts.source;
     retainSourceText(d->source.source);
     if (opts.isClassConstructor) {
@@ -1581,6 +1637,10 @@ Value* Context::defineClassField(Value* classCtor, Value* key,
     }
     Value* value = createUndefined();
     if (init != nullptr) {
+        if (init->type()->kind() == TypeKind::Function) {
+            auto* d = static_cast<FunctionData*>(init->data());
+            if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+        }
         value = call(init, classCtor, 0, nullptr);
         if (detail::isErrorValue(value)) return value;
     }

@@ -379,6 +379,8 @@ public:
     Value* classSuperConstructor(Value* classCtor) override;
     PrivateName* classPrivateName(Value* classCtor,
                                   std::string_view description) override;
+    PrivateName* resolvePrivateName(Value* fn,
+                                    std::string_view description) override;
     Value* functionHomeObject(Value* fn) override;
     Value* runStaticBlock(Value* classCtor, NativeFn body) override;
     Value* instanceOf(Value* value, Value* target) override;
