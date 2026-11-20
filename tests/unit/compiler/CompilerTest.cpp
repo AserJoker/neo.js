@@ -3826,3 +3826,152 @@ TEST(CompilerTest, NamesAnonymousFunctionDestructuringDefault) {
     ASSERT_TRUE(result.ok());
     EXPECT_TRUE(bytecodeHasOpWithName(*result.code, OpCode::SetFuncName, "x"));
 }
+
+// ===== delete 非引用表达式（§13.5.1.2）=====
+
+// 场景：delete 1 —— 非引用表达式求值后返回布尔 true（而非数字 1）。
+TEST(CompilerTest, DeleteNonReferenceReturnsBooleanTrue) {
+    Fixture f;
+    Value* value = runScriptResult(f, "var result = delete 1;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
+// 场景：delete void 0 / delete call() —— 非引用表达式返回布尔 true，
+// 且操作数副作用仍求值。
+TEST(CompilerTest, DeleteVoidAndCallReturnBooleanTrue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var sideEffect = false;"
+        "function touch() { sideEffect = true; return 1; }"
+        "var a = delete void 0;"
+        "var b = delete touch();"
+        "var result = a === true && b === true;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+    Value* side = f.ctx->root()->lookupChain("sideEffect");
+    ASSERT_NE(side, nullptr);
+    ASSERT_EQ(side->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(side->data())->value);
+}
+
+// ===== 对象解构 RequireObjectCoercible（§13.3.3.5）=====
+
+// 场景：var { x } = null —— 对象解构 null 抛 TypeError。
+TEST(CompilerTest, ObjectDestructuringNullThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "try { var { x } = null; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：var { x } = undefined —— 对象解构 undefined 抛 TypeError。
+TEST(CompilerTest, ObjectDestructuringUndefinedThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "try { var { x } = undefined; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：({ x } = null) —— 赋值形式对象解构 null 同样抛 TypeError。
+TEST(CompilerTest, ObjectDestructuringAssignmentNullThrowsTypeError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = ''; var x;"
+        "try { ({ x } = null); } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// ===== delete super.x（§13.5.1.2）=====
+
+// 场景：delete super.x —— SuperReference 不可删除，运行时抛 ReferenceError。
+TEST(CompilerTest, DeleteSuperPropertyThrowsReferenceError) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { m() { return 1; } }"
+        "class B extends A {"
+        "  m() { try { delete super.x; } catch (e) { return e.name; } }"
+        "}"
+        "var result = new B().m();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "ReferenceError");
+}
+
+// 场景：delete super[key()] —— 抛错前属性键不求值。
+TEST(CompilerTest, DeleteSuperPropertyDoesNotEvaluateKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var called = false;"
+        "function key() { called = true; return 'x'; }"
+        "class A { m() { return 1; } }"
+        "class B extends A {"
+        "  m() { try { delete super[key()]; } catch (e) { return called; } }"
+        "}"
+        "var result = new B().m();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(static_cast<BooleanData*>(value->data())->value);
+}
+
+// ===== 生成器参数绑定在调用时同步执行（§27.5.1.1 / §27.6.1.1）=====
+
+// 场景：function* 参数默认值抛错 —— 调用点同步抛出，而非首次 next()。
+TEST(CompilerTest, GeneratorParameterDefaultThrowsAtCallSite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "function boom() { throw new TypeError('bad'); }"
+        "function* g(a = boom()) { yield 1; }"
+        "try { g(); result = 'no-throw'; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：async function* 参数默认值抛错 —— 调用点同步抛出。
+TEST(CompilerTest, AsyncGeneratorParameterDefaultThrowsAtCallSite) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        "function boom() { throw new TypeError('bad'); }"
+        "async function* g(a = boom()) { yield 1; }"
+        "try { g(); result = 'no-throw'; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+// 场景：参数正常时，生成器函数体在首次 next() 前不执行。
+TEST(CompilerTest, GeneratorBodyRunsOnlyOnFirstNext) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var ran = false;"
+        "function* g() { ran = true; yield 1; }"
+        "var it = g();"
+        "var beforeNext = ran;"
+        "var yielded = it.next().value;"
+        "var result = beforeNext === false && ran === true && yielded === 1;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}

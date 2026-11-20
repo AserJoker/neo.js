@@ -9,6 +9,7 @@
 
 #include "core/IContext.h"
 #include "core/Scope.h"
+#include "core/types/Boolean.h"
 #include "core/types/Exception.h"
 #include "core/types/Interrupt.h"
 #include "core/types/Number.h"
@@ -31,6 +32,7 @@
 
 namespace {
 
+using neo::core::BooleanData;
 using neo::core::ExceptionData;
 using neo::core::IContext;
 using neo::core::NumberData;
@@ -853,4 +855,99 @@ TEST(VMTest, StopFlagCanBeCleared) {
     EXPECT_TRUE(f.ctx->isStopRequested());
     f.ctx->clearStopRequest();
     EXPECT_FALSE(f.ctx->isStopRequested());
+}
+
+// ===== delete_prop 语义（§13.5.1.2）=====
+
+namespace {
+
+bool booleanValue(Value* value) {
+    return static_cast<BooleanData*>(value->data())->value;
+}
+
+}  // namespace
+
+// 场景：sloppy 模式 delete 不可配置属性 —— 删除失败返回布尔 false，不抛错。
+TEST(VMTest, DeleteNonConfigurablePropertySloppyReturnsFalse) {
+    Fixture f;
+    Value* object = f.ctx->createObject();
+    f.ctx->defineProperty(object, "x", f.ctx->createNumber(1.0), true, true,
+                          false);
+    ASSERT_FALSE(f.ctx->hasFlag("strict"));
+
+    Code code;
+    code.push("x");
+    code.deleteProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(object);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(booleanValue(result));
+}
+
+// 场景：strict 模式 delete 不可配置属性 —— 删除失败抛 TypeError。
+TEST(VMTest, DeleteNonConfigurablePropertyStrictThrowsTypeError) {
+    Fixture f;
+    f.ctx->setFlag("strict");
+    ASSERT_TRUE(f.ctx->hasFlag("strict"));
+
+    Value* object = f.ctx->createObject();
+    f.ctx->defineProperty(object, "x", f.ctx->createNumber(1.0), true, true,
+                          false);
+
+    Code code;
+    code.push("x");
+    code.deleteProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(object);
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
+              "TypeError");
+}
+
+// 场景：delete null.x —— 基值 ToObject 失败抛 TypeError。
+TEST(VMTest, DeleteMemberOnNullThrowsTypeError) {
+    Fixture f;
+
+    Code code;
+    code.push("x");
+    code.deleteProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(f.ctx->createNull());
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
+              "TypeError");
+}
+
+// 场景：delete undefined.x —— 基值 ToObject 失败抛 TypeError。
+TEST(VMTest, DeleteMemberOnUndefinedThrowsTypeError) {
+    Fixture f;
+
+    Code code;
+    code.push("x");
+    code.deleteProp();
+    code.ret();
+
+    VM vm(f.ctx.get(), &code);
+    vm.push(f.ctx->createUndefined());
+    Value* result = vm.run();
+
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(propertyString(f.ctx.get(), errorChild(result), "name"),
+              "TypeError");
 }

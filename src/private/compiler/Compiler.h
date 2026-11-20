@@ -205,7 +205,8 @@ private:
     void compileFunctionBody(const frontend::NodeList& params,
                              const frontend::Node& body, bool arrow,
                              bool initInstanceElements = false,
-                             bool hasArguments = false, bool strict = false);
+                             bool hasArguments = false, bool strict = false,
+                             bool generatorBody = false);
     // Annex B.3.3：if 子句/标签函数声明按 var 语义创建并写入变量环境。
     void compileAnnexBFunction(const frontend::FunctionDeclaration& function,
                                bool blockScoped);

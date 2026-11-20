@@ -1082,7 +1082,7 @@ void Compiler::compileForOfStatement(
     uint32_t toNotDone = code_->jfalse();
 
     // done：标记正常完成并跳到出口（不 close）。
-    code_->push(true);
+    code_->pushBoolean(true);
     code_->store(kForDone);
     uint32_t toExit = code_->jmp();
 
@@ -1966,8 +1966,9 @@ void Compiler::compileDeleteExpression(const frontend::Node& argument) {
             static_cast<const frontend::MemberExpression&>(argument);
         if (member.object &&
             member.object->kind() == NodeKind::SuperExpression) {
-            error(argument, "compiler: delete of super property is invalid");
-            code_->pushUndefined();
+            // SuperReference 不可删除：求值到 delete 时抛 ReferenceError，
+            // 且属性键不求值（§13.5.1.2）。
+            code_->throwReferenceError("Unsupported reference to 'super'");
             return;
         }
         if (!member.object) {
@@ -2013,7 +2014,7 @@ void Compiler::compileDeleteExpression(const frontend::Node& argument) {
     // 非引用：求值副作用后返回 true。
     compileExpression(argument);
     code_->pop();
-    code_->push(true);
+    code_->pushBoolean(true);
 }
 
 void Compiler::compileUnaryExpression(const frontend::UnaryExpression& node) {
@@ -3164,6 +3165,12 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 static_cast<const frontend::ObjectPattern&>(pattern);
             const std::string objectName =
                 "*dest-obj-" + std::to_string(depth) + "*";
+            // RequireObjectCoercible：null/undefined 不能做对象解构（§13.3.3.5）。
+            code_->dup();
+            uint32_t coercible = code_->jNotNullish();
+            code_->throwTypeError(
+                "Cannot destructure null or undefined");
+            code_->patchU32(coercible + 2, code_->here());
             code_->define(objectName);
 
             // computed 键只求值一次：非 rest 属性在解构时把键存入临时槽，
@@ -3900,7 +3907,8 @@ void Compiler::compileFunctionObject(const Node& node,
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
-    compileFunctionBody(params, body, arrow || method, false, !arrow, strict);
+    compileFunctionBody(params, body, arrow || method, false, !arrow, strict,
+                        generator);
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
 
@@ -3985,7 +3993,8 @@ void Compiler::compileFunctionObject(const Node& node,
 void Compiler::compileFunctionBody(const frontend::NodeList& params,
                                    const Node& body, bool arrow,
                                    bool initInstanceElements,
-                                   bool hasArguments, bool strict) {
+                                   bool hasArguments, bool strict,
+                                   bool generatorBody) {
     // 函数体是独立执行上下文：不写外层 eval 的完成值槽。
     ++functionDepth_;
     const bool savedEvalCompletion = evalCompletion_;
@@ -4051,6 +4060,10 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     }
 
     code_->pushVarScope();
+
+    // 生成器参数绑定在调用时同步完成；BodyStart 让调用方在此保存现场、
+    // 创建协程，函数体待首次 next() 才执行（§27.5.1.1 / §27.6.1.1）。
+    if (generatorBody) code_->bodyStart();
 
     if (arrow && body.kind() != NodeKind::BlockStatement) {
         // 表达式体箭头：表达式值即返回值。

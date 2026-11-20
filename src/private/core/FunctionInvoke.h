@@ -15,6 +15,10 @@
 
 #include <cstddef>
 
+namespace neo::vm {
+struct VmState;
+}  // namespace neo::vm
+
 namespace neo::core {
 
 class Scope;
@@ -39,6 +43,18 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                             Value* argv[], Value* newTarget = nullptr,
                             Value** outThis = nullptr);
+
+// 生成器调用前置：同步执行参数绑定到 BodyStart，成功时返回已初始化的
+// execScope 与挂起快照（由调用方交给协程对象持有）；失败时 error 非空。
+struct GeneratorPrelude {
+    Value* error = nullptr;
+    Scope* execScope = nullptr;
+    vm::VmState* vmState = nullptr;
+};
+
+GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
+                                           Value* thisArg, size_t argc,
+                                           Value* argv[]);
 
 // script 生成器的恢复驱动（CoroutineRunner）：首次恢复创建执行作用域并运行
 // 到首个 yield；后续恢复重建 VM 并从 VmState 继续。

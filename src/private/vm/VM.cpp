@@ -163,6 +163,9 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetFuncName:   return "set_func_name";
         case OpCode::SetFuncNameIfAbsent: return "set_func_name_if_absent";
         case OpCode::SetFuncNameFromKey:  return "set_func_name_from_key";
+        case OpCode::ThrowReferenceError: return "throw_reference_error";
+        case OpCode::BodyStart:     return "body_start";
+        case OpCode::ThrowTypeError: return "throw_type_error";
         case OpCode::BindThis:      return "bind_this";
         case OpCode::LoadThis:      return "load_this";
         case OpCode::StoreThis:     return "store_this";
@@ -373,6 +376,9 @@ const VM::Handler* VM::handlers() {
         &VM::opBinary,
         &VM::opSetFuncNameIfAbsent,
         &VM::opSetFuncNameFromKey,
+        &VM::opThrowReferenceError,
+        &VM::opBodyStart,
+        &VM::opThrowTypeError,
     };
     return table;
 }
@@ -833,8 +839,18 @@ Value* VM::opDeleteProp() {
     }
     Value* key = pop();
     Value* object = pop();
+    // delete 的基值先 ToObject：null/undefined 抛 TypeError（§13.5.1.2）。
+    const neo::core::TypeKind baseKind = object->type()->kind();
+    if (baseKind == neo::core::TypeKind::Null ||
+        baseKind == neo::core::TypeKind::Undefined) {
+        return fail(detail::typeError(ctx_, "Cannot convert to object"));
+    }
     Value* result = ctx_->deleteProperty(object, key);
     if (detail::isErrorValue(result)) return fail(result);
+    // 严格模式：删除失败（不可配置属性）抛 TypeError（§13.5.1.2）。
+    if (!ctx_->toBoolean(result) && ctx_->hasFlag("strict")) {
+        return fail(detail::typeError(ctx_, "Cannot delete property"));
+    }
     push(result);
     return nullptr;
 }
@@ -2172,6 +2188,40 @@ Value* VM::opSetFuncNameFromKey() {
     ctx_->setFunctionNameFromKey(stack_[stack_.size() - 1],
                                  stack_[stack_.size() - 2], *prefix);
     return nullptr;
+}
+
+Value* VM::opThrowReferenceError() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("throw_reference_error: truncated operand");
+    }
+    uint32_t messageIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* message = stringOperand(messageIndex);
+    if (message == nullptr) {
+        return badBytecode("throw_reference_error: message index out of range");
+    }
+    return fail(detail::referenceError(ctx_, *message));
+}
+
+Value* VM::opBodyStart() {
+    // 参数绑定已完成：把控制权交还调用方，由其保存现场并创建协程。
+    return ctx_->createInterrupt(neo::core::InterruptKind::BodyStart, 0,
+                                 ctx_->createUndefined());
+}
+
+Value* VM::opThrowTypeError() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("throw_type_error: truncated operand");
+    }
+    uint32_t messageIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* message = stringOperand(messageIndex);
+    if (message == nullptr) {
+        return badBytecode("throw_type_error: message index out of range");
+    }
+    return fail(detail::typeError(ctx_, *message));
 }
 
 Value* VM::opBindThis() {

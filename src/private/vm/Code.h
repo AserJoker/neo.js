@@ -535,6 +535,17 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t bodyStart() { return emitOp(OpCode::BodyStart); }
+    uint32_t throwTypeError(std::string_view message) {
+        uint32_t pc = emitOp(OpCode::ThrowTypeError);
+        emitU32(addString(std::string(message)));
+        return pc;
+    }
+    uint32_t throwReferenceError(std::string_view message) {
+        uint32_t pc = emitOp(OpCode::ThrowReferenceError);
+        emitU32(addString(std::string(message)));
+        return pc;
+    }
     uint32_t setFuncNameFromKey(std::string_view prefix = {}) {
         uint32_t pc = emitOp(OpCode::SetFuncNameFromKey);
         emitU32(addString(std::string(prefix)));

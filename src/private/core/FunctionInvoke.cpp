@@ -276,6 +276,118 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     return res;
 }
 
+GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
+                                           Value* thisArg, size_t argc,
+                                           Value* argv[]) {
+    GeneratorPrelude out;
+    auto* d = static_cast<FunctionData*>(fn->data());
+    if (d->code == nullptr) {
+        out.error = detail::typeError(ctx, "script function has no code");
+        return out;
+    }
+
+    Scope* savedRoot = ctx->root();
+    Scope* savedCurrent = ctx->current();
+    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+    Value* savedFunction = ctx->currentFunction();
+
+    ctx->setRootScope(d->rootScope);
+    if (!d->capturesEnvironment && d->activeCalls == 0) {
+        d->closureScope->reparent(d->rootScope);
+    }
+    ++d->activeCalls;
+
+    Scope* execScope = ctx->pushNewScope(d->closureScope);
+    if (execScope == nullptr) {
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setRootScope(savedRoot);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        out.error = ctx->oomValue();
+        return out;
+    }
+
+    Value* boundThis = d->self != nullptr
+                           ? d->self
+                           : (thisArg != nullptr ? thisArg : ctx->createUndefined());
+    execScope->setThis(boundThis);
+    execScope->setNewTarget(ctx->createUndefined());
+    ctx->setCurrentFunctionEnv(execScope);
+    ctx->setCurrentFunction(fn);
+
+    if (d->needsArguments) {
+        Value* err = bindArgumentsObject(ctx, execScope, fn, argc, argv,
+                                         d->argumentsMapped);
+        if (err != nullptr) {
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            while (ctx->current() != d->closureScope) ctx->popScope();
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setCurrentScope(savedCurrent);
+            ctx->setRootScope(savedRoot);
+            out.error = err;
+            return out;
+        }
+    }
+
+    vm::VM machine(ctx, d->code);
+    size_t total = d->paramCount;
+    if (d->hasRest && argc > total) total = argc;
+    for (size_t i = total; i > 0; --i) {
+        size_t index = i - 1;
+        machine.push(index < argc ? argv[index] : ctx->createUndefined());
+    }
+    machine.push(boundThis);
+
+    Value* res = machine.run(d->entryPc);
+    const bool bodyStart =
+        res != nullptr && detail::isInterruptValue(res) &&
+        asInterrupt(res)->kind == InterruptKind::BodyStart;
+
+    if (bodyStart) {
+        out.execScope = execScope;
+        out.vmState = new vm::VmState(machine.snapshot());
+        execScope->reparent(nullptr);
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setRootScope(savedRoot);
+        return out;
+    }
+
+    // 参数绑定失败（或异常）：调用方直接返回该结果，不创建协程。
+    if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setRootScope(savedRoot);
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        out.error = res;
+        return out;
+    }
+    if (res != nullptr) savedCurrent->add(res);
+    ctx->setCurrentFunctionEnv(savedFunctionEnv);
+    ctx->setCurrentFunction(savedFunction);
+    while (ctx->current() != d->closureScope) ctx->popScope();
+    if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+        d->closureScope->reparent(nullptr);
+    }
+    ctx->setCurrentScope(savedCurrent);
+    ctx->setRootScope(savedRoot);
+    out.error = res != nullptr ? res : ctx->createUndefined();
+    return out;
+}
+
 Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) {
     auto* co = asCoroutine(coroutine);
     if (co == nullptr || co->target == nullptr) {

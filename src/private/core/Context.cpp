@@ -85,6 +85,7 @@
 #include "core/types/Uninitialized.h"
 #include "core/types/Undefined.h"
 #include "vm/Code.h"
+#include "vm/VmState.h"
 
 #include <algorithm>
 #include <cassert>
@@ -2901,8 +2902,20 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
         return detail::typeError(this, "coroutine target is not resumable");
     }
 
+    // script 生成器：调用时同步执行参数绑定（可能抛错），保存 BodyStart 现场。
+    // async 函数也走协程，但不是生成器（无 BodyStart），仍由首次 resume 运行。
+    GeneratorPrelude prelude;
+    if (fd->isScript && fd->generator) {
+        prelude = prepareGeneratorCoroutine(this, target, receiver, argc, argv);
+        if (prelude.error != nullptr) return prelude.error;
+    }
+
     auto* d = gc_->allocData<CoroutineData>();
-    if (d == nullptr) return oomValue_;
+    if (d == nullptr) {
+        if (prelude.execScope != nullptr) prelude.execScope->destroySelf();
+        delete prelude.vmState;
+        return oomValue_;
+    }
     d->state = CoroutineState::Suspended;
     d->resumePoint = 0;
     d->target = target;
@@ -2913,6 +2926,8 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
     d->sentValue = createUndefined();
     if (d->sentValue == oomValue_) return d->sentValue;
     if (argc > 0) d->initialArgs.assign(argv, argv + argc);
+    d->execScope = prelude.execScope;
+    d->vmState = prelude.vmState;
     // 恢复驱动按 target 种类选择：script 函数走 VM 状态快照，native 走阶段机。
     d->resume = fd->isScript ? resumeScriptCoroutine : resumeNativeCoroutine;
 
@@ -2940,8 +2955,19 @@ Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc
         return detail::typeError(this, "async generator target is not resumable");
     }
 
+    // script 异步生成器：参数绑定同样在调用时同步完成。
+    GeneratorPrelude prelude;
+    if (fd->isScript && fd->generator) {
+        prelude = prepareGeneratorCoroutine(this, target, receiver, argc, argv);
+        if (prelude.error != nullptr) return prelude.error;
+    }
+
     auto* d = gc_->allocData<AsyncGeneratorData>();
-    if (d == nullptr) return oomValue_;
+    if (d == nullptr) {
+        if (prelude.execScope != nullptr) prelude.execScope->destroySelf();
+        delete prelude.vmState;
+        return oomValue_;
+    }
     d->state = CoroutineState::Suspended;
     d->asyncState = AsyncGeneratorState::SuspendedStart;
     d->resumePoint = 0;
@@ -2953,6 +2979,8 @@ Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc
     d->sentValue = createUndefined();
     if (d->sentValue == oomValue_) return d->sentValue;
     if (argc > 0) d->initialArgs.assign(argv, argv + argc);
+    d->execScope = prelude.execScope;
+    d->vmState = prelude.vmState;
     d->resume = fd->isScript ? resumeScriptCoroutine : resumeNativeCoroutine;
 
     Value* gen = createTracked(getAsyncGeneratorType(), d, bindName);

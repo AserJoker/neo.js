@@ -346,11 +346,17 @@ enum class OpCode : uint16_t {
     SetFuncNameIfAbsent,
     // [fn, key] → [fn, key]：按运行时属性键设置函数名（computed 键）。
     SetFuncNameFromKey,
+    // u32 messageIndex：构造 ReferenceError 并抛出（delete super.x）。
+    ThrowReferenceError,
+    // 生成器函数体起点：参数绑定已完成，返回 BodyStart 信号给调用方。
+    BodyStart,
+    // u32 messageIndex：构造 TypeError 并抛出（如解构 null/undefined）。
+    ThrowTypeError,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::SetFuncNameFromKey) + 1;
+    static_cast<size_t>(OpCode::ThrowTypeError) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
