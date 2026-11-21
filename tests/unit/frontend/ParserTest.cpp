@@ -3322,6 +3322,49 @@ TEST(ParserTest, ForOfExpressionPattern) {
     EXPECT_EQ(statement.left->kind(), NodeKind::ArrayPattern);
 }
 
+TEST(ParserTest, ForOfHeadInitializerReportsError) {
+    EXPECT_FALSE(parse("for (var x = 1 of []) {}").errors.empty());
+    EXPECT_FALSE(parse("for (const x = 1 of []) {}").errors.empty());
+    EXPECT_FALSE(parse("for (let [x] = [] of []) {}").errors.empty());
+}
+
+TEST(ParserTest, ForOfEscapedOfReportsError) {
+    ParseResult result = parse(R"(for (x o\u0066 []) ;)");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, ForOfAsyncLeftReportsError) {
+    ParseResult result = parse("for (async of [1]) ;");
+
+    EXPECT_FALSE(result.errors.empty());
+}
+
+TEST(ParserTest, SingleStatementContextRejectsDeclaration) {
+    EXPECT_FALSE(parse("if (x) let y = 1;").errors.empty());
+    EXPECT_FALSE(parse("while (x) const y = 1;").errors.empty());
+    EXPECT_FALSE(parse("for (;;) class C {}").errors.empty());
+    EXPECT_FALSE(parse("for (var x of []) class C {}").errors.empty());
+    EXPECT_FALSE(parse("with (x) let y = 1;").errors.empty());
+}
+
+TEST(ParserTest, LetNewlineUsesAsiInSingleStatementContext) {
+    ParseResult block = parse("for (var x of []) let\n{}");
+    ASSERT_TRUE(block.ok());
+    const auto& loop = static_cast<const ForOfStatement&>(*programOf(block).body[0]);
+    EXPECT_EQ(loop.body->kind(), NodeKind::ExpressionStatement);
+
+    ParseResult assignment = parse("for (var x of []) let\nx = 1;");
+    ASSERT_TRUE(assignment.ok());
+    EXPECT_EQ(programOf(assignment).body.size(), 2u);
+}
+
+TEST(ParserTest, ForOfPatternDefaultAllowsInOperator) {
+    ParseResult result = parse("for ([x = 'x' in {}] of [[]]) ;");
+
+    EXPECT_TRUE(result.ok());
+}
+
 TEST(ParserTest, ArrayDestructuringAssignment) {
     ParseResult result = parse("[a, b] = arr;");
 

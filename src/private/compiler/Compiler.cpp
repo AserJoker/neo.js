@@ -656,6 +656,8 @@ void Compiler::compileForStatement(
         } else {
             bool mutableBinding =
                 lexicalInit->variableKind == frontend::VariableKind::Let;
+            // 先为所有绑定建 TDZ 槽：初始化器求值期间（含后续 declarator）
+            // 这些名字必须可见但不可读（ES2024 §14.7.1）。
             for (const NodePtr& declarator : lexicalInit->declarations) {
                 if (!declarator ||
                     declarator->kind() != NodeKind::VariableDeclarator) {
@@ -663,18 +665,35 @@ void Compiler::compileForStatement(
                 }
                 const auto& decl = static_cast<const frontend::VariableDeclarator&>(
                     *declarator);
-                if (!decl.id || decl.id->kind() != NodeKind::Identifier) {
-                    error(*declarator, "compiler: unsupported binding pattern");
+                if (!decl.id) continue;
+                std::vector<std::string> names;
+                collectPatternNames(*decl.id, names);
+                for (const std::string& name : names) {
+                    code_->pushUninitialized();
+                    code_->define(name, mutableBinding, false);
+                }
+            }
+            for (const NodePtr& declarator : lexicalInit->declarations) {
+                if (!declarator ||
+                    declarator->kind() != NodeKind::VariableDeclarator) {
                     continue;
                 }
+                const auto& decl = static_cast<const frontend::VariableDeclarator&>(
+                    *declarator);
+                if (!decl.id) continue;
                 if (decl.init) {
-                    compileExpression(*decl.init);
+                    if (decl.id->kind() == NodeKind::Identifier) {
+                        compileNamedExpression(
+                            *decl.init,
+                            static_cast<const frontend::Identifier&>(*decl.id)
+                                .name);
+                    } else {
+                        compileExpression(*decl.init);
+                    }
                 } else {
                     code_->pushUndefined();
                 }
-                code_->define(
-                    static_cast<const frontend::Identifier&>(*decl.id).name,
-                    mutableBinding);
+                compileBindingPattern(*decl.id, true, 0);
             }
         }
     }

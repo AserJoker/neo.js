@@ -442,15 +442,32 @@ NodePtr Parser::parseDirective(NodePtr statement) {
         literal->legacyOctalEscape, literal->legacyEightOrNine);
 }
 
-NodePtr Parser::parseStatement() {
+NodePtr Parser::parseStatement(bool allowDeclaration) {
     if (at(TokenKind::LeftBrace)) return parseBlockStatement();
     if (at(TokenKind::Semicolon)) return parseEmptyStatement();
     if (at(TokenKind::Var) || at(TokenKind::Const)) {
+        if (!allowDeclaration && at(TokenKind::Const)) {
+            error(current_.start,
+                  "Lexical declaration cannot appear in a single-statement context");
+            return nullptr;
+        }
         return parseVariableDeclaration();
     }
     if (at(TokenKind::Identifier) && current_.text == "let" &&
         isLetDeclarationStart()) {
-        return parseVariableDeclaration();
+        if (!allowDeclaration) {
+            // `let <换行> {` 可按 ASI 拆成表达式语句 + 块；`let [` 受 lookahead
+            // 限制，只能按声明解析，因而在单语句位置报错。
+            const Token next = peek();
+            if (next.kind != TokenKind::LeftBrace ||
+                !next.precededByLineTerminator) {
+                error(current_.start,
+                      "Lexical declaration cannot appear in a single-statement context");
+                return nullptr;
+            }
+        } else {
+            return parseVariableDeclaration();
+        }
     }
     if (at(TokenKind::If)) return parseIfStatement();
     if (at(TokenKind::While)) return parseWhileStatement();
@@ -464,9 +481,32 @@ NodePtr Parser::parseStatement() {
     if (at(TokenKind::Switch)) return parseSwitchStatement();
     if (at(TokenKind::With)) return parseWithStatement();
     if (at(TokenKind::Debugger)) return parseDebuggerStatement();
-    if (at(TokenKind::Function)) return parseFunctionDeclaration(false);
-    if (isAsyncFunctionStart()) return parseFunctionDeclaration(true);
-    if (at(TokenKind::Class)) return parseClassDeclaration();
+    if (at(TokenKind::Function)) {
+        // Annex B 只允许普通 function 声明出现在单语句位置；
+        // generator 声明不在允许之列。
+        if (!allowDeclaration && peek().kind == TokenKind::Star) {
+            error(current_.start,
+                  "Generator declaration cannot appear in a single-statement context");
+            return nullptr;
+        }
+        return parseFunctionDeclaration(false);
+    }
+    if (isAsyncFunctionStart()) {
+        if (!allowDeclaration) {
+            error(current_.start,
+                  "Async function declaration cannot appear in a single-statement context");
+            return nullptr;
+        }
+        return parseFunctionDeclaration(true);
+    }
+    if (at(TokenKind::Class)) {
+        if (!allowDeclaration) {
+            error(current_.start,
+                  "Class declaration cannot appear in a single-statement context");
+            return nullptr;
+        }
+        return parseClassDeclaration();
+    }
     if (at(TokenKind::Identifier) && peek().kind == TokenKind::Colon) {
         return parseLabeledStatement();
     }
@@ -487,7 +527,7 @@ NodePtr Parser::parseLabeledStatement() {
     advance();  // label
     if (!expect(TokenKind::Colon, "':'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<LabeledStatement>(
@@ -503,7 +543,7 @@ NodePtr Parser::parseWithStatement() {
     if (object == nullptr) return nullptr;
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<WithStatement>(rangeFrom(start), std::move(object),
@@ -1451,7 +1491,20 @@ NodePtr Parser::parseForStatement() {
             }
             return parseForInStatement(std::move(init), start);
         }
-        if (at(TokenKind::Identifier) && current_.text == "of") {
+        // `of` 是上下文关键字，含 Unicode 转义的标识符不能当关键字。
+        if (at(TokenKind::Identifier) && current_.text == "of" &&
+            !current_.hasEscape) {
+            // lookahead ∉ { async of }：async 作为 LHS 后接 of 是语法错误。
+            if (init->kind() == NodeKind::Identifier) {
+                auto& identifier = static_cast<Identifier&>(*init);
+                const auto length = identifier.range().end.offset -
+                                    identifier.range().start.offset;
+                if (identifier.name == "async" && length == 5) {
+                    error(identifier.range().start,
+                          "'async' is not allowed as the left-hand side of for-of");
+                    return nullptr;
+                }
+            }
             return parseForOfStatement(std::move(init), start, forAwait);
         }
         if (forAwait) {
@@ -1496,7 +1549,7 @@ NodePtr Parser::parseForStatement() {
     }
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<ForStatement>(
@@ -1510,6 +1563,21 @@ NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
         left = convertToAssignmentPattern(std::move(left));
         if (left == nullptr) return nullptr;
     }
+    // Annex B 仅允许 sloppy 下 `for (var x = init in obj)` 的简单绑定；
+    // let/const 以及解构模式一律不得带初始化器。
+    if (left->kind() == NodeKind::VariableDeclaration) {
+        auto& declaration = static_cast<VariableDeclaration&>(*left);
+        for (const NodePtr& declarator : declaration.declarations) {
+            auto& entry = static_cast<VariableDeclarator&>(*declarator);
+            if (entry.init == nullptr) continue;
+            if (declaration.variableKind != VariableKind::Var ||
+                entry.id->kind() != NodeKind::Identifier) {
+                error(entry.init->range().start,
+                      "for-in loop variable declaration may not have an initializer");
+                return nullptr;
+            }
+        }
+    }
     if (!isForInOfLeft(left.get())) {
         error(left->range().start, "Invalid left-hand side in for-in");
         return nullptr;
@@ -1520,7 +1588,7 @@ NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
     if (right == nullptr) return nullptr;
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<ForInStatement>(
@@ -1534,6 +1602,18 @@ NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start,
         left = convertToAssignmentPattern(std::move(left));
         if (left == nullptr) return nullptr;
     }
+    // for-of 头部声明一律不得带初始化器（含 var）。
+    if (left->kind() == NodeKind::VariableDeclaration) {
+        auto& declaration = static_cast<VariableDeclaration&>(*left);
+        for (const NodePtr& declarator : declaration.declarations) {
+            auto& entry = static_cast<VariableDeclarator&>(*declarator);
+            if (entry.init != nullptr) {
+                error(entry.init->range().start,
+                      "for-of loop variable declaration may not have an initializer");
+                return nullptr;
+            }
+        }
+    }
     if (!isForInOfLeft(left.get())) {
         error(left->range().start, "Invalid left-hand side in for-of");
         return nullptr;
@@ -1545,7 +1625,7 @@ NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start,
     if (right == nullptr) return nullptr;
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<ForOfStatement>(
@@ -1557,7 +1637,7 @@ NodePtr Parser::parseDoWhileStatement() {
     const SourceLocation start = current_.start;
     advance();  // 'do'
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     if (!expect(TokenKind::While, "'while'")) return nullptr;
@@ -1582,7 +1662,7 @@ NodePtr Parser::parseWhileStatement() {
     if (test == nullptr) return nullptr;
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr body = parseStatement();
+    NodePtr body = parseStatement(false);
     if (body == nullptr) return nullptr;
 
     return std::make_unique<WhileStatement>(rangeFrom(start), std::move(test),
@@ -1598,12 +1678,12 @@ NodePtr Parser::parseIfStatement() {
     if (test == nullptr) return nullptr;
     if (!expect(TokenKind::RightParen, "')'")) return nullptr;
 
-    NodePtr consequent = parseStatement();
+    NodePtr consequent = parseStatement(false);
     if (consequent == nullptr) return nullptr;
 
     NodePtr alternate;
     if (match(TokenKind::Else)) {
-        alternate = parseStatement();
+        alternate = parseStatement(false);
         if (alternate == nullptr) return nullptr;
     }
 
@@ -1614,9 +1694,12 @@ NodePtr Parser::parseIfStatement() {
 
 bool Parser::isLetDeclarationStart() {
     // `let` 是上下文关键字：`let x` 是声明，`let = 1` / `let;` 是标识符。
+    // `let <换行> x` 按 ASI 拆成两条语句；`let [` 的 lookahead 限制不受换行影响。
     const Token next = peek();
-    return next.kind == TokenKind::Identifier ||
-           next.kind == TokenKind::LeftBracket ||
+    if (next.kind == TokenKind::Identifier) {
+        return !next.precededByLineTerminator;
+    }
+    return next.kind == TokenKind::LeftBracket ||
            next.kind == TokenKind::LeftBrace;
 }
 
@@ -2613,6 +2696,9 @@ NodePtr Parser::parseArrayExpression() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::LeftBracket, "'['")) return nullptr;
 
+    // 数组字面量内部是完整 Expression，不受 for 头部 [~In] 限制。
+    const bool savedAllowIn = allowIn_;
+    allowIn_ = true;
     NodeList elements;
     bool trailingCommaAfterSpread = false;
     while (!at(TokenKind::RightBracket) && !at(TokenKind::EndOfInput)) {
@@ -2629,7 +2715,10 @@ NodePtr Parser::parseArrayExpression() {
         } else {
             element = parseAssignmentExpression();
         }
-        if (element == nullptr) return nullptr;
+        if (element == nullptr) {
+            allowIn_ = savedAllowIn;
+            return nullptr;
+        }
         const bool isSpread = element->kind() == NodeKind::SpreadElement;
         elements.push_back(std::move(element));
 
@@ -2640,6 +2729,7 @@ NodePtr Parser::parseArrayExpression() {
         }
     }
 
+    allowIn_ = savedAllowIn;
     if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
     auto array = std::make_unique<ArrayExpression>(rangeFrom(start),
                                                    std::move(elements));
@@ -2651,6 +2741,9 @@ NodePtr Parser::parseObjectExpression() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
 
+    // 对象字面量内部是完整 Expression，不受 for 头部 [~In] 限制。
+    const bool savedAllowIn = allowIn_;
+    allowIn_ = true;
     NodeList properties;
     bool trailingCommaAfterSpread = false;
     while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
@@ -2660,7 +2753,10 @@ NodePtr Parser::parseObjectExpression() {
         } else {
             property = parseProperty();
         }
-        if (property == nullptr) return nullptr;
+        if (property == nullptr) {
+            allowIn_ = savedAllowIn;
+            return nullptr;
+        }
         const bool isSpread = property->kind() == NodeKind::SpreadElement;
         properties.push_back(std::move(property));
 
@@ -2671,6 +2767,7 @@ NodePtr Parser::parseObjectExpression() {
         }
     }
 
+    allowIn_ = savedAllowIn;
     if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
     auto object = std::make_unique<ObjectExpression>(rangeFrom(start),
                                                      std::move(properties));

@@ -82,7 +82,9 @@ private:
     // 语句
     NodePtr parseStatementListItem(bool& inDirectivePrologue);
     NodePtr parseDirective(NodePtr statement);
-    NodePtr parseStatement();
+    // allowDeclaration=false 用于「单语句」位置（if/for/while/with/labeled 体）：
+    // LexicalDeclaration / ClassDeclaration 不是 Statement，须报 SyntaxError。
+    NodePtr parseStatement(bool allowDeclaration = true);
     NodePtr parseBlockStatement();
     NodePtr parseEmptyStatement();
     NodePtr parseExpressionStatement();

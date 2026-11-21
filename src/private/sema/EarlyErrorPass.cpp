@@ -3,6 +3,7 @@
 #include "sema/EarlyErrorPass.h"
 
 #include "regex/RegexEngine.h"
+#include "sema/BindingNames.h"
 #include "sema/ControlFlowPass.h"
 #include "sema/ModulePass.h"
 #include "sema/StrictnessPass.h"
@@ -225,6 +226,41 @@ private:
     }
 };
 
+// for-in/of 的 ForDeclaration 不得包含名为 "let" 的绑定（ES2024 §14.7.1）。
+class ForHeadVisitor final : public IVisitor {
+public:
+    void enter(Walker&, SemaContext& context, frontend::Node& node) override {
+        frontend::Node* left = nullptr;
+        if (node.kind() == frontend::NodeKind::ForOfStatement) {
+            left = static_cast<frontend::ForOfStatement&>(node).left.get();
+        } else if (node.kind() == frontend::NodeKind::ForInStatement) {
+            left = static_cast<frontend::ForInStatement&>(node).left.get();
+        } else {
+            return;
+        }
+        if (left == nullptr ||
+            left->kind() != frontend::NodeKind::VariableDeclaration) {
+            return;
+        }
+        auto& declaration =
+            static_cast<frontend::VariableDeclaration&>(*left);
+        if (declaration.variableKind == frontend::VariableKind::Var) return;
+
+        std::vector<BindingName> names;
+        bool nonSimple = false;
+        for (frontend::NodePtr& declarator : declaration.declarations) {
+            auto& entry = static_cast<frontend::VariableDeclarator&>(*declarator);
+            collectBindingNames(entry.id.get(), names, nonSimple);
+        }
+        for (const BindingName& name : names) {
+            if (name.name == "let") {
+                context.error(name.range.start,
+                              "The declaration may not contain a binding for 'let'");
+            }
+        }
+    }
+};
+
 }  // namespace
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
@@ -235,6 +271,7 @@ void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
     walker.addAll(makeModuleVisitor(annotations));
     walker.addAll(std::make_unique<DuplicateProtoVisitor>());
     walker.addAll(std::make_unique<ClassElementVisitor>());
+    walker.addAll(std::make_unique<ForHeadVisitor>());
     walker.addAll(std::make_unique<RegExpLiteralVisitor>());
     walker.walk(program, context);
 }
