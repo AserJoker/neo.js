@@ -589,6 +589,12 @@ Value* getPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* rec
 
 Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* value,
                                Value* receiver) {
+    // PutValue 的 ToObject(base)：super 基值为 null/undefined 时抛 TypeError。
+    if (obj == nullptr || obj->type()->kind() == TypeKind::Null ||
+        obj->type()->kind() == TypeKind::Undefined) {
+        return detail::typeError(ctx,
+                                 "Cannot set properties of null or undefined");
+    }
     PropertyKey pk;
     if (Value* err = toPropertyKey(ctx, key, pk)) return err;
     // 经 [[Set]] 分派：base 是 Proxy 时触发 set trap。

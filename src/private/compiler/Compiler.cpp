@@ -2867,7 +2867,11 @@ void Compiler::compileAssignmentExpression(
             // 键的 toString 可能改变原型，base 必须在此之前固定。
             code_->getSuperBase();  // [key, base]
             code_->swap();          // [base, key]
-            if (member.computed) code_->toPropertyKey();
+            // 复合/逻辑赋值需先读旧值，键须在此之前定型；普通赋值把
+            // ToPropertyKey 推迟到 RHS 求值后的 PutValue（§13.15.2）。
+            if ((compound || logical) && member.computed) {
+                code_->toPropertyKey();
+            }
             if (logical) {
                 code_->dup2();                    // [base, key, base, key]
                 code_->getSuperPropFromBase();    // [base, key, old]
@@ -2899,15 +2903,17 @@ void Compiler::compileAssignmentExpression(
         }
         compileExpression(*member.object);
         compileMemberKey(member);
-        // 基值 RequireObjectCoercible：键表达式已求值，但 ToPropertyKey 延后
-        // 到基值检查之后（与 V8/规范一致）。
-        code_->swap();  // [key, obj]
-        code_->dup();
-        uint32_t coercible = code_->jNotNullish();
-        code_->throwTypeError("Cannot read properties of null or undefined");
-        code_->patchU32(coercible + 2, code_->here());
-        code_->swap();  // [obj, key]
-        if (member.computed) code_->toPropertyKey();
+        // 读取旧值（复合/逻辑赋值）前须检查基值可强制转换；普通赋值不读取，
+        // 基值检查与 ToPropertyKey 都推迟到 RHS 求值后的 PutValue（§13.15.2）。
+        if (compound || logical) {
+            code_->swap();  // [key, obj]
+            code_->dup();
+            uint32_t coercible = code_->jNotNullish();
+            code_->throwTypeError("Cannot read properties of null or undefined");
+            code_->patchU32(coercible + 2, code_->here());
+            code_->swap();  // [obj, key]
+            if (member.computed) code_->toPropertyKey();
+        }
         if (logical) {
             // obj/key 只求值一次；短路时丢弃 obj/key，只保留旧值。
             code_->dup2();
@@ -3178,6 +3184,8 @@ void Compiler::compileUpdateExpression(
 
 void Compiler::compileBindingPattern(const frontend::Node& pattern,
                                      bool lexical, uint32_t depth) {
+    // 临时变量名用全局唯一编号，避免同一作用域内多个解构模式重名。
+    const uint32_t tempId = destTempId_++;
     switch (pattern.kind()) {
         case NodeKind::Identifier: {
             const std::string& name =
@@ -3224,11 +3232,11 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
             const auto& node =
                 static_cast<const frontend::ArrayPattern&>(pattern);
             const std::string iterName =
-                "*dest-iter-" + std::to_string(depth) + "*";
+                "*dest-iter-" + std::to_string(tempId) + "*";
             const std::string resultName =
-                "*dest-res-" + std::to_string(depth) + "*";
+                "*dest-res-" + std::to_string(tempId) + "*";
             const std::string doneName =
-                "*dest-done-" + std::to_string(depth) + "*";
+                "*dest-done-" + std::to_string(tempId) + "*";
             code_->getIterator();
             code_->define(iterName);
             code_->pushUndefined();
@@ -3243,15 +3251,19 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
             for (const frontend::NodePtr& element : node.elements) {
                 if (!element) {
                     // elision：推进迭代器，记录 done 后丢弃结果。
+                    // 先假定 Done=true：IteratorNext/IteratorComplete 抛错时
+                    // 规范置 [[Done]]=true，不再 IteratorClose（§7.4.5）。
+                    code_->pushBoolean(true);
+                    code_->store(doneName);
                     code_->load(iterName);
                     code_->iteratorNext();
                     code_->store(resultName);
                     code_->load(resultName);
                     code_->push("done");
                     code_->getProp();
-                    uint32_t notDone = code_->jfalse();
-                    code_->pushBoolean(true);
                     code_->store(doneName);
+                    code_->load(doneName);
+                    uint32_t notDone = code_->jfalse();
                     code_->patchU32(notDone + 2, code_->here());
                     continue;
                 }
@@ -3259,19 +3271,60 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     const auto& rest =
                         static_cast<const frontend::RestElement&>(*element);
                     const std::string arrayName =
-                        "*dest-rest-" + std::to_string(depth) + "*";
+                        "*dest-rest-" + std::to_string(tempId) + "*";
+                    // 成员 rest 目标：Reference 在迭代之前求值
+                    // （§13.15.5.4 AssignmentRestElement 步骤 1）。
+                    const frontend::MemberExpression* restMember = nullptr;
+                    const frontend::PrivateIdentifier* restPrivate = nullptr;
+                    const PrivateInfo* restInfo = nullptr;
+                    if (!lexical && rest.argument &&
+                        rest.argument->kind() == NodeKind::MemberExpression) {
+                        restMember =
+                            static_cast<const frontend::MemberExpression*>(
+                                rest.argument.get());
+                        if (restMember->optional) {
+                            error(*restMember,
+                                  "compiler: optional chaining not supported");
+                            continue;
+                        }
+                        if (!restMember->object) {
+                            error(*restMember,
+                                  "compiler: assignment target missing object");
+                            continue;
+                        }
+                        compileExpression(*restMember->object);
+                        if (restMember->property &&
+                            restMember->property->kind() ==
+                                NodeKind::PrivateIdentifier) {
+                            restPrivate =
+                                static_cast<const frontend::PrivateIdentifier*>(
+                                    restMember->property.get());
+                            restInfo = findPrivateInfo(restPrivate->name);
+                            if (restInfo == nullptr) {
+                                error(*restMember,
+                                      "compiler: undeclared private name #" +
+                                          restPrivate->name);
+                                code_->pop();
+                                continue;
+                            }
+                        } else {
+                            compileMemberKey(*restMember);
+                        }
+                    }
                     code_->newArray(0);
                     code_->define(arrayName);
                     uint32_t loop = code_->here();
+                    code_->pushBoolean(true);
+                    code_->store(doneName);
                     code_->load(iterName);
                     code_->iteratorNext();
                     code_->store(resultName);
                     code_->load(resultName);
                     code_->push("done");
                     code_->getProp();
-                    uint32_t notDone = code_->jfalse();
-                    code_->pushBoolean(true);
                     code_->store(doneName);
+                    code_->load(doneName);
+                    uint32_t notDone = code_->jfalse();
                     uint32_t exit = code_->jmp();
                     code_->patchU32(notDone + 2, code_->here());
                     code_->load(arrayName);
@@ -3283,7 +3336,18 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     code_->jmp(loop);
                     code_->patchU32(exit + 2, code_->here());
                     code_->load(arrayName);
-                    if (rest.argument) {
+                    if (restMember != nullptr) {
+                        if (restPrivate != nullptr) {
+                            if (restInfo->field) {
+                                code_->setPrivateField(restPrivate->name);
+                            } else {
+                                code_->setPrivateSetter(restPrivate->name);
+                            }
+                        } else {
+                            code_->setProp();
+                        }
+                        code_->pop();
+                    } else if (rest.argument) {
                         compileBindingPattern(*rest.argument, lexical,
                                               depth + 1);
                     } else {
@@ -3292,15 +3356,85 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     continue;
                 }
 
+                // 成员目标：Reference 在 IteratorStep 之前求值
+                // （§13.15.5.3 步骤 1），但 ToPropertyKey/PutValue 仍在取得值之后。
+                if (!lexical &&
+                    element->kind() == NodeKind::MemberExpression) {
+                    const auto& member =
+                        static_cast<const frontend::MemberExpression&>(*element);
+                    if (member.optional) {
+                        error(member, "compiler: optional chaining not supported");
+                        code_->pop();
+                        continue;
+                    }
+                    if (!member.object) {
+                        error(member,
+                              "compiler: assignment target missing object");
+                        code_->pop();
+                        continue;
+                    }
+                    compileExpression(*member.object);
+                    const frontend::PrivateIdentifier* privateKey = nullptr;
+                    const PrivateInfo* info = nullptr;
+                    if (member.property &&
+                        member.property->kind() ==
+                            NodeKind::PrivateIdentifier) {
+                        privateKey =
+                            static_cast<const frontend::PrivateIdentifier*>(
+                                member.property.get());
+                        info = findPrivateInfo(privateKey->name);
+                        if (info == nullptr) {
+                            error(member,
+                                  "compiler: undeclared private name #" +
+                                      privateKey->name);
+                            code_->pop();
+                            continue;
+                        }
+                    } else {
+                        compileMemberKey(member);
+                    }
+                    code_->pushBoolean(true);
+                    code_->store(doneName);
+                    code_->load(iterName);
+                    code_->iteratorNext();
+                    code_->store(resultName);
+                    code_->load(resultName);
+                    code_->push("done");
+                    code_->getProp();
+                    code_->store(doneName);
+                    code_->load(doneName);
+                    uint32_t haveValue = code_->jfalse();
+                    code_->pushUndefined();
+                    uint32_t gotValue = code_->jmp();
+                    code_->patchU32(haveValue + 2, code_->here());
+                    code_->load(resultName);
+                    code_->push("value");
+                    code_->getProp();
+                    code_->patchU32(gotValue + 2, code_->here());
+                    if (privateKey != nullptr) {
+                        if (info->field) {
+                            code_->setPrivateField(privateKey->name);
+                        } else {
+                            code_->setPrivateSetter(privateKey->name);
+                        }
+                    } else {
+                        code_->setProp();
+                    }
+                    code_->pop();
+                    continue;
+                }
+
+                code_->pushBoolean(true);
+                code_->store(doneName);
                 code_->load(iterName);
                 code_->iteratorNext();
                 code_->store(resultName);
                 code_->load(resultName);
                 code_->push("done");
                 code_->getProp();
-                uint32_t haveValue = code_->jfalse();
-                code_->pushBoolean(true);
                 code_->store(doneName);
+                code_->load(doneName);
+                uint32_t haveValue = code_->jfalse();
                 code_->pushUndefined();
                 uint32_t gotValue = code_->jmp();
                 code_->patchU32(haveValue + 2, code_->here());
@@ -3329,7 +3463,7 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
             const auto& node =
                 static_cast<const frontend::ObjectPattern&>(pattern);
             const std::string objectName =
-                "*dest-obj-" + std::to_string(depth) + "*";
+                "*dest-obj-" + std::to_string(tempId) + "*";
             // RequireObjectCoercible：null/undefined 不能做对象解构（§13.3.3.5）。
             code_->dup();
             uint32_t coercible = code_->jNotNullish();
@@ -3350,7 +3484,7 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 const auto& prop =
                     static_cast<const frontend::Property&>(*property);
                 if (prop.computed) {
-                    keySlots[i] = "*dest-key-" + std::to_string(depth) + "-" +
+                    keySlots[i] = "*dest-key-" + std::to_string(tempId) + "-" +
                                   std::to_string(computedIndex++) + "*";
                 }
             }
@@ -3420,6 +3554,17 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                         code_->pop();
                         continue;
                     }
+                    // 1. 源 PropertyName 先求值（computed 需 ToPropertyKey）
+                    //    （§13.15.5.2 步骤 1）。
+                    const std::string srcKeySlot =
+                        prop.computed
+                            ? keySlots[index]
+                            : "*dest-srckey-" + std::to_string(tempId) + "-" +
+                                  std::to_string(index) + "*";
+                    compilePropertyKey(prop);
+                    if (prop.computed) code_->toPropertyKey();
+                    code_->define(srcKeySlot);
+                    // 2. 目标 Reference（§13.15.5.4 步骤 1）。
                     compileExpression(*member.object);
                     const frontend::PrivateIdentifier* privateKey = nullptr;
                     const PrivateInfo* info = nullptr;
@@ -3440,14 +3585,9 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     } else {
                         compileMemberKey(member);
                     }
+                    // 3. GetV(value, propertyName)。
                     code_->load(objectName);
-                    compilePropertyKey(prop);
-                    if (prop.computed) {
-                        // 键先 ToPropertyKey，rest 排除按属性键比较（§13.15.5.3）。
-                        code_->toPropertyKey();
-                        code_->dup();
-                        code_->define(keySlots[index]);
-                    }
+                    code_->load(srcKeySlot);
                     code_->getProp();
                     if (privateKey != nullptr) {
                         if (info->field) {
@@ -3493,7 +3633,7 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 return;
             }
             const std::string valueName =
-                "*dest-val-" + std::to_string(depth) + "*";
+                "*dest-val-" + std::to_string(tempId) + "*";
             code_->define(valueName);
             compileExpression(*member.object);
             if (member.property &&

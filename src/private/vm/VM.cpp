@@ -3005,10 +3005,8 @@ Value* VM::opGetSuperBase() {
     }
     Value* base = ctx_->getPrototype(homeObject);
     if (detail::isErrorValue(base)) return fail(base);
-    if (base->type()->kind() == TypeKind::Null ||
-        base->type()->kind() == TypeKind::Undefined) {
-        return fail(detail::typeError(ctx_, "Cannot read properties of null (reading 'super')"));
-    }
+    // GetSuperBase 对 null 原型返回 null 而不抛错；实际的 ToObject 检查由
+    // 后续 GetValue/PutValue 完成（§13.15.2 赋值需先求值 RHS）。
     push(base);
     return nullptr;
 }
