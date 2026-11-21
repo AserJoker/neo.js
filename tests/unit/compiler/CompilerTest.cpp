@@ -2149,6 +2149,33 @@ TEST(CompilerTest, ForOfStringIteratesCodePoints) {
     EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
 }
 
+TEST(CompilerTest, NamedFunctionExpressionHasInnerNameBinding) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var g = function f(n) { return n === 0 ? 1 : f(n - 1); };"
+        "var h = function f() { f = 1; return typeof f; };"
+        "var result = g(3) + (h() === 'function' ? 10 : 0);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, NamedFunctionExpressionAssignmentThrowsInStrict) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var h = function f() {"
+        "  'use strict';"
+        "  try { f = 1; } catch (e) { return e instanceof TypeError ? 1 : 0; }"
+        "  return 0;"
+        "};"
+        "var result = h();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
 TEST(CompilerTest, WithVarInitializerResolvesBindingBeforeRhs) {
     Fixture f;
     Value* value = runScriptResult(

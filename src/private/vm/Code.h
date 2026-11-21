@@ -565,6 +565,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t setFuncNameBinding(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::SetFuncNameBinding);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t setFuncNameIfAbsent(std::string_view name) {
         uint32_t pc = emitOp(OpCode::SetFuncNameIfAbsent);
         emitU32(addString(std::string(name)));

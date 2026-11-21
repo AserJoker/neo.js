@@ -232,6 +232,7 @@ private:
     neo::core::Value* opSetParamNames();
     neo::core::Value* opSetClosure();
     neo::core::Value* opSetFuncName();
+    neo::core::Value* opSetFuncNameBinding();
     neo::core::Value* opSetFuncNameIfAbsent();
     neo::core::Value* opSetFuncNameFromKey();
     neo::core::Value* opThrowReferenceError();

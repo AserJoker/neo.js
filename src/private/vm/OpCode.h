@@ -259,6 +259,9 @@ enum class OpCode : uint16_t {
     SetParamNames,
     SetClosure,     // u32 nameIndex：把作用域链上的变量绑进函数闭包
     SetFuncName,    // u32 nameIndex：设置函数 name
+    // u32 nameIndex：设置 name，并在函数闭包作用域内建立同名不可变绑定
+    // （具名函数表达式的内部名字）。
+    SetFuncNameBinding,
     BindThis,       // [fn, self] → [fn]：把 self 焊死到函数（箭头）
     LoadThis,       // [] → [this]
     StoreThis,      // [self] → []：写入当前函数环境 this

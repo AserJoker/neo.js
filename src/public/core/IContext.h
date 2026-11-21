@@ -496,6 +496,11 @@ public:
     // 其他类型忽略。对应 VM 的 setname 字节码。
     virtual void setFunctionName(Value* fn, std::string_view name) = 0;
 
+    // 具名函数表达式：设置 name，并在函数闭包作用域内建立同名不可变绑定
+    // （§15.2.5 FunctionExpression 的 FunctionEnvironment）。
+    virtual void setFunctionNameBinding(Value* fn,
+                                        std::string_view name) = 0;
+
     // NamedEvaluation（§8.5.4）：仅当函数没有自有 "name" 属性时设置名字。
     // 用于 class 表达式——静态 name 方法会占用该属性，此时不得覆盖。
     virtual void setFunctionNameIfAbsent(Value* fn, std::string_view name) = 0;

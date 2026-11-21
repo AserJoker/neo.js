@@ -389,6 +389,7 @@ public:
                                 std::string_view bindName = {},
                                 const FunctionCreateOptions& opts = {}) override;
     void setFunctionName(Value* fn, std::string_view name) override;
+    void setFunctionNameBinding(Value* fn, std::string_view name) override;
     void setFunctionNameIfAbsent(Value* fn, std::string_view name) override;
     void setFunctionNameFromKey(Value* fn, Value* key,
                                 std::string_view prefix = {}) override;

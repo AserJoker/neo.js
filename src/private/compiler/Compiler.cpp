@@ -2237,7 +2237,7 @@ void Compiler::compileFunctionExpression(
         return;
     }
     compileFunctionObject(node, node.params, *node.body, false, name,
-                          node.generator, node.async);
+                          node.generator, node.async, false, !name.empty());
 }
 
 void Compiler::compileArrowFunctionExpression(
@@ -4410,7 +4410,8 @@ void Compiler::compileFunctionObject(const Node& node,
                                      const frontend::NodeList& params,
                                      const Node& body, bool arrow,
                                      std::string_view name, bool generator,
-                                     bool async, bool method) {
+                                     bool async, bool method,
+                                     bool namedExpression) {
     // 函数严格性：class 方法恒严格，其余取 Sema 标注。
     const sema::FunctionInfo* info =
         sema_.annotations.get<sema::FunctionInfo>(node.id());
@@ -4485,7 +4486,15 @@ void Compiler::compileFunctionObject(const Node& node,
     if (mapped) code_->setParamNames(paramNames);
     if (strict) code_->setStrict();
 
-    if (!name.empty()) code_->setFuncName(name);
+    if (!name.empty()) {
+        // 具名函数表达式的名字是函数自身闭包作用域内的不可变绑定；
+        // 函数声明/方法的名字属于外层绑定，不能在此重复定义。
+        if (namedExpression) {
+            code_->setFuncNameBinding(name);
+        } else {
+            code_->setFuncName(name);
+        }
+    }
 
     // Sema 的捕获列表（穿透捕获）：逐个从定义点作用域链绑进闭包。
     if (const auto* captures =

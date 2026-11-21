@@ -63,6 +63,9 @@ public:
         // 闭包捕获的共享槽位在捕获时尚未初始化：外层稍后 initialize 会原地
         // 替换 Value 的 meta，故 TDZ 判定须动态看槽位是否为 Uninitialized。
         bool sharedTdz = false;
+        // 不可变但非 const 的绑定（具名函数表达式内部名字）：非严格模式下
+        // 赋值静默失败，严格模式才抛 TypeError。
+        bool assignmentSilent = false;
     };
 
 private:

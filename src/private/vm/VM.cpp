@@ -168,6 +168,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::SetParamNames: return "set_param_names";
         case OpCode::SetClosure:    return "set_closure";
         case OpCode::SetFuncName:   return "set_func_name";
+        case OpCode::SetFuncNameBinding: return "set_func_name_binding";
         case OpCode::SetFuncNameIfAbsent: return "set_func_name_if_absent";
         case OpCode::SetFuncNameFromKey:  return "set_func_name_from_key";
         case OpCode::ThrowReferenceError: return "throw_reference_error";
@@ -337,6 +338,7 @@ const VM::Handler* VM::handlers() {
         &VM::opSetParamNames,
         &VM::opSetClosure,
         &VM::opSetFuncName,
+        &VM::opSetFuncNameBinding,
         &VM::opBindThis,
         &VM::opLoadThis,
         &VM::opStoreThis,
@@ -2336,6 +2338,26 @@ Value* VM::opSetFuncName() {
     if (stack_.empty()) return badBytecode("set_func_name: operand stack underflow");
 
     ctx_->setFunctionName(top(), *name);
+    return nullptr;
+}
+
+Value* VM::opSetFuncNameBinding() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_func_name_binding: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("set_func_name_binding: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("set_func_name_binding: operand stack underflow");
+    }
+
+    ctx_->setFunctionNameBinding(top(), *name);
     return nullptr;
 }
 

@@ -1765,6 +1765,20 @@ void Context::setFunctionName(Value* fn, std::string_view name) {
     defineProperty(fn, "name", nameValue, false, false, true);
 }
 
+void Context::setFunctionNameBinding(Value* fn, std::string_view name) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    setFunctionName(fn, name);
+    auto* d = static_cast<FunctionData*>(fn->data());
+    if (d->closureScope == nullptr) return;
+    // 内部名字绑定不可变，且不得遮蔽已捕获的同名外层绑定（ResolvePass 应已
+    // 把函数体内的名字解析到该内部绑定）。
+    if (d->closureScope->bindingKind(name) != Scope::BindingKind::None) return;
+    d->closureScope->define(name, fn, false);
+    if (Scope::Binding* binding = d->closureScope->lookupBinding(name)) {
+        binding->assignmentSilent = true;
+    }
+}
+
 void Context::setFunctionNameIfAbsent(Value* fn, std::string_view name) {
     if (fn->type()->kind() != TypeKind::Function) return;
     Value* key = createString("name");
@@ -2961,6 +2975,9 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     d->closureScope->define(
         name, v, source->mutableBinding, true, false,
         v->type()->kind() == TypeKind::Uninitialized);
+    if (Scope::Binding* captured = d->closureScope->lookupBinding(name)) {
+        captured->assignmentSilent = source->assignmentSilent;
+    }
     return fn;
 }
 
@@ -3516,8 +3533,12 @@ Value* Context::store(std::string_view name, Value* source) {
                         this, "Cannot access '" + std::string(name) +
                                   "' before initialization");
                 }
-                // 不可赋值（const 声明）：拦截并报错
+                // 不可赋值（const 声明）：拦截并报错。具名函数表达式的内部
+                // 名字在非严格模式下是静默失败（§9.1.1.1 SetMutableBinding）。
                 if (!binding->mutableBinding) {
+                    if (binding->assignmentSilent && !hasFlag("strict")) {
+                        return source;
+                    }
                     return detail::typeError(
                         this, "Assignment to constant variable '" + std::string(name) + "'");
                 }
