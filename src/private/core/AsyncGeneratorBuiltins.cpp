@@ -294,8 +294,20 @@ void resumeBody(IContext* ctx, Value* gen, Value* sent) {
     if (detail::isInterruptValue(res)) {
         InterruptData* ir = asInterrupt(res);
         if (ir->kind == InterruptKind::Yield) {
+            Value* yielded = ir->value;
+            // yield* 委托：载荷是迭代器结果对象，异步生成器须读取其 value
+            // 后产出（§15.5.5 步骤 b.vi）。
+            if (ir->delegateResult) {
+                yielded = ctx->getProperty(yielded, "value");
+                if (detail::isErrorValue(yielded)) {
+                    ag->asyncState = AsyncGeneratorState::Completed;
+                    settleReject(ctx, ag, reasonOf(yielded));
+                    asyncGeneratorResumeNext(ctx, gen);
+                    return;
+                }
+            }
             ag->asyncState = AsyncGeneratorState::AwaitingYield;
-            awaitValue(ctx, gen, ir->value, 0);
+            awaitValue(ctx, gen, yielded, 0);
             return;
         }
         if (ir->kind == InterruptKind::Await) {

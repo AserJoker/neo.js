@@ -3220,6 +3220,15 @@ Value* Context::initialize(std::string_view name, Value* source) {
 
 Value* Context::load(std::string_view name) {
     for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        // with 对象环境记录优先于外层绑定（§9.1.1.2）：内层 with 的属性
+        // 遮蔽外层同名变量，必须在继续向外查找前解析。
+        Value* withObj = s->withBindingObject(name);
+        if (withObj != nullptr) {
+            if (detail::isErrorValue(withObj)) return withObj;
+            Value* key = createString(name);
+            if (key == oomValue()) return key;
+            return getProperty(withObj, key);
+        }
         Scope::Binding* binding = s->lookupBinding(name);
         if (binding != nullptr) {
             if (!binding->initialized) {

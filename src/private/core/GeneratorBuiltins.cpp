@@ -46,6 +46,10 @@ Value* interpretResume(IContext* ctx, Value* res) {
     if (k == TypeKind::Exception || k == TypeKind::Fatal) return res;
     if (detail::isInterruptValue(res)) {
         InterruptData* ir = asInterrupt(res);
+        // yield* 委托：载荷已是迭代器结果对象，原样返回（§14.4.14）。
+        if (ir->kind == InterruptKind::Yield && ir->delegateResult) {
+            return ir->value;
+        }
         return createIterResult(ctx, ir->value, ir->kind != InterruptKind::Yield);
     }
     return createIterResult(ctx, res, true);

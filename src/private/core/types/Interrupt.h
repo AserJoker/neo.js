@@ -67,6 +67,9 @@ public:
     InterruptKind kind;
     uint64_t offset;
     Value* value;  // 载荷（永远不为 nullptr，无载荷时用 undefined）
+    // yield* 委托：value 已是迭代器结果对象，消费方须原样返回而非重新包装
+    // （§14.4.14 GeneratorYield(innerResult)）。
+    bool delegateResult = false;
 
     InterruptData(InterruptKind k, uint64_t off, Value* v)
         : kind(k), offset(off), value(v) {}

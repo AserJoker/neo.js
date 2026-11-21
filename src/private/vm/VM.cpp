@@ -604,7 +604,16 @@ Value* VM::resume(const VmState& state, Value* sent) {
     // yield* 挂起点：把注入值转发给被委托迭代器，而不是当作普通 yield 结果。
     if (delegateIterator_ != nullptr) {
         Value* pending = delegateStep(sent);
-        if (pending != nullptr) return pending;
+        if (pending != nullptr) {
+            // 被委托迭代器协议错误（如缺少 throw 方法）是普通异常，
+            // 须进入 yield* 所在 try 帧展开，而不是直接逃逸到调用方。
+            if (pending->type()->kind() == neo::core::TypeKind::Exception) {
+                Value* error = dispatchException(pending);
+                if (error != nullptr) return error;
+            } else {
+                return pending;
+            }
+        }
         return execute();
     }
     if (sent != nullptr && detail::isInterruptValue(sent)) {
@@ -2719,22 +2728,30 @@ Value* VM::delegateStep(Value* sent) {
 
     auto finish = [this]() { delegateIterator_ = nullptr; };
     auto stepResult = [this](Value* result) -> Value* {
+        // IteratorNext 的结果必须是对象（§7.4.2）。
+        if (!detail::isObjectKind(result->type()->kind())) {
+            delegateIterator_ = nullptr;
+            return fail(detail::typeError(ctx_, "iterator result is not an object"));
+        }
         Value* done = ctx_->getProperty(result, "done");
         if (detail::isErrorValue(done)) {
             delegateIterator_ = nullptr;
             return fail(done);
         }
-        Value* value = ctx_->getProperty(result, "value");
-        if (detail::isErrorValue(value)) {
-            delegateIterator_ = nullptr;
-            return fail(value);
-        }
         if (ctx_->toBoolean(done)) {
             delegateIterator_ = nullptr;
+            Value* value = ctx_->getProperty(result, "value");
+            if (detail::isErrorValue(value)) return fail(value);
             push(value);
             return nullptr;
         }
-        return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+        // done=false：不读取 value，直接把迭代器结果对象交给 GeneratorYield
+        // （§14.4.14 步骤 v），由生成器原样返回给调用方。
+        Value* signal = ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, result);
+        if (detail::isInterruptValue(signal)) {
+            neo::core::asInterrupt(signal)->delegateResult = true;
+        }
+        return signal;
     };
 
     bool isThrow = false;
@@ -2750,14 +2767,26 @@ Value* VM::delegateStep(Value* sent) {
     }
 
     if (isThrow) {
+        // 注入的 Throw 信号承载 Exception 包装；转发给迭代器 throw 的应是
+        // 原始抛出值（§27.5.3.3），否则 Exception 会被当作控制信号传播。
+        if (payload != nullptr &&
+            payload->type()->kind() == neo::core::TypeKind::Exception) {
+            payload = static_cast<neo::core::ExceptionData*>(payload->data())
+                          ->child;
+        }
         Value* method = ctx_->getProperty(iterator, "throw");
         if (detail::isErrorValue(method)) {
             finish();
             return fail(method);
         }
         if (!detail::isCallable(method)) {
-            detail::iteratorClose(ctx_, iterator, nullptr);
+            // 无 throw：先 IteratorClose(iterator, normal)，其错误优先于
+            // “缺少 throw 方法”的 TypeError（§14.4.14 步骤 b.iii.2）。
+            Value* closeErr = detail::iteratorClose(ctx_, iterator, nullptr);
             finish();
+            if (closeErr != nullptr && detail::isErrorValue(closeErr)) {
+                return fail(closeErr);
+            }
             return fail(detail::typeError(
                 ctx_, "The iterator does not provide a 'throw' method"));
         }
@@ -2784,21 +2813,31 @@ Value* VM::delegateStep(Value* sent) {
             finish();
             return fail(result);
         }
+        if (!detail::isObjectKind(result->type()->kind())) {
+            finish();
+            return fail(detail::typeError(ctx_, "iterator result is not an object"));
+        }
         Value* done = ctx_->getProperty(result, "done");
         if (detail::isErrorValue(done)) {
             finish();
             return fail(done);
         }
-        Value* value = ctx_->getProperty(result, "value");
-        if (detail::isErrorValue(value)) {
-            finish();
-            return fail(value);
-        }
         if (ctx_->toBoolean(done)) {
+            Value* value = ctx_->getProperty(result, "value");
+            if (detail::isErrorValue(value)) {
+                finish();
+                return fail(value);
+            }
             finish();
             return unwindReturn(value);
         }
-        return ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, value);
+        // done=false：不读取 value，原样产出迭代器结果对象
+        // （§14.4.14 步骤 c.viii GeneratorYield(innerReturnResult)）。
+        Value* signal = ctx_->createInterrupt(neo::core::InterruptKind::Yield, pc_, result);
+        if (detail::isInterruptValue(signal)) {
+            neo::core::asInterrupt(signal)->delegateResult = true;
+        }
+        return signal;
     }
 
     Value* method = ctx_->getProperty(iterator, "next");
