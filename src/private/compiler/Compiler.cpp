@@ -48,8 +48,11 @@ constexpr std::string_view kForIndex = "*for-index*";
 constexpr std::string_view kForValue = "*for-value*";
 constexpr std::string_view kForOwner = "*for-owner*";
 constexpr std::string_view kForIterator = "*for-iterator*";
+constexpr std::string_view kForNext = "*for-next*";
 constexpr std::string_view kForResult = "*for-result*";
 constexpr std::string_view kForDone = "*for-done*";
+// 迭代器 next/value 取值的异常不触发 IteratorClose（§14.7.5.13）。
+constexpr std::string_view kForSkipClose = "*for-skip-close*";
 constexpr std::string_view kSwitchDisc = "*switch-disc*";
 
 // 收集绑定模式中的标识符名（解构声明/参数提升用）。
@@ -976,7 +979,26 @@ void Compiler::compileForInStatement(
     code_->pushUndefined();
     code_->define(kForOwner);
 
+    // ForIn/OfHeadEvaluation：BoundNames 先建 TDZ 环境，RHS 在其中求值
+    // （ES2024 §14.7.5.12 步骤 2）。
+    if (lexical) {
+        code_->pushScope();
+        const bool mutableBinding =
+            declaration->variableKind == frontend::VariableKind::Let;
+        for (const frontend::NodePtr& declarator : declaration->declarations) {
+            if (!declarator) continue;
+            const auto& entry =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            std::vector<std::string> names;
+            if (entry.id) collectPatternNames(*entry.id, names);
+            for (const std::string& name : names) {
+                code_->pushUninitialized();
+                code_->define(name, mutableBinding, false);
+            }
+        }
+    }
     compileExpression(*node.right);
+    if (lexical) code_->popScope();
     code_->forInKeys();
     code_->store(kForKeys);
     code_->push(0.0);
@@ -1082,13 +1104,36 @@ void Compiler::compileForOfStatement(
     code_->pushUndefined();
     code_->define(kForIterator);
     code_->pushUndefined();
+    code_->define(kForNext);
+    code_->pushUndefined();
     code_->define(kForResult);
     code_->pushUndefined();
     code_->define(kForValue);
     code_->pushUndefined();
     code_->define(kForDone);
+    code_->pushUndefined();
+    code_->define(kForSkipClose);
 
+    // ForIn/OfHeadEvaluation：BoundNames 先建 TDZ 环境，RHS 在其中求值
+    // （ES2024 §14.7.5.12 步骤 2）。
+    if (lexical) {
+        code_->pushScope();
+        const bool mutableBinding =
+            declaration->variableKind == frontend::VariableKind::Let;
+        for (const frontend::NodePtr& declarator : declaration->declarations) {
+            if (!declarator) continue;
+            const auto& entry =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            std::vector<std::string> names;
+            if (entry.id) collectPatternNames(*entry.id, names);
+            for (const std::string& name : names) {
+                code_->pushUninitialized();
+                code_->define(name, mutableBinding, false);
+            }
+        }
+    }
     compileExpression(*node.right);
+    if (lexical) code_->popScope();
     if (node.await) {
         if (functionDepth_ == 0) code_->hasTopLevelAwait = true;
         code_->getAsyncIterator();
@@ -1096,6 +1141,12 @@ void Compiler::compileForOfStatement(
         code_->getIterator();
     }
     code_->store(kForIterator);
+    // GetIterator 在序言缓存 [[NextMethod]]（§7.4.2 步骤 4），循环内不再
+    // 重新读取 iterator.next。
+    code_->load(kForIterator);
+    code_->push("next");
+    code_->getProp();
+    code_->store(kForNext);
     code_->pushBoolean(false);
     code_->store(kForDone);
 
@@ -1110,8 +1161,13 @@ void Compiler::compileForOfStatement(
     uint32_t loop = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
 
+    // next()/value 取值的 abrupt completion 直接返回，不 IteratorClose；
+    // 只有赋值与循环体异常才关闭（§14.7.5.13）。
+    code_->pushBoolean(true);
+    code_->store(kForSkipClose);
     code_->load(kForIterator);
-    code_->iteratorNext();
+    code_->load(kForNext);
+    code_->iteratorNextCached();
     if (node.await) code_->awaitValue();
     code_->store(kForResult);
 
@@ -1131,6 +1187,8 @@ void Compiler::compileForOfStatement(
     code_->push("value");
     code_->getProp();
     code_->store(kForValue);
+    code_->pushBoolean(false);
+    code_->store(kForSkipClose);
 
     if (lexical) code_->pushScope();
     code_->load(kForValue);
@@ -1153,6 +1211,8 @@ void Compiler::compileForOfStatement(
     uint32_t finallyStart = code_->here();
     code_->load(kForDone);
     uint32_t toSkipClose = code_->jtrue();
+    code_->load(kForSkipClose);
+    uint32_t toSkipClose2 = code_->jtrue();
     code_->load(kForIterator);
     if (node.await) {
         // AsyncIteratorClose：调用 return 并 Await 其结果（§7.4.7）。
@@ -1164,6 +1224,7 @@ void Compiler::compileForOfStatement(
     }
     uint32_t skipClose = code_->here();
     code_->patchU32(toSkipClose + 2, skipClose);
+    code_->patchU32(toSkipClose2 + 2, skipClose);
     code_->finallyEnd();
 
     uint32_t tryEnd = code_->here();
@@ -3705,6 +3766,18 @@ void Compiler::compileVariableDeclaration(
         // undefined（尤其 var arguments 不能覆盖隐式 arguments 对象）。
         if (!lexical && !decl.init &&
             decl.id->kind() == NodeKind::Identifier) {
+            continue;
+        }
+
+        // with 内：var 的绑定引用在初始化器求值前解析（§14.3.2.1），
+        // 初始化器删除同名属性后仍写回同一个 with 对象。
+        if (!lexical && withDepth_ > 0 && decl.init &&
+            decl.id->kind() == NodeKind::Identifier) {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*decl.id).name;
+            code_->resolveWithRef(name);
+            compileNamedExpression(*decl.init, name);
+            code_->storeWithRef(name);
             continue;
         }
 

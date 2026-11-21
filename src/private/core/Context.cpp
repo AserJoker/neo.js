@@ -2956,7 +2956,11 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     if (source == nullptr) return fn;
     // 绑定 = 共享同一 Value（ADR-013 §2）：closureScope 登记同一 Value。
     // mutability 属于绑定，捕获时必须复制（const 捕获后仍不可写）。
-    d->closureScope->define(name, v, source->mutableBinding);
+    // 捕获时仍在 TDZ 的槽位：外层 initialize 会原地替换同一 Value 的 meta，
+    // 故标记 sharedTdz，由读取方按槽位当前类型动态判定。
+    d->closureScope->define(
+        name, v, source->mutableBinding, true, false,
+        v->type()->kind() == TypeKind::Uninitialized);
     return fn;
 }
 
@@ -3262,7 +3266,12 @@ Value* Context::load(std::string_view name) {
         }
         Scope::Binding* binding = s->lookupBinding(name);
         if (binding != nullptr) {
-            if (!binding->initialized) {
+            // 闭包捕获的绑定共享同一 Value*，其 initialized 标志在捕获时已置真；
+            // 外层稍后 initialize 会原地替换 Value 的 meta，故 sharedTdz 绑定
+            // 还须看槽位当前是否为 Uninitialized 哨兵。
+            if (!binding->initialized ||
+                (binding->sharedTdz && binding->value != nullptr &&
+                 binding->value->type()->kind() == TypeKind::Uninitialized)) {
                 return detail::referenceError(
                     this, "Cannot access '" + std::string(name) +
                               "' before initialization");
@@ -3293,7 +3302,9 @@ Value* Context::loadSoft(std::string_view name) {
     for (Scope* s = current(); s != nullptr; s = s->parent()) {
         Scope::Binding* binding = s->lookupBinding(name);
         if (binding != nullptr) {
-            if (!binding->initialized) {
+            if (!binding->initialized ||
+                (binding->sharedTdz && binding->value != nullptr &&
+                 binding->value->type()->kind() == TypeKind::Uninitialized)) {
                 return detail::referenceError(
                     this, "Cannot access '" + std::string(name) +
                               "' before initialization");
@@ -3496,8 +3507,11 @@ Value* Context::store(std::string_view name, Value* source) {
                 if (binding == nullptr) break;  // 内部契约：Direct 必有条目
                 Value* target = binding->value;
                 if (target == nullptr) break;
-                // TDZ：声明已提升但尚未初始化
-                if (!binding->initialized) {
+                // TDZ：声明已提升但尚未初始化。闭包捕获的绑定共享同一
+                // Value*，其 initialized 在捕获时已置真，须再看槽位哨兵。
+                if (!binding->initialized ||
+                    (binding->sharedTdz &&
+                     target->type()->kind() == TypeKind::Uninitialized)) {
                     return detail::referenceError(
                         this, "Cannot access '" + std::string(name) +
                                   "' before initialization");

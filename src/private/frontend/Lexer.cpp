@@ -35,6 +35,42 @@ bool isDigitForRadix(uint32_t cp, int radix) {
     return value >= 0 && value < radix;
 }
 
+// 从 offset 处窥视一个 `\u` 转义（不移动流），返回码点与消耗的码点数。
+bool peekUnicodeEscape(const CharStream& stream, size_t offset, uint32_t& cp,
+                       size_t& length) {
+    if (stream.peek(offset) != '\\' || stream.peek(offset + 1) != 'u') {
+        return false;
+    }
+    size_t index = offset + 2;
+    if (stream.peek(index) == '{') {
+        ++index;
+        uint32_t value = 0;
+        bool any = false;
+        while (stream.peek(index) != '}') {
+            const int digit = digitValue(stream.peek(index));
+            if (digit < 0) return false;
+            value = value * 16 + static_cast<uint32_t>(digit);
+            if (value > 0x10FFFF) return false;
+            any = true;
+            ++index;
+        }
+        if (!any) return false;
+        cp = value;
+        length = index + 1 - offset;
+        return true;
+    }
+    uint32_t value = 0;
+    for (int count = 0; count < 4; ++count) {
+        const int digit = digitValue(stream.peek(index));
+        if (digit < 0) return false;
+        value = value * 16 + static_cast<uint32_t>(digit);
+        ++index;
+    }
+    cp = value;
+    length = index - offset;
+    return true;
+}
+
 TokenKind keywordKind(std::string_view name) {
     struct Entry {
         std::string_view name;
@@ -654,6 +690,19 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
                     return true;
                 }
                 return false;
+            }
+            // 相邻的高/低代理转义在字符串中组成一个码点（UTF-16 代理对）。
+            if (value >= 0xD800 && value <= 0xDBFF) {
+                uint32_t low = 0;
+                size_t length = 0;
+                if (peekUnicodeEscape(stream_, 0, low, length) &&
+                    low >= 0xDC00 && low <= 0xDFFF) {
+                    for (size_t index = 0; index < length; ++index) {
+                        stream_.advance();
+                    }
+                    value = 0x10000 + ((value - 0xD800) << 10) +
+                            (low - 0xDC00);
+                }
             }
             unicode::encodeCodePoint(value, out);
             return true;

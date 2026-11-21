@@ -187,6 +187,7 @@ private:
     neo::core::Value* opIsEnumerableOwn();
     neo::core::Value* opGetIterator();
     neo::core::Value* opIteratorNext();
+    neo::core::Value* opIteratorNextCached();
     neo::core::Value* opIteratorClose();
     neo::core::Value* opGetAsyncIterator();
     neo::core::Value* opAsyncIteratorClose();

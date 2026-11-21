@@ -454,20 +454,19 @@ NodePtr Parser::parseStatement(bool allowDeclaration) {
         return parseVariableDeclaration();
     }
     if (at(TokenKind::Identifier) && current_.text == "let" &&
-        isLetDeclarationStart()) {
+        !current_.hasEscape && isLetDeclarationStart()) {
         if (!allowDeclaration) {
-            // `let <换行> {` 可按 ASI 拆成表达式语句 + 块；`let [` 受 lookahead
-            // 限制，只能按声明解析，因而在单语句位置报错。
-            const Token next = peek();
-            if (next.kind != TokenKind::LeftBrace ||
-                !next.precededByLineTerminator) {
+            // 单语句位置不允许词法声明：`let [` 受 ExpressionStatement 的
+            // lookahead 限制直接报错；其余按表达式语句解析，换行处由 ASI
+            // 拆成 `let` 与后续语句。
+            if (peek().kind == TokenKind::LeftBracket) {
                 error(current_.start,
                       "Lexical declaration cannot appear in a single-statement context");
                 return nullptr;
             }
-        } else {
-            return parseVariableDeclaration();
+            return parseExpressionStatement();
         }
+        return parseVariableDeclaration();
     }
     if (at(TokenKind::If)) return parseIfStatement();
     if (at(TokenKind::While)) return parseWhileStatement();
@@ -1197,7 +1196,7 @@ NodePtr Parser::parseExportNamedDeclaration(SourceLocation start) {
 
     if (at(TokenKind::Var) || at(TokenKind::Const) ||
         (at(TokenKind::Identifier) && current_.text == "let" &&
-         isLetDeclarationStart())) {
+         !current_.hasEscape && isLetDeclarationStart())) {
         declaration = parseVariableDeclaration();
     } else if (at(TokenKind::Function)) {
         declaration = parseFunctionDeclaration(false);
@@ -1475,7 +1474,7 @@ NodePtr Parser::parseForStatement() {
         const bool declaration =
             at(TokenKind::Var) || at(TokenKind::Const) ||
             (at(TokenKind::Identifier) && current_.text == "let" &&
-             isLetDeclarationStart());
+             !current_.hasEscape && isLetDeclarationStart());
 
         // for 头部用 [~In] 解析，避免把 for-in 的 in 当成二元运算符。
         const bool savedAllowIn = allowIn_;
@@ -1694,12 +1693,11 @@ NodePtr Parser::parseIfStatement() {
 
 bool Parser::isLetDeclarationStart() {
     // `let` 是上下文关键字：`let x` 是声明，`let = 1` / `let;` 是标识符。
-    // `let <换行> x` 按 ASI 拆成两条语句；`let [` 的 lookahead 限制不受换行影响。
+    // 词法声明本身没有 [no LineTerminator here]，故换行不影响判定；
+    // 单语句位置不允许声明时，才由 ASI 把 `let` 与后续语句拆开。
     const Token next = peek();
-    if (next.kind == TokenKind::Identifier) {
-        return !next.precededByLineTerminator;
-    }
-    return next.kind == TokenKind::LeftBracket ||
+    return next.kind == TokenKind::Identifier ||
+           next.kind == TokenKind::LeftBracket ||
            next.kind == TokenKind::LeftBrace;
 }
 

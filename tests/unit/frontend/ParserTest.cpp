@@ -187,6 +187,25 @@ TEST(ParserTest, StringLiteral) {
         "hi\n");
 }
 
+TEST(ParserTest, StringLiteralCombinesSurrogateEscapes) {
+    ParseResult result = parse("(\"\\ud801\\udc28\");");
+
+    ASSERT_TRUE(result.ok());
+    ASSERT_EQ(programOf(result).body.size(), 1u);
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::StringLiteral);
+    EXPECT_EQ(
+        static_cast<const StringLiteral*>(statement.expression.get())->value,
+        "\xF0\x90\x90\xA8");
+}
+
+TEST(ParserTest, EscapedLetIsNotDeclaration) {
+    ParseResult result = parse("l\\u0065t\na;\nvar a;");
+
+    EXPECT_TRUE(result.ok());
+}
+
 TEST(ParserTest, BooleanAndNullLiterals) {
     ParseResult result = parse("true; false; null;");
 

@@ -226,29 +226,19 @@ private:
     }
 };
 
-// for-in/of 的 ForDeclaration 不得包含名为 "let" 的绑定（ES2024 §14.7.1）。
-class ForHeadVisitor final : public IVisitor {
+// 词法声明不得包含名为 "let" 的绑定（ES2024 §14.3.1.1 / §14.7.1）。
+class LexicalBindingVisitor final : public IVisitor {
 public:
     void enter(Walker&, SemaContext& context, frontend::Node& node) override {
-        frontend::Node* left = nullptr;
-        if (node.kind() == frontend::NodeKind::ForOfStatement) {
-            left = static_cast<frontend::ForOfStatement&>(node).left.get();
-        } else if (node.kind() == frontend::NodeKind::ForInStatement) {
-            left = static_cast<frontend::ForInStatement&>(node).left.get();
-        } else {
-            return;
-        }
-        if (left == nullptr ||
-            left->kind() != frontend::NodeKind::VariableDeclaration) {
-            return;
-        }
+        if (node.kind() != frontend::NodeKind::VariableDeclaration) return;
         auto& declaration =
-            static_cast<frontend::VariableDeclaration&>(*left);
+            static_cast<frontend::VariableDeclaration&>(node);
         if (declaration.variableKind == frontend::VariableKind::Var) return;
 
         std::vector<BindingName> names;
         bool nonSimple = false;
         for (frontend::NodePtr& declarator : declaration.declarations) {
+            if (!declarator) continue;
             auto& entry = static_cast<frontend::VariableDeclarator&>(*declarator);
             collectBindingNames(entry.id.get(), names, nonSimple);
         }
@@ -261,6 +251,90 @@ public:
     }
 };
 
+// ClassStaticBlock 内（不跨函数/static block 边界）的 BindingIdentifier
+// 不得为 "await"（ES2024 §15.7.1）。
+class StaticBlockAwaitVisitor final : public IVisitor {
+public:
+    void enter(Walker&, SemaContext& context, frontend::Node& node) override {
+        using frontend::NodeKind;
+        switch (node.kind()) {
+            case NodeKind::StaticBlock:
+                ++staticDepth_;
+                return;
+            case NodeKind::FunctionDeclaration: {
+                auto& function =
+                    static_cast<frontend::FunctionDeclaration&>(node);
+                checkName(context, function.id.get());
+                ++functionDepth_;
+                return;
+            }
+            case NodeKind::FunctionExpression:
+            case NodeKind::ArrowFunctionExpression:
+                ++functionDepth_;
+                return;
+            case NodeKind::ClassDeclaration: {
+                auto& declaration =
+                    static_cast<frontend::ClassDeclaration&>(node);
+                checkName(context, declaration.id.get());
+                return;
+            }
+            case NodeKind::CatchClause: {
+                auto& clause = static_cast<frontend::CatchClause&>(node);
+                checkName(context, clause.param.get());
+                return;
+            }
+            case NodeKind::VariableDeclaration: {
+                auto& declaration =
+                    static_cast<frontend::VariableDeclaration&>(node);
+                for (frontend::NodePtr& declarator : declaration.declarations) {
+                    if (!declarator) continue;
+                    auto& entry = static_cast<frontend::VariableDeclarator&>(
+                        *declarator);
+                    checkName(context, entry.id.get());
+                }
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    void leave(Walker&, SemaContext&, frontend::Node& node) override {
+        using frontend::NodeKind;
+        if (node.kind() == NodeKind::StaticBlock) {
+            --staticDepth_;
+        } else if (node.kind() == NodeKind::FunctionDeclaration ||
+                   node.kind() == NodeKind::FunctionExpression ||
+                   node.kind() == NodeKind::ArrowFunctionExpression) {
+            --functionDepth_;
+        }
+    }
+
+private:
+    static void reportAwait(SemaContext& context, frontend::Node* pattern) {
+        if (pattern == nullptr) return;
+        std::vector<BindingName> names;
+        bool nonSimple = false;
+        collectBindingNames(pattern, names, nonSimple);
+        for (const BindingName& name : names) {
+            if (name.name == "await") {
+                context.error(name.range.start,
+                              "BindingIdentifier may not be 'await' inside a "
+                              "class static block");
+            }
+        }
+    }
+
+    // 只在 static block 内且未跨函数边界时检查。
+    void checkName(SemaContext& context, frontend::Node* pattern) {
+        if (staticDepth_ == 0 || functionDepth_ != 0) return;
+        reportAwait(context, pattern);
+    }
+
+    int staticDepth_ = 0;
+    int functionDepth_ = 0;
+};
+
 }  // namespace
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
@@ -271,7 +345,8 @@ void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
     walker.addAll(makeModuleVisitor(annotations));
     walker.addAll(std::make_unique<DuplicateProtoVisitor>());
     walker.addAll(std::make_unique<ClassElementVisitor>());
-    walker.addAll(std::make_unique<ForHeadVisitor>());
+    walker.addAll(std::make_unique<LexicalBindingVisitor>());
+    walker.addAll(std::make_unique<StaticBlockAwaitVisitor>());
     walker.addAll(std::make_unique<RegExpLiteralVisitor>());
     walker.walk(program, context);
 }

@@ -118,6 +118,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::IsEnumerableOwn: return "is_enumerable_own";
         case OpCode::GetIterator:   return "get_iterator";
         case OpCode::IteratorNext:  return "iterator_next";
+        case OpCode::IteratorNextCached: return "iterator_next_cached";
         case OpCode::IteratorClose: return "iterator_close";
         case OpCode::Add:           return "add";
         case OpCode::Sub:           return "sub";
@@ -288,6 +289,7 @@ const VM::Handler* VM::handlers() {
         &VM::opIsEnumerableOwn,
         &VM::opGetIterator,
         &VM::opIteratorNext,
+        &VM::opIteratorNextCached,
         &VM::opIteratorClose,
         &VM::opAdd,
         &VM::opSub,
@@ -1673,6 +1675,25 @@ Value* VM::opIteratorNext() {
     Value* iterator = pop();
     Value* result = detail::iteratorNext(ctx_, iterator);
     if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opIteratorNextCached() {
+    if (stack_.size() < 2) {
+        return badBytecode("iterator_next_cached: operand stack underflow");
+    }
+    Value* next = pop();
+    Value* iterator = pop();
+    if (!detail::isCallable(next)) {
+        return fail(detail::typeError(ctx_, "iterator next is not a function"));
+    }
+    Value* result = ctx_->call(next, iterator, 0, nullptr);
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    if (!detail::isObjectKind(result->type()->kind())) {
+        return fail(detail::typeError(ctx_, "iterator result is not an object"));
+    }
     push(result);
     return nullptr;
 }

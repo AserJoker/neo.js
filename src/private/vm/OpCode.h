@@ -173,6 +173,9 @@ enum class OpCode : uint16_t {
     IsEnumerableOwn,  // [obj, key] → [bool]：自有属性存在且 enumerable
     GetIterator,   // [iterable] → [iterator]：GetIterator(iterable, sync)
     IteratorNext,  // [iterator] → [iterResult]：调 iterator.next()
+    // [iterator, nextMethod] → [iterResult]：用 GetIterator 缓存的方法，
+    // 以 iterator 为 this 调用（§7.4.2 [[NextMethod]]）。
+    IteratorNextCached,
     IteratorClose, // [iterator] → []：调 iterator.return()（忽略缺失）
 
     Add,

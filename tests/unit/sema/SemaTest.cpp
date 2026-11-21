@@ -66,6 +66,29 @@ TEST(SemaTest, ReportsScopeErrors) {
     EXPECT_FALSE(result.sema.ok());
 }
 
+TEST(SemaTest, ReportsLexicalBindingNamedLet) {
+    Analysis result = analyze("let\nlet;");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+
+    Analysis constant = analyze("const\nlet = 1;");
+    ASSERT_TRUE(constant.parsed.ok());
+    EXPECT_FALSE(constant.sema.ok());
+}
+
+TEST(SemaTest, ReportsAwaitBindingInStaticBlock) {
+    Analysis result = analyze("class C { static { let await; } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+}
+
+TEST(SemaTest, AllowsAwaitBindingAcrossFunctionBoundaryInStaticBlock) {
+    Analysis result =
+        analyze("class C { static { function f(await) { return await; } } }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_TRUE(result.sema.ok());
+}
+
 TEST(SemaTest, ReportsControlFlowErrors) {
     Analysis result = analyze("return 1;");
     ASSERT_TRUE(result.parsed.ok());

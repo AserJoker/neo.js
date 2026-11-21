@@ -60,6 +60,9 @@ public:
         bool initialized = true;  // false 表示 TDZ
         // 变量环境绑定（var/函数声明/形参）：eval 的 var 声明可与之同名复用。
         bool varBinding = false;
+        // 闭包捕获的共享槽位在捕获时尚未初始化：外层稍后 initialize 会原地
+        // 替换 Value 的 meta，故 TDZ 判定须动态看槽位是否为 Uninitialized。
+        bool sharedTdz = false;
     };
 
 private:
@@ -280,12 +283,13 @@ public:
     // 重复检查无条件生效——var/let/const 的差异在 Sema 阶段已抹平，与 strict 无关。
     // 与 bind 的区别：bind 覆盖重名且不 add 跟踪；define 重复检查 + add 跟踪。
     bool define(std::string_view name, Value* v, bool mutableBinding = true,
-                bool initialized = true, bool varBinding = false) {
+                bool initialized = true, bool varBinding = false,
+                bool sharedTdz = false) {
         // 只检查本作用域的直接/间接绑定；with 对象属性不是声明。
         if (bindingKind(name) != BindingKind::None) return false;
         add(v);
         namedValues_[std::string(name)] =
-            Binding{v, mutableBinding, initialized, varBinding};
+            Binding{v, mutableBinding, initialized, varBinding, sharedTdz};
         return true;
     }
 

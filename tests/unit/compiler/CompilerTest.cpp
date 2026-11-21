@@ -2149,6 +2149,98 @@ TEST(CompilerTest, ForOfStringIteratesCodePoints) {
     EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
 }
 
+TEST(CompilerTest, WithVarInitializerResolvesBindingBeforeRhs) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var obj = { x: 1 };"
+        "with (obj) { var x = delete obj.x; }"
+        "var result = (obj.x === true ? 1 : 0) + (x === undefined ? 10 : 0);");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 11.0);
+}
+
+TEST(CompilerTest, ForOfCachesNextMethod) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var loads = 0;"
+        "var iterator = {};"
+        "var i = 0;"
+        "Object.defineProperty(iterator, 'next', {"
+        "  get: function() {"
+        "    loads += 1;"
+        "    return function() {"
+        "      i += 1;"
+        "      return i < 3 ? { value: i, done: false } : { done: true };"
+        "    };"
+        "  },"
+        "  configurable: true"
+        "});"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function() { return iterator; };"
+        "var sum = 0;"
+        "for (var v of iterable) {"
+        "  sum += v;"
+        "  Object.defineProperty(iterator, 'next', {"
+        "    get: function() { throw new Error('re-read next'); },"
+        "    configurable: true"
+        "  });"
+        "}"
+        "var result = sum * 10 + loads;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 31.0);
+}
+
+TEST(CompilerTest, ForOfNextErrorDoesNotCloseIterator) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var returnCount = 0;"
+        "var iterable = {};"
+        "iterable[Symbol.iterator] = function() {"
+        "  return {"
+        "    next: function() { throw new Error('next'); },"
+        "    return: function() { returnCount += 1; return {}; }"
+        "  };"
+        "};"
+        "var caught = 0;"
+        "try { for (var v of iterable) {} }"
+        "catch (e) { caught = 1; }"
+        "var result = caught * 10 + returnCount;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 10.0);
+}
+
+TEST(CompilerTest, ForOfHeadBindingIsInTdz) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "try { for (let x of [x]) {} }"
+        "catch (e) { if (e instanceof ReferenceError) result = 1; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+TEST(CompilerTest, ClosureCapturedTdzBindingThrowsUntilInitialized) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 0;"
+        "var f = function() { return x; };"
+        "try { f(); }"
+        "catch (e) { if (e instanceof ReferenceError) result = 1; }"
+        "let x = 1;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
 TEST(CompilerTest, StringIteratorNext) {
     Fixture f;
     Value* value = runScriptResult(
