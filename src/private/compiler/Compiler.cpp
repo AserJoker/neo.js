@@ -884,6 +884,26 @@ void Compiler::compileForTarget(const frontend::NodePtr& left,
         }
         code_->store(tempName);
         compileExpression(*member.object);
+        if (member.property &&
+            member.property->kind() == NodeKind::PrivateIdentifier) {
+            const std::string& name =
+                static_cast<const frontend::PrivateIdentifier&>(*member.property)
+                    .name;
+            const PrivateInfo* info = findPrivateInfo(name);
+            if (info == nullptr) {
+                error(*left, "compiler: undeclared private name #" + name);
+                code_->pop();
+                return;
+            }
+            code_->load(tempName);
+            if (info->field) {
+                code_->setPrivateField(name);
+            } else {
+                code_->setPrivateSetter(name);
+            }
+            code_->pop();
+            return;
+        }
         compileMemberKey(member);
         code_->load(tempName);
         code_->setProp();
@@ -3378,6 +3398,63 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     error(*property, "compiler: accessor in pattern not supported");
                     continue;
                 }
+                // 赋值目标的 Reference 在 GetV 之前求值（§13.15.5.3）：
+                // 成员目标的 object/key 必须先于读取源属性。
+                if (!lexical && prop.value &&
+                    prop.value->kind() == NodeKind::MemberExpression) {
+                    const auto& member =
+                        static_cast<const frontend::MemberExpression&>(
+                            *prop.value);
+                    if (member.optional) {
+                        error(member, "compiler: optional chaining not supported");
+                        code_->pop();
+                        continue;
+                    }
+                    if (!member.object) {
+                        error(member,
+                              "compiler: assignment target missing object");
+                        code_->pop();
+                        continue;
+                    }
+                    compileExpression(*member.object);
+                    const frontend::PrivateIdentifier* privateKey = nullptr;
+                    const PrivateInfo* info = nullptr;
+                    if (member.property &&
+                        member.property->kind() ==
+                            NodeKind::PrivateIdentifier) {
+                        privateKey =
+                            static_cast<const frontend::PrivateIdentifier*>(
+                                member.property.get());
+                        info = findPrivateInfo(privateKey->name);
+                        if (info == nullptr) {
+                            error(member,
+                                  "compiler: undeclared private name #" +
+                                      privateKey->name);
+                            code_->pop();
+                            continue;
+                        }
+                    } else {
+                        compileMemberKey(member);
+                    }
+                    code_->load(objectName);
+                    compilePropertyKey(prop);
+                    if (prop.computed) {
+                        code_->dup();
+                        code_->define(keySlots[index]);
+                    }
+                    code_->getProp();
+                    if (privateKey != nullptr) {
+                        if (info->field) {
+                            code_->setPrivateField(privateKey->name);
+                        } else {
+                            code_->setPrivateSetter(privateKey->name);
+                        }
+                    } else {
+                        code_->setProp();
+                    }
+                    code_->pop();
+                    continue;
+                }
                 code_->load(objectName);
                 compilePropertyKey(prop);
                 if (prop.computed) {
@@ -3411,6 +3488,27 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 "*dest-val-" + std::to_string(depth) + "*";
             code_->define(valueName);
             compileExpression(*member.object);
+            if (member.property &&
+                member.property->kind() == NodeKind::PrivateIdentifier) {
+                const std::string& name =
+                    static_cast<const frontend::PrivateIdentifier&>(
+                        *member.property)
+                        .name;
+                const PrivateInfo* info = findPrivateInfo(name);
+                if (info == nullptr) {
+                    error(member, "compiler: undeclared private name #" + name);
+                    code_->pop();
+                    return;
+                }
+                code_->load(valueName);
+                if (info->field) {
+                    code_->setPrivateField(name);
+                } else {
+                    code_->setPrivateSetter(name);
+                }
+                code_->pop();
+                return;
+            }
             compileMemberKey(member);
             code_->load(valueName);
             code_->setProp();
