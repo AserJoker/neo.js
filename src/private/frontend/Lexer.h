@@ -26,6 +26,10 @@
 
 namespace neo::frontend {
 
+// name 是否为保留字（关键字 / 未来保留字 / null/true/false）。
+// 含 Unicode 转义的标识符仍按解码后的文本判定保留字。
+bool isReservedWord(std::string_view name);
+
 enum class LexicalGoal {
     Div,                  // 表达式位置：/ 是除法
     RegExp,               // 表达式起始：/ 是正则

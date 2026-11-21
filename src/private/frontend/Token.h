@@ -151,6 +151,10 @@ struct Token {
     // 解码后的值，语义见文件头。
     std::string text;
 
+    // 标识符是否含 Unicode 转义（\uXXXX）。上下文关键字（get/set/async/
+    // static）要求逐字出现，含转义时不得按关键字处理。
+    bool hasEscape = false;
+
     // NumericLiteral 的值。
     double numberValue = 0.0;
     // BigIntLiteral 的进制与数字串（text 中）。

@@ -201,6 +201,8 @@ private:
 
     // 模式
     NodePtr parseBindingPattern();
+    // 绑定标识符：拒绝当前上下文中保留的 await/yield。
+    NodePtr parseBindingIdentifier();
     NodePtr parseBindingElement();
     NodePtr parseObjectPattern();
     NodePtr parseObjectPatternProperty();

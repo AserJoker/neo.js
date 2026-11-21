@@ -476,6 +476,14 @@ NodePtr Parser::parseStatement() {
 NodePtr Parser::parseLabeledStatement() {
     const SourceLocation start = current_.start;
     std::string label = current_.text;
+    // await/yield 在对应上下文中不能作 LabelIdentifier；含转义的保留字也不行。
+    if ((inAsync_ && label == "await") ||
+        (inGenerator_ && label == "yield") ||
+        (current_.hasEscape && isReservedWord(label))) {
+        error(current_.start,
+              "'" + label + "' is not a valid label identifier here");
+        return nullptr;
+    }
     advance();  // label
     if (!expect(TokenKind::Colon, "':'")) return nullptr;
 
@@ -511,7 +519,10 @@ NodePtr Parser::parseDebuggerStatement() {
 
 bool Parser::isAsyncFunctionStart() {
     // async 是上下文关键字：只有紧跟同一行的 function 才构成异步函数。
-    if (!at(TokenKind::Identifier) || current_.text != "async") return false;
+    if (!at(TokenKind::Identifier) || current_.text != "async" ||
+        current_.hasEscape) {
+        return false;
+    }
     const Token next = peek();
     return next.kind == TokenKind::Function &&
            !next.precededByLineTerminator;
@@ -531,13 +542,17 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
         id = parseIdentifier();
     }
 
-    NodeList params;
-    if (!parseFormalParameters(params)) return nullptr;
-
+    // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
     inAsync_ = async;
     inGenerator_ = generator;
+    NodeList params;
+    if (!parseFormalParameters(params)) {
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -562,13 +577,17 @@ NodePtr Parser::parseFunctionExpression(bool async) {
         id = parseIdentifier();
     }
 
-    NodeList params;
-    if (!parseFormalParameters(params)) return nullptr;
-
+    // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
     inAsync_ = async;
     inGenerator_ = generator;
+    NodeList params;
+    if (!parseFormalParameters(params)) {
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -753,7 +772,8 @@ NodePtr Parser::parseClassElement() {
     const SourceLocation start = current_.start;
 
     bool isStatic = false;
-    if (at(TokenKind::Identifier) && current_.text == "static") {
+    if (at(TokenKind::Identifier) && current_.text == "static" &&
+        !current_.hasEscape) {
         const Token next = peek();
         if (next.kind == TokenKind::LeftBrace) {
             advance();  // 'static'
@@ -774,8 +794,8 @@ NodePtr Parser::parseClassElement() {
                                 MethodKind::Method);
     }
 
-    // get/set 访问器
-    if (at(TokenKind::Identifier) &&
+    // get/set 访问器（上下文关键字须逐字出现，含转义则不是关键字）
+    if (at(TokenKind::Identifier) && !current_.hasEscape &&
         (current_.text == "get" || current_.text == "set")) {
         const Token next = peek();
         if (next.kind == TokenKind::PrivateIdentifier ||
@@ -789,7 +809,8 @@ NodePtr Parser::parseClassElement() {
     }
 
     // async 方法：async key() {} / async *key() {}
-    if (at(TokenKind::Identifier) && current_.text == "async") {
+    if (at(TokenKind::Identifier) && current_.text == "async" &&
+        !current_.hasEscape) {
         const Token next = peek();
         if (!next.precededByLineTerminator &&
             (next.kind == TokenKind::Star ||
@@ -856,13 +877,17 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
                                         bool computed, bool isStatic,
                                         bool async, bool generator,
                                         MethodKind methodKind) {
-    NodeList params;
-    if (!parseFormalParameters(params)) return nullptr;
-
+    // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
     inAsync_ = async;
     inGenerator_ = generator;
+    NodeList params;
+    if (!parseFormalParameters(params)) {
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -1707,7 +1732,7 @@ bool Parser::isArrowFunctionStart() {
     if (at(TokenKind::LeftParen)) return parenthesizedArrowAhead();
 
     if (!at(TokenKind::Identifier)) return false;
-    if (current_.text != "async") {
+    if (current_.text != "async" || current_.hasEscape) {
         // 单参数箭头函数：name => ...，=> 前不允许行终止符。
         const Token next = peek();
         return next.kind == TokenKind::Arrow &&
@@ -1761,26 +1786,43 @@ bool Parser::scanArrowAfterParen() {
 
 NodePtr Parser::parseArrowFunction() {
     const SourceLocation start = current_.start;
-    const bool async = at(TokenKind::Identifier) && current_.text == "async";
+    const bool async = at(TokenKind::Identifier) && current_.text == "async" &&
+                       !current_.hasEscape;
     if (async) advance();  // 'async'
 
     NodeList params;
+    // 形参上下文：async 箭头为 [+Await]；[Yield] 从外层继承（箭头不新增）。
+    const bool savedAsync = inAsync_;
+    const bool savedGenerator = inGenerator_;
+    if (async) inAsync_ = true;
     if (at(TokenKind::LeftParen)) {
-        if (!parseFormalParameters(params)) return nullptr;
+        if (!parseFormalParameters(params)) {
+            inAsync_ = savedAsync;
+            inGenerator_ = savedGenerator;
+            return nullptr;
+        }
     } else {
-        NodePtr param = parseIdentifier();
-        if (param == nullptr) return nullptr;
+        NodePtr param = parseBindingIdentifier();
+        if (param == nullptr) {
+            inAsync_ = savedAsync;
+            inGenerator_ = savedGenerator;
+            return nullptr;
+        }
         params.push_back(std::move(param));
     }
 
     if (at(TokenKind::Arrow) && current_.precededByLineTerminator) {
         error(current_.start, "Line terminator before '=>'");
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
         return nullptr;
     }
-    if (!expect(TokenKind::Arrow, "'=>'")) return nullptr;
+    if (!expect(TokenKind::Arrow, "'=>'")) {
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
 
-    const bool savedAsync = inAsync_;
-    const bool savedGenerator = inGenerator_;
     inAsync_ = async;
     inGenerator_ = false;
 
@@ -2102,6 +2144,19 @@ NodePtr Parser::parseNewExpression() {
               "Invalid optional chain in new expression");
         return nullptr;
     }
+    // ImportCall 是 CallExpression，不能作为 new 的成员表达式（§13.3.5）。
+    // 成员链最左端若是未加括号的 import()，整条链也不是 MemberExpression。
+    // 括号包裹时是 PrimaryExpression，语法合法，交由运行时判定。
+    const Node* base = callee.get();
+    while (base->kind() == NodeKind::MemberExpression) {
+        base = static_cast<const MemberExpression&>(*base).object.get();
+        if (base == nullptr) break;
+    }
+    if (base != nullptr && base->kind() == NodeKind::ImportExpression &&
+        !base->isParenthesized()) {
+        error(base->range().start, "Cannot use new with import()");
+        return nullptr;
+    }
 
     NodeList arguments;
     if (at(TokenKind::LeftParen) && !parseArguments(arguments)) {
@@ -2296,7 +2351,8 @@ NodePtr Parser::parseModuleExportName() {
 
 NodePtr Parser::parsePrimaryExpression() {
     // async function 表达式（async 与 function 之间不允许行终止符）。
-    if (at(TokenKind::Identifier) && current_.text == "async") {
+    if (at(TokenKind::Identifier) && current_.text == "async" &&
+        !current_.hasEscape) {
         const Token next = peek();
         if (next.kind == TokenKind::Function &&
             !next.precededByLineTerminator) {
@@ -2306,6 +2362,14 @@ NodePtr Parser::parsePrimaryExpression() {
 
     switch (current_.kind) {
         case TokenKind::Identifier:
+            // await/yield 在对应上下文中不能作 IdentifierReference；
+            // 合法的 await/yield 表达式已在 parseUnary/parseAssignment 处理。
+            if ((inAsync_ && current_.text == "await") ||
+                (inGenerator_ && current_.text == "yield")) {
+                error(current_.start, "'" + current_.text +
+                                          "' is not a valid identifier here");
+                return nullptr;
+            }
             return parseIdentifier();
         case TokenKind::This:
             return parseThisExpression();
@@ -2386,6 +2450,12 @@ NodePtr Parser::parseThisExpression() {
 NodePtr Parser::parseIdentifier() {
     if (!at(TokenKind::Identifier)) {
         error(current_.start, "Expected identifier");
+        return nullptr;
+    }
+    // 含转义的保留字仍是保留字，不能作 Identifier（§12.1）。
+    if (current_.hasEscape && isReservedWord(current_.text)) {
+        error(current_.start,
+              "'" + current_.text + "' is a reserved word");
         return nullptr;
     }
     const SourceLocation start = current_.start;
@@ -2628,13 +2698,17 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
                                            bool computed, bool async,
                                            bool generator,
                                            PropertyKind propertyKind) {
-    NodeList params;
-    if (!parseFormalParameters(params)) return nullptr;
-
+    // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
     inAsync_ = async;
     inGenerator_ = generator;
+    NodeList params;
+    if (!parseFormalParameters(params)) {
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -2659,7 +2733,7 @@ NodePtr Parser::parseProperty() {
     }
 
     // get/set 访问器：get key() {} / set key(v) {}
-    if (at(TokenKind::Identifier) &&
+    if (at(TokenKind::Identifier) && !current_.hasEscape &&
         (current_.text == "get" || current_.text == "set")) {
         const Token next = peek();
         if (isPropertyNameStart(next.kind)) {
@@ -2672,7 +2746,8 @@ NodePtr Parser::parseProperty() {
     }
 
     // async 方法：async key() {} / async *key() {}
-    if (at(TokenKind::Identifier) && current_.text == "async") {
+    if (at(TokenKind::Identifier) && current_.text == "async" &&
+        !current_.hasEscape) {
         const Token next = peek();
         if (!next.precededByLineTerminator &&
             (next.kind == TokenKind::Star ||
@@ -2686,6 +2761,9 @@ NodePtr Parser::parseProperty() {
 
     bool computed = false;
     bool identifierKey = false;
+    // 含转义的保留字可作属性名，但不能作简写 IdentifierReference。
+    const bool keyReservedEscaped =
+        current_.hasEscape && isReservedWord(current_.text);
     NodePtr key = parsePropertyKey(computed, identifierKey);
     if (key == nullptr) return nullptr;
 
@@ -2706,6 +2784,10 @@ NodePtr Parser::parseProperty() {
     // `{a = 1}` 先按 cover grammar 接受，只有转换为赋值模式时才合法。
     if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace) ||
                           at(TokenKind::Assign))) {
+        if (keyReservedEscaped) {
+            error(key->range().start, "Reserved word cannot be a binding");
+            return nullptr;
+        }
         const auto* identifier = static_cast<const Identifier*>(key.get());
         const SourceLocation valueStart = identifier->range().start;
         NodePtr value = std::make_unique<Identifier>(identifier->range(),
@@ -2732,6 +2814,19 @@ NodePtr Parser::parseProperty() {
 NodePtr Parser::parseBindingPattern() {
     if (at(TokenKind::LeftBrace)) return parseObjectPattern();
     if (at(TokenKind::LeftBracket)) return parseArrayPattern();
+    return parseBindingIdentifier();
+}
+
+NodePtr Parser::parseBindingIdentifier() {
+    // await / yield 在对应函数上下文中是保留字，不能作绑定标识符
+    // （AsyncFunctionBody / GeneratorBody 的早期错误）。
+    if (at(TokenKind::Identifier) &&
+        ((inAsync_ && current_.text == "await") ||
+         (inGenerator_ && current_.text == "yield"))) {
+        error(current_.start,
+              "'" + current_.text + "' is not a valid binding identifier here");
+        return nullptr;
+    }
     return parseIdentifier();
 }
 
@@ -2789,6 +2884,8 @@ NodePtr Parser::parseObjectPatternProperty() {
 
     bool computed = false;
     bool identifierKey = false;
+    const bool keyReservedEscaped =
+        current_.hasEscape && isReservedWord(current_.text);
     NodePtr key;
 
     if (at(TokenKind::LeftBracket)) {
@@ -2818,6 +2915,10 @@ NodePtr Parser::parseObjectPatternProperty() {
 
     if (identifierKey && (at(TokenKind::Comma) || at(TokenKind::RightBrace) ||
                           at(TokenKind::Assign))) {
+        if (keyReservedEscaped) {
+            error(key->range().start, "Reserved word cannot be a binding");
+            return nullptr;
+        }
         const auto* identifier = static_cast<const Identifier*>(key.get());
         const SourceLocation valueStart = identifier->range().start;
         NodePtr value = std::make_unique<Identifier>(identifier->range(),

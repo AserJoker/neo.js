@@ -68,6 +68,10 @@ TokenKind keywordKind(std::string_view name) {
 
 }  // namespace
 
+bool isReservedWord(std::string_view name) {
+    return keywordKind(name) != TokenKind::Identifier;
+}
+
 Token Lexer::next(const LexicalContext& context) {
     error_.clear();
 
@@ -206,6 +210,7 @@ bool Lexer::skipTrivia(bool& sawLineTerminator, SourceLocation& errorStart,
 
 bool Lexer::scanIdentifier(Token& token, bool allowEscape) {
     token.text.clear();
+    token.hasEscape = false;
     bool first = true;
 
     while (true) {
@@ -220,6 +225,7 @@ bool Lexer::scanIdentifier(Token& token, bool allowEscape) {
                 return false;
             }
             unicode::encodeCodePoint(escaped, token.text);
+            token.hasEscape = true;
         } else if (first ? unicode::isIdentifierStart(cp)
                          : unicode::isIdentifierContinue(cp)) {
             unicode::encodeCodePoint(cp, token.text);
@@ -234,7 +240,9 @@ bool Lexer::scanIdentifier(Token& token, bool allowEscape) {
         error_ = "Expected identifier";
         return false;
     }
-    token.kind = keywordKind(token.text);
+    // 含 Unicode 转义的标识符不按保留字/关键字处理（§12.6.2）。
+    token.kind =
+        token.hasEscape ? TokenKind::Identifier : keywordKind(token.text);
     return true;
 }
 
