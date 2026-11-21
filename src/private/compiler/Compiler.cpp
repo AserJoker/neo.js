@@ -3376,6 +3376,10 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                             code_->load(keySlots[i]);
                         } else {
                             compilePropertyKey(prop);
+                            if (prop.key &&
+                                prop.key->kind() == NodeKind::NumericLiteral) {
+                                code_->toPropertyKey();
+                            }
                         }
                         ++excludedCount;
                     }
@@ -3439,6 +3443,8 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     code_->load(objectName);
                     compilePropertyKey(prop);
                     if (prop.computed) {
+                        // 键先 ToPropertyKey，rest 排除按属性键比较（§13.15.5.3）。
+                        code_->toPropertyKey();
                         code_->dup();
                         code_->define(keySlots[index]);
                     }
@@ -3458,6 +3464,8 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                 code_->load(objectName);
                 compilePropertyKey(prop);
                 if (prop.computed) {
+                    // 键先 ToPropertyKey，rest 排除按属性键比较（§13.15.5.3）。
+                    code_->toPropertyKey();
                     // 保留一份键值给 rest 排除；define 弹走副本。
                     code_->dup();
                     code_->define(keySlots[index]);

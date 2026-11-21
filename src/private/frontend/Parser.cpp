@@ -2614,6 +2614,7 @@ NodePtr Parser::parseArrayExpression() {
     if (!expect(TokenKind::LeftBracket, "'['")) return nullptr;
 
     NodeList elements;
+    bool trailingCommaAfterSpread = false;
     while (!at(TokenKind::RightBracket) && !at(TokenKind::EndOfInput)) {
         if (at(TokenKind::Comma)) {
             // elision：连续逗号之间的空位用空指针表示。
@@ -2629,14 +2630,21 @@ NodePtr Parser::parseArrayExpression() {
             element = parseAssignmentExpression();
         }
         if (element == nullptr) return nullptr;
+        const bool isSpread = element->kind() == NodeKind::SpreadElement;
         elements.push_back(std::move(element));
 
         if (!match(TokenKind::Comma)) break;
+        if (isSpread && at(TokenKind::RightBracket)) {
+            trailingCommaAfterSpread = true;
+            break;
+        }
     }
 
     if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
-    return std::make_unique<ArrayExpression>(rangeFrom(start),
-                                             std::move(elements));
+    auto array = std::make_unique<ArrayExpression>(rangeFrom(start),
+                                                   std::move(elements));
+    array->trailingCommaAfterSpread = trailingCommaAfterSpread;
+    return array;
 }
 
 NodePtr Parser::parseObjectExpression() {
@@ -2644,6 +2652,7 @@ NodePtr Parser::parseObjectExpression() {
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
 
     NodeList properties;
+    bool trailingCommaAfterSpread = false;
     while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
         NodePtr property;
         if (at(TokenKind::Ellipsis)) {
@@ -2652,14 +2661,21 @@ NodePtr Parser::parseObjectExpression() {
             property = parseProperty();
         }
         if (property == nullptr) return nullptr;
+        const bool isSpread = property->kind() == NodeKind::SpreadElement;
         properties.push_back(std::move(property));
 
         if (!match(TokenKind::Comma)) break;
+        if (isSpread && at(TokenKind::RightBrace)) {
+            trailingCommaAfterSpread = true;
+            break;
+        }
     }
 
     if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
-    return std::make_unique<ObjectExpression>(rangeFrom(start),
-                                              std::move(properties));
+    auto object = std::make_unique<ObjectExpression>(rangeFrom(start),
+                                                     std::move(properties));
+    object->trailingCommaAfterSpread = trailingCommaAfterSpread;
+    return object;
 }
 
 NodePtr Parser::parsePropertyKey(bool& computed, bool& identifierKey) {
@@ -2789,6 +2805,14 @@ NodePtr Parser::parseProperty() {
             return nullptr;
         }
         const auto* identifier = static_cast<const Identifier*>(key.get());
+        // await / yield 在对应上下文中不能作简写属性的 IdentifierReference。
+        if ((inGenerator_ && identifier->name == "yield") ||
+            (inAsync_ && identifier->name == "await")) {
+            error(identifier->range().start,
+                  "'" + identifier->name +
+                      "' is not a valid identifier reference here");
+            return nullptr;
+        }
         const SourceLocation valueStart = identifier->range().start;
         NodePtr value = std::make_unique<Identifier>(identifier->range(),
                                                      identifier->name);
@@ -2920,6 +2944,14 @@ NodePtr Parser::parseObjectPatternProperty() {
             return nullptr;
         }
         const auto* identifier = static_cast<const Identifier*>(key.get());
+        // await / yield 在对应上下文中不能作简写属性的 IdentifierReference。
+        if ((inGenerator_ && identifier->name == "yield") ||
+            (inAsync_ && identifier->name == "await")) {
+            error(identifier->range().start,
+                  "'" + identifier->name +
+                      "' is not a valid identifier reference here");
+            return nullptr;
+        }
         const SourceLocation valueStart = identifier->range().start;
         NodePtr value = std::make_unique<Identifier>(identifier->range(),
                                                      identifier->name);
@@ -2974,10 +3006,20 @@ NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
     switch (node->kind()) {
         case NodeKind::Identifier:
         case NodeKind::MemberExpression:
+        // 内层赋值表达式已在解析时重解释为模式（如 `[{} = yield] = xs`），
+        // 外层再次转换时直接沿用，避免被当作非法目标。
+        case NodeKind::ObjectPattern:
+        case NodeKind::ArrayPattern:
+        case NodeKind::AssignmentPattern:
             return node;
 
         case NodeKind::ArrayExpression: {
             auto* array = static_cast<ArrayExpression*>(node.get());
+            if (array->trailingCommaAfterSpread) {
+                error(node->range().start,
+                      "An elision may not follow an AssignmentRestElement");
+                return nullptr;
+            }
             NodeList elements;
             for (size_t i = 0; i < array->elements.size(); ++i) {
                 NodePtr& element = array->elements[i];
@@ -2995,6 +3037,11 @@ NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
                     NodePtr argument =
                         convertToAssignmentPattern(std::move(spread->argument));
                     if (argument == nullptr) return nullptr;
+                    if (argument->kind() == NodeKind::AssignmentPattern) {
+                        error(argument->range().start,
+                              "Rest element may not have an initializer");
+                        return nullptr;
+                    }
                     elements.push_back(std::make_unique<RestElement>(
                         element->range(), std::move(argument)));
                     continue;
@@ -3010,6 +3057,11 @@ NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
 
         case NodeKind::ObjectExpression: {
             auto* object = static_cast<ObjectExpression*>(node.get());
+            if (object->trailingCommaAfterSpread) {
+                error(node->range().start,
+                      "Rest property must be last");
+                return nullptr;
+            }
             NodeList properties;
             for (size_t i = 0; i < object->properties.size(); ++i) {
                 NodePtr& property = object->properties[i];
@@ -3023,6 +3075,11 @@ NodePtr Parser::convertToAssignmentPattern(NodePtr node) {
                     NodePtr argument =
                         convertToAssignmentPattern(std::move(spread->argument));
                     if (argument == nullptr) return nullptr;
+                    if (argument->kind() == NodeKind::AssignmentPattern) {
+                        error(argument->range().start,
+                              "Rest element may not have an initializer");
+                        return nullptr;
+                    }
                     properties.push_back(std::make_unique<RestElement>(
                         property->range(), std::move(argument)));
                     continue;

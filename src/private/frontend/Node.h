@@ -980,6 +980,8 @@ struct ArrayExpression final : Node {
         : Node(NodeKind::ArrayExpression, range),
           elements(std::move(elements)) {}
     NodeList elements;
+    // 末尾展开元素后跟逗号（`[...x,]`）：字面量合法，但作为赋值模式非法。
+    bool trailingCommaAfterSpread = false;
 };
 
 enum class PropertyKind : uint8_t { Init, Get, Set };
@@ -1012,6 +1014,8 @@ struct ObjectExpression final : Node {
         : Node(NodeKind::ObjectExpression, range),
           properties(std::move(properties)) {}
     NodeList properties;
+    // 末尾 rest 后跟逗号（`{...x,}`）：字面量合法，但作为赋值模式非法。
+    bool trailingCommaAfterSpread = false;
 };
 
 // ...argument（数组字面量 / 调用参数中的展开）
