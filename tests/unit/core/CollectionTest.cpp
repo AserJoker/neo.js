@@ -229,7 +229,7 @@ TEST(CollectionTest, SetBasicsAndIteration) {
     EXPECT_EQ(numbers(values), (std::vector<double>{2}));
 
     // keys 与 values 是同一函数对象
-    EXPECT_EQ(f.ctx->getProperty(set, "keys"), f.ctx->getProperty(set, "values"));
+    EXPECT_EQ((f.ctx->getProperty(set, "keys"))->data(), (f.ctx->getProperty(set, "values"))->data());
 }
 
 TEST(CollectionTest, SetConstructor) {

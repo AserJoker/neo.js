@@ -425,8 +425,8 @@ TEST(ProxyTest, DefinePropertyPartialAccessorKeepsSetter) {
     neo::core::Property prop;
     ASSERT_EQ(target->type()->getOwnProperty(ctx, target, pk, exists, prop), nullptr);
     ASSERT_TRUE(exists);
-    EXPECT_EQ(prop.getter, newGetter);
-    EXPECT_EQ(prop.setter, setter);
+    EXPECT_EQ((prop.getter)->data(), (newGetter)->data());
+    EXPECT_EQ((prop.setter)->data(), (setter)->data());
 }
 
 TEST(ProxyTest, DefinePropertyPartialInvariantUsesPartialDescriptor) {
@@ -480,7 +480,7 @@ TEST(ProxyTest, PrototypeTraps) {
 
     // 无 trap 时回退 target 的原型。
     Value* plain = ctx->createProxy(target, ctx->createObject());
-    EXPECT_EQ(ctx->getPrototype(plain), protoA);
+    EXPECT_EQ((ctx->getPrototype(plain))->data(), (protoA)->data());
 }
 
 TEST(ProxyTest, ApplyAndConstructTraps) {
@@ -854,10 +854,10 @@ TEST(ProxyTest, ClassExtendsProxy) {
     derivedDef.superCtor = proxy;
     Value* derivedCtor = ctx->registerClass(derivedDef);
     ASSERT_EQ(derivedCtor->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(ctx->classSuperConstructor(derivedCtor), proxy);
-    EXPECT_EQ(ctx->getPrototype(derivedCtor), proxy);
-    EXPECT_EQ(ctx->getPrototype(ctx->getProperty(derivedCtor, "prototype")),
-              ctx->getProperty(baseCtor, "prototype"));
+    EXPECT_EQ((ctx->classSuperConstructor(derivedCtor))->data(), (proxy)->data());
+    EXPECT_EQ((ctx->getPrototype(derivedCtor))->data(), (proxy)->data());
+    EXPECT_EQ(ctx->getPrototype(ctx->getProperty(derivedCtor, "prototype"))->data(),
+              ctx->getProperty(baseCtor, "prototype")->data());
 
     Value* inst = ctx->construct(derivedCtor, 0, nullptr);
     ASSERT_TRUE(neo::core::detail::isObjectKind(inst->type()->kind()));

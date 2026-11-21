@@ -679,7 +679,8 @@ inline Value* ordinaryHasInstance(IContext* ctx, Value* ctor, Value* obj) {
          cur != nullptr && isObjectKind(cur->type()->kind());
          cur = ctx->getPrototype(cur)) {
         if (isErrorValue(cur)) return cur;
-        if (cur == proto) return ctx->createBoolean(true);
+        // 原型跨域复制后 Value* 不同但共享 data，按对象身份比较 data（ADR-065 §4）。
+        if (cur->data() == proto->data()) return ctx->createBoolean(true);
     }
     return ctx->createBoolean(false);
 }

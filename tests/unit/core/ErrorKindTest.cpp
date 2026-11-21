@@ -94,8 +94,8 @@ TEST(ErrorKindTest, CreateErrorExceptionWrapsErrorObject) {
     EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "TypeError");
     EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "TypeError: boom");
     // 原型是该子类原型
-    EXPECT_EQ(f.ctx->getPrototype(err),
-              f.ctx->getProperty(f.ctx->global()->lookup("TypeError"), "prototype"));
+    EXPECT_EQ(f.ctx->getPrototype(err)->data(),
+              f.ctx->getProperty(f.ctx->global()->lookup("TypeError"), "prototype")->data());
 }
 
 TEST(ErrorKindTest, CreateBaseError) {

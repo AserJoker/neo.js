@@ -63,9 +63,18 @@ Value* dataCloneError(IContext* ctx, std::string message) {
     return ctx->createException(err);
 }
 
+// 转移列表按 data 身份匹配：跨域复制后 Value* 可能不同（ADR-065 §4）。
+bool containsIdentity(const std::vector<Value*>& list, Value* value) {
+    for (Value* item : list) {
+        if (item != nullptr && item->data() == value->data()) return true;
+    }
+    return false;
+}
+
 struct CloneContext {
     IContext* ctx;
-    std::unordered_map<const Value*, uint32_t> seen;
+    // 按 data 身份判重：跨域复制后同一对象可能有多个 Value*（ADR-065 §4）。
+    std::unordered_map<const void*, uint32_t> seen;
     uint32_t nextId = 1;
     const std::vector<Value*>* transfer = nullptr;
     std::vector<Value*>* transferred = nullptr;
@@ -90,14 +99,14 @@ Value* readStringProp(IContext* ctx, Value* object, std::string_view key,
 // 对象类节点：已见过则产出 Reference 并返回 true；否则分配 id 写入 out。
 bool beginNode(CloneContext& cc, const Value* value, MessageValue& out,
                MessageValueKind kind) {
-    auto it = cc.seen.find(value);
+    auto it = cc.seen.find(value->data());
     if (it != cc.seen.end()) {
         out = MessageValue::reference(it->second);
         return true;
     }
     out.kind = kind;
     out.id = cc.nextId++;
-    cc.seen.emplace(value, out.id);
+    cc.seen.emplace(value->data(), out.id);
     return false;
 }
 
@@ -236,8 +245,7 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
             // （克隆失败时不能产生副作用）。
             out.bytes = data->bytes;
             if (cc.transfer != nullptr &&
-                std::find(cc.transfer->begin(), cc.transfer->end(), value) !=
-                    cc.transfer->end()) {
+                containsIdentity(*cc.transfer, value)) {
                 if (cc.transferred != nullptr) cc.transferred->push_back(value);
             }
             return nullptr;
@@ -290,8 +298,7 @@ Value* cloneValue(IContext* ctx, Value* value, MessageValue& out,
         }
         case TypeKind::MessagePort: {
             if (cc.transfer == nullptr ||
-                std::find(cc.transfer->begin(), cc.transfer->end(), value) ==
-                    cc.transfer->end()) {
+                !containsIdentity(*cc.transfer, value)) {
                 return dataCloneError(ctx,
                                       "MessagePort must be transferred");
             }
@@ -549,7 +556,7 @@ Value* resolveTransferList(IContext* ctx, Value* list,
         } else {
             return dataCloneError(ctx, "Transferable type not supported");
         }
-        if (std::find(out.begin(), out.end(), item) != out.end()) {
+        if (containsIdentity(out, item)) {
             return dataCloneError(ctx, "Duplicate transferable");
         }
         out.push_back(item);

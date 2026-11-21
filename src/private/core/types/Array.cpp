@@ -30,6 +30,22 @@ Value* invalidLength(IContext* ctx) {
     return detail::rangeError(ctx, "Invalid array length");
 }
 
+// 暂时钉住 data-owned 副本，避免挂入 data 前被 GC 回收（ADR-065 §4）。
+struct PinGuard {
+    Value* value = nullptr;
+    explicit PinGuard(Value* v = nullptr) { reset(v); }
+    ~PinGuard() {
+        if (value != nullptr) value->pinRefDec();
+    }
+    void reset(Value* v) {
+        if (value != nullptr) value->pinRefDec();
+        value = v;
+        if (value != nullptr) value->pinRefInc();
+    }
+    PinGuard(const PinGuard&) = delete;
+    PinGuard& operator=(const PinGuard&) = delete;
+};
+
 }  // namespace
 
 // —— 索引键解析 ——
@@ -312,7 +328,12 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
         }
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            Property desc{value, writable, enumerable, configurable, nullptr, nullptr};
+            // scope→data 跨域：元素值必须是 data-owned 副本（ADR-065 §4）。
+            Value* storedValue =
+                value != nullptr ? ctx->copyForStorage(value) : nullptr;
+            if (storedValue == ctx->oomValue()) return storedValue;
+            Property desc{storedValue, writable, enumerable, configurable, nullptr,
+                          nullptr};
             auto it = d->elements.find(index);
             if (it != d->elements.end()) {
                 if (!isCompatiblePropertyDescriptor(it->second, desc)) {
@@ -340,7 +361,16 @@ Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
         if (k == "length") return ctx->createBoolean(false);
         uint32_t index = 0;
         if (parseArrayIndex(k, index)) {
-            Property desc{nullptr, false, enumerable, configurable, getter, setter};
+            // scope→data 跨域：访问器函数必须是 data-owned 副本（ADR-065 §4）。
+            PinGuard pinGetter;
+            PinGuard pinSetter;
+            Value* g = getter != nullptr ? ctx->copyForStorage(getter) : nullptr;
+            if (g == ctx->oomValue()) return g;
+            pinGetter.reset(g);
+            Value* s = setter != nullptr ? ctx->copyForStorage(setter) : nullptr;
+            if (s == ctx->oomValue()) return s;
+            pinSetter.reset(s);
+            Property desc{nullptr, false, enumerable, configurable, g, s};
             auto it = d->elements.find(index);
             if (it != d->elements.end()) {
                 if (!isCompatiblePropertyDescriptor(it->second, desc)) {

@@ -162,7 +162,7 @@ TEST(BigIntBuiltinsTest, PrototypeMetadata) {
     Value* proto = f.ctx->getProperty(ctor, "prototype");
     ASSERT_EQ(proto->type()->kind(), TypeKind::Object);
     EXPECT_EQ(f.ctx->getPrototype(proto), f.ctx->objectPrototype());
-    EXPECT_EQ(f.ctx->getProperty(proto, "constructor"), ctor);
+    EXPECT_EQ((f.ctx->getProperty(proto, "constructor"))->data(), (ctor)->data());
 
     Value* tag = f.ctx->getProperty(
         proto, f.ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag));

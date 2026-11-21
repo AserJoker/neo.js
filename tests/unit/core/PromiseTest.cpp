@@ -75,10 +75,10 @@ TEST(PromiseTest, PrototypeIsPromisePrototype) {
     Value* p = f.ctx->createPromise();
     EXPECT_EQ(f.ctx->getPrototype(p), f.ctx->promisePrototype());
     // %Promise.prototype% 的原型是 Object.prototype
-    EXPECT_EQ(f.ctx->getPrototype(f.ctx->promisePrototype()), f.ctx->objectPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(f.ctx->promisePrototype()))->data(), (f.ctx->objectPrototype())->data());
     // 双向 constructor
-    EXPECT_EQ(f.ctx->getProperty(f.ctx->promisePrototype(), "constructor"),
-              f.ctx->global()->lookup("Promise"));
+    EXPECT_EQ(f.ctx->getProperty(f.ctx->promisePrototype(), "constructor")->data(),
+              f.ctx->global()->lookup("Promise")->data());
 }
 
 TEST(PromiseTest, GlobalPromiseIsConstructor) {
@@ -86,7 +86,7 @@ TEST(PromiseTest, GlobalPromiseIsConstructor) {
     Value* promiseFn = f.ctx->global()->lookup("Promise");
     ASSERT_NE(promiseFn, nullptr);
     EXPECT_EQ(promiseFn->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(f.ctx->getProperty(promiseFn, "prototype"), f.ctx->promisePrototype());
+    EXPECT_EQ((f.ctx->getProperty(promiseFn, "prototype"))->data(), (f.ctx->promisePrototype())->data());
     EXPECT_EQ(str(f.ctx->getProperty(promiseFn, "name")), "Promise");
 }
 

@@ -169,7 +169,7 @@ TEST(ReflectTest, PropertyQueriesAndDelete) {
     ASSERT_EQ(keys->type()->kind(), TypeKind::Array);
     EXPECT_EQ(numOf(ctx->getProperty(keys, "length")), 2.0);
     EXPECT_EQ(strOf(ctx->getProperty(keys, "0")), "x");
-    EXPECT_EQ(ctx->getProperty(keys, "1"), sym);
+    EXPECT_EQ((ctx->getProperty(keys, "1"))->data(), (sym)->data());
 
     // getOwnPropertyDescriptor
     Value* descArgs[2] = {target, ctx->createString("x")};
@@ -231,7 +231,7 @@ TEST(ReflectTest, PrototypeAndExtensibility) {
     EXPECT_TRUE(boolOf(r));
 
     Value* getProtoArgs[1] = {target};
-    EXPECT_EQ(callReflect(ctx, "getPrototypeOf", 1, getProtoArgs), proto);
+    EXPECT_EQ((callReflect(ctx, "getPrototypeOf", 1, getProtoArgs))->data(), (proto)->data());
 
     // 非对象且非 null 的原型 → TypeError。
     Value* badProtoArgs[2] = {target, ctx->createNumber(1)};
@@ -270,7 +270,7 @@ TEST(ReflectTest, ApplyAndConstruct) {
     Value* constructArgs[3] = {ctor, emptyArgs, newTarget};
     Value* obj = callReflect(ctx, "construct", 3, constructArgs);
     ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(obj), newProto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (newProto)->data());
 
     // 非构造器 → TypeError。
     Value* badArgs[2] = {ctx->createObject(), emptyArgs};

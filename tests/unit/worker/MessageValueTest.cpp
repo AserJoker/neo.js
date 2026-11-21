@@ -264,7 +264,7 @@ TEST(MessageValueTest, SupportsCyclicReferences) {
     Value* restored = messageToValue(f.ctx.get(), mv);
     ASSERT_FALSE(neo::core::detail::isErrorValue(restored));
     Value* self = f.ctx->getProperty(restored, "self");
-    EXPECT_EQ(self, restored);
+    EXPECT_EQ((self)->data(), (restored)->data());
 }
 
 TEST(MessageValueTest, ClonesDateMapSetAndRegExp) {

@@ -304,6 +304,7 @@ TEST(CoroutineTest, NestedCoroutinesUseStack) {
 TEST(CoroutineTest, UnreachableCoroutineCollectsExecScope) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {

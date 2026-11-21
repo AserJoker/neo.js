@@ -193,9 +193,9 @@ TEST(NativeClassTest, RegisterBaseClassWithFieldsMethodsAndPrivate) {
     // 原型/描述符
     Value* proto = ctx->getProperty(cls, "prototype");
     ASSERT_EQ(proto->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getProperty(proto, "constructor"), cls);
+    EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (cls)->data());
     Value* sum = ctx->getProperty(proto, "sum");
-    EXPECT_EQ(ctx->functionHomeObject(sum), proto);
+    EXPECT_EQ((ctx->functionHomeObject(sum))->data(), (proto)->data());
 
     // 私有名查询（构造器与成员两种入口）
     EXPECT_EQ(ctx->classPrivateName(cls, "secret"), secret);
@@ -246,15 +246,15 @@ TEST(NativeClassTest, RegisterDerivedClassCallsSuperAndInherits) {
     Value* derivedCtor = ctx->registerClass(derived);
     ASSERT_EQ(derivedCtor->type()->kind(), TypeKind::Function);
 
-    EXPECT_EQ(ctx->classSuperConstructor(derivedCtor), baseCtor);
-    EXPECT_EQ(ctx->getPrototype(derivedCtor), baseCtor);
+    EXPECT_EQ((ctx->classSuperConstructor(derivedCtor))->data(), (baseCtor)->data());
+    EXPECT_EQ((ctx->getPrototype(derivedCtor))->data(), (baseCtor)->data());
     Value* derivedProto = ctx->getProperty(derivedCtor, "prototype");
-    EXPECT_EQ(ctx->getPrototype(derivedProto),
-              ctx->getProperty(baseCtor, "prototype"));
+    EXPECT_EQ(ctx->getPrototype(derivedProto)->data(),
+              ctx->getProperty(baseCtor, "prototype")->data());
 
     Value* inst = ctx->construct(derivedCtor, 0, nullptr);
     ASSERT_EQ(inst->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(inst), derivedProto);
+    EXPECT_EQ((ctx->getPrototype(inst))->data(), (derivedProto)->data());
     EXPECT_EQ(numOf(ctx->getProperty(inst, "baseField")), 1.0);
     EXPECT_EQ(numOf(ctx->getProperty(inst, "derivedField")), 2.0);
 
@@ -281,7 +281,7 @@ TEST(NativeClassTest, ExtendsNullPrototypeChain) {
     EXPECT_EQ(ctx->getPrototype(proto)->type()->kind(), TypeKind::Null);
 
     Value* dummy = ctx->createNativeFunction(noop, 0);
-    EXPECT_EQ(ctx->getPrototype(cls), ctx->getPrototype(dummy));
+    EXPECT_EQ((ctx->getPrototype(cls))->data(), (ctx->getPrototype(dummy))->data());
 
     Value* inst = ctx->construct(cls, 0, nullptr);
     EXPECT_EQ(inst->type()->kind(), TypeKind::Object);

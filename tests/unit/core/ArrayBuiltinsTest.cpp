@@ -87,8 +87,8 @@ TEST(ArrayBuiltinsTest, ArrayPrototypeIsArrayWithConstructor) {
     Value* proto = ctx->arrayPrototype();
     EXPECT_EQ(proto->type()->kind(), TypeKind::Array);
     EXPECT_EQ(dataOf(proto)->length(), 0u);
-    EXPECT_EQ(ctx->getProperty(globalOf(ctx.get(), "Array"), "prototype"), proto);
-    EXPECT_EQ(ctx->getProperty(proto, "constructor"), globalOf(ctx.get(), "Array"));
+    EXPECT_EQ((ctx->getProperty(globalOf(ctx.get(), "Array"), "prototype"))->data(), (proto)->data());
+    EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (globalOf(ctx.get(), "Array"))->data());
 }
 
 TEST(ArrayBuiltinsTest, NewArrayHasArrayPrototype) {
@@ -773,5 +773,5 @@ TEST(ArrayBuiltinsTest, ConstructorPrototypeMayBeArray) {
     Value* proto = ctx->createArray();
     ctx->defineProperty(fn, "prototype", proto, true, false, false);
     Value* obj = ctx->construct(fn, 0, nullptr);
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
 }

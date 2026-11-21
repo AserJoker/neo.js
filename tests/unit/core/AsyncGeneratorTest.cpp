@@ -359,9 +359,9 @@ TEST(AsyncGeneratorTest, PrototypeChain) {
 
     Value* fnProto = f.ctx->getPrototype(gen);
     EXPECT_EQ(fnProto, f.prop(fn, "prototype"));
-    EXPECT_EQ(f.ctx->getPrototype(fnProto), asyncGenProto);
-    EXPECT_EQ(f.ctx->getPrototype(asyncGenProto), asyncIterProto);
-    EXPECT_EQ(f.ctx->getPrototype(asyncIterProto), f.ctx->objectPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(fnProto))->data(), (asyncGenProto)->data());
+    EXPECT_EQ((f.ctx->getPrototype(asyncGenProto))->data(), (asyncIterProto)->data());
+    EXPECT_EQ((f.ctx->getPrototype(asyncIterProto))->data(), (f.ctx->objectPrototype())->data());
 }
 
 TEST(AsyncGeneratorTest, AsyncIteratorSymbolReturnsThis) {
@@ -387,6 +387,7 @@ TEST(AsyncGeneratorTest, ToStringTagIsAsyncGenerator) {
 TEST(AsyncGeneratorTest, UnreachableUnstartedGeneratorIsCollected) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {

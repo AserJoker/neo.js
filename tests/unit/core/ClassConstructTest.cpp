@@ -132,9 +132,9 @@ TEST(ClassConstructTest, BaseClassConstructUsesPrototypeAndNewTarget) {
 
     Value* inst = f.ctx->construct(cls, 0, nullptr);
     ASSERT_EQ(inst->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(f.ctx->getPrototype(inst), proto);
+    EXPECT_EQ((f.ctx->getPrototype(inst))->data(), (proto)->data());
     EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("x"))), 1.0);
-    EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("nt")), cls);
+    EXPECT_EQ((f.ctx->getProperty(inst, f.ctx->createString("nt")))->data(), (cls)->data());
 }
 
 TEST(ClassConstructTest, ReflectConstructNewTargetControlsPrototype) {
@@ -146,8 +146,8 @@ TEST(ClassConstructTest, ReflectConstructNewTargetControlsPrototype) {
     Value* D = makeClass(f.ctx.get(), baseCtor, protoD, nullptr, false);
 
     Value* inst = f.ctx->construct(cls, D, 0, nullptr);
-    EXPECT_EQ(f.ctx->getPrototype(inst), protoD);
-    EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("nt")), D);
+    EXPECT_EQ((f.ctx->getPrototype(inst))->data(), (protoD)->data());
+    EXPECT_EQ((f.ctx->getProperty(inst, f.ctx->createString("nt")))->data(), (D)->data());
 }
 
 TEST(ClassConstructTest, DerivedClassCallsSuperAndInitializesThis) {
@@ -161,10 +161,10 @@ TEST(ClassConstructTest, DerivedClassCallsSuperAndInitializesThis) {
 
     Value* inst = f.ctx->construct(D, 0, nullptr);
     ASSERT_EQ(inst->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(f.ctx->getPrototype(inst), protoD);
+    EXPECT_EQ((f.ctx->getPrototype(inst))->data(), (protoD)->data());
     EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("x"))), 1.0);
     EXPECT_EQ(numOf(f.ctx->getProperty(inst, f.ctx->createString("y"))), 2.0);
-    EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("nt")), D);
+    EXPECT_EQ((f.ctx->getProperty(inst, f.ctx->createString("nt")))->data(), (D)->data());
     g_super = nullptr;
 }
 

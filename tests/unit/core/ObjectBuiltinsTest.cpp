@@ -108,7 +108,7 @@ TEST(ObjectBuiltinsTest, FunctionPrototypeInheritsObjectPrototype) {
     Value* fproto = ctx->functionPrototype();
     ASSERT_NE(fproto, nullptr);
     EXPECT_EQ(fproto->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(ctx->getPrototype(fproto), ctx->objectPrototype());
+    EXPECT_EQ((ctx->getPrototype(fproto))->data(), (ctx->objectPrototype())->data());
 }
 
 TEST(ObjectBuiltinsTest, NewObjectInheritsObjectPrototype) {
@@ -143,11 +143,11 @@ TEST(ObjectBuiltinsTest, ConstructorPrototypeBackReferences) {
     ASSERT_NE(functionFn, nullptr);
 
     // Object.prototype === objectFn.prototype，且 objectProto.constructor === Object
-    EXPECT_EQ(ctx->getProperty(objectFn, "prototype"), ctx->objectPrototype());
-    EXPECT_EQ(ctx->getProperty(ctx->objectPrototype(), "constructor"), objectFn);
+    EXPECT_EQ((ctx->getProperty(objectFn, "prototype"))->data(), (ctx->objectPrototype())->data());
+    EXPECT_EQ((ctx->getProperty(ctx->objectPrototype(), "constructor"))->data(), (objectFn)->data());
     // Function 同理
-    EXPECT_EQ(ctx->getProperty(functionFn, "prototype"), ctx->functionPrototype());
-    EXPECT_EQ(ctx->getProperty(ctx->functionPrototype(), "constructor"), functionFn);
+    EXPECT_EQ((ctx->getProperty(functionFn, "prototype"))->data(), (ctx->functionPrototype())->data());
+    EXPECT_EQ((ctx->getProperty(ctx->functionPrototype(), "constructor"))->data(), (functionFn)->data());
 }
 
 TEST(ObjectBuiltinsTest, ConstructorsInheritFunctionPrototype) {
@@ -512,7 +512,7 @@ TEST(ObjectBuiltinsTest, FunctionProtoBindReturnsBoundFunction) {
     Value* bound = ctx->call(bindFn, fn, 1, args);
     ASSERT_EQ(bound->type()->kind(), TypeKind::Function);
     // 调用绑定函数：this 固定为 boundThis
-    EXPECT_EQ(ctx->call(bound, nullptr, 0, nullptr), boundThis);
+    EXPECT_EQ((ctx->call(bound, nullptr, 0, nullptr))->data(), (boundThis)->data());
     // name = "bound " + target.name
     Value* name = ctx->getProperty(bound, "name");
     ASSERT_EQ(name->type()->kind(), TypeKind::String);
@@ -933,7 +933,7 @@ TEST(ObjectBuiltinsTest, ObjectCreateSetsPrototype) {
     Value* args[1] = {proto};
     Value* obj = callObjectStatic(ctx.get(), "create", 1, args);
     ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "inherited")), 7.0);
 
     // null 原型
@@ -960,7 +960,7 @@ TEST(ObjectBuiltinsTest, ObjectGetAndSetPrototypeOf) {
     Value* proto = ctx->createObject();
     Value* args2[2] = {obj, proto};
     EXPECT_EQ(callObjectStatic(ctx.get(), "setPrototypeOf", 2, args2), obj);
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
 
     // null 原型合法
     Value* argsNull[2] = {obj, ctx->createNull()};
@@ -1093,7 +1093,7 @@ TEST(ObjectBuiltinsTest, OwnPropertyKeysFullOrder) {
     EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 0)), "1");
     EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 1)), "3");
     EXPECT_EQ(strOf(elemOf(ctx.get(), keys, 2)), "z");
-    EXPECT_EQ(elemOf(ctx.get(), keys, 3), sym);  // symbol 保持身份
+    EXPECT_EQ((elemOf(ctx.get(), keys, 3))->data(), (sym)->data());  // symbol 保持身份
     EXPECT_EQ(elemOf(ctx.get(), keys, 4)->type()->kind(), TypeKind::Undefined);
 }
 
@@ -1981,7 +1981,7 @@ TEST(ObjectBuiltinsTest, ObjectCreateAppliesPropertyDescriptors) {
     Value* args[2] = {proto, props};
     Value* obj = callObjectStatic(ctx.get(), "create", 2, args);
     ASSERT_EQ(obj->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 7.0);
     EXPECT_TRUE(boolOf(callObjectStatic(ctx.get(), "isExtensible", 1, &obj)));
 }

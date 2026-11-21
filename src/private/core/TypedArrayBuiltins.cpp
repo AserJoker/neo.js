@@ -736,7 +736,8 @@ bool kindOfConstructor(IContext* ctx, Value* self, TypedArrayKind& out) {
     Value* proto = ctx->getProperty(self, "prototype");
     if (detail::isErrorValue(proto)) return false;
     for (size_t i = 0; i < kKindCount; ++i) {
-        if (ctx->typedArrayPrototype(kKinds[i].kind) == proto) {
+        Value* kindProto = ctx->typedArrayPrototype(kKinds[i].kind);
+        if (kindProto != nullptr && kindProto->data() == proto->data()) {
             out = kKinds[i].kind;
             return true;
         }

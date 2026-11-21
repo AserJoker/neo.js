@@ -215,6 +215,7 @@ TEST(TaskPipelineTest, QueuedTasksSurviveGcAndAreCollectedAfterRun) {
     f.ctx->global()->bind("__order", order);
 
     Value* fn = orderFn(f.ctx.get(), order, "x");
+    f.ctx->gc()->collect();  // 清除 bootstrap 期不可达副本，稳定基线
     size_t valuesBefore = f.ctx->gc()->valueCount();
     f.ctx->postTask(fn, 10);
 

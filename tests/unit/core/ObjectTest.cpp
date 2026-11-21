@@ -115,7 +115,7 @@ TEST(ObjectTest, SetAndGetProperty) {
     Value* val = ctx->createNumber(42);
 
     ctx->setProperty(obj, "x", val);
-    EXPECT_EQ(ctx->getProperty(obj, "x"), val);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (val)->data());
 }
 
 TEST(ObjectTest, GetMissingPropertyReturnsUndefined) {
@@ -220,7 +220,7 @@ TEST(ObjectTest, DefinePropertyWithDescriptor) {
 
     auto* d = static_cast<ObjectData*>(obj->data());
     const Property& p = d->properties.at("x");
-    EXPECT_EQ(p.value, val);
+    EXPECT_EQ((p.value)->data(), (val)->data());
     EXPECT_FALSE(p.writable);
     EXPECT_FALSE(p.enumerable);
     EXPECT_FALSE(p.configurable);
@@ -351,8 +351,35 @@ TEST(ObjectTest, PropertyValuesSurviveGcWhileObjectAlive) {
 
     ctx->gc()->collect();
     // obj 在 scope 中 → 被标记 → 遍历到属性 value → val 保活
-    EXPECT_EQ(ctx->getProperty(obj, "x"), val);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (val)->data());
     EXPECT_DOUBLE_EQ(static_cast<NumberData*>(val->data())->value, 42.0);
+}
+
+// ADR-065 §4：属性/原型存 data-owned 副本，绑定原地改写不影响已存引用。
+TEST(ObjectTest, StoredValuesDoNotAliasBinding) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* slot = ctx->createNumber(1);
+    ctx->global()->bind("v", slot);
+    Value* obj = ctx->createObject();
+    ctx->defineProperty(obj, "x", slot, true, true, true);
+
+    Value* proto = ctx->createObject();
+    IData* protoData = proto->data();
+    ctx->global()->bind("p", proto);
+    Value* child = ctx->createObject();
+    ctx->setPrototype(child, proto);
+
+    // 绑定重新赋值：store 原地 replaceMeta 到新 data
+    ctx->store("v", ctx->createNumber(2));
+    ctx->store("p", ctx->createObject());
+
+    EXPECT_DOUBLE_EQ(
+        static_cast<NumberData*>(ctx->getProperty(obj, "x")->data())->value, 1.0);
+    EXPECT_EQ(ctx->getPrototype(child)->data(), protoData);
 }
 
 // ===== clone =====
@@ -398,7 +425,7 @@ TEST(ObjectTest, SetAndGetPrototype) {
     Value* obj = ctx->createObject();
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(obj, proto), obj);
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
 }
 
 TEST(ObjectTest, SetPrototypeNullClears) {
@@ -463,7 +490,7 @@ TEST(ObjectTest, GetPropertyFindsInheritedData) {
 
     Value* obj = ctx->createObject();
     ctx->setPrototype(obj, proto);
-    EXPECT_EQ(ctx->getProperty(obj, "x"), val);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (val)->data());
 }
 
 TEST(ObjectTest, GetPropertyWalksMultiLevelChain) {
@@ -480,7 +507,7 @@ TEST(ObjectTest, GetPropertyWalksMultiLevelChain) {
     Value* leaf = ctx->createObject();
     ctx->setPrototype(leaf, mid);
 
-    EXPECT_EQ(ctx->getProperty(leaf, "deep"), val);
+    EXPECT_EQ((ctx->getProperty(leaf, "deep"))->data(), (val)->data());
 }
 
 TEST(ObjectTest, OwnPropertyShadowsPrototype) {
@@ -496,7 +523,7 @@ TEST(ObjectTest, OwnPropertyShadowsPrototype) {
     Value* own = ctx->createNumber(2);
     ctx->setProperty(obj, "x", own);
 
-    EXPECT_EQ(ctx->getProperty(obj, "x"), own);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (own)->data());
 }
 
 TEST(ObjectTest, HasPropertyIncludesPrototype) {
@@ -528,7 +555,7 @@ TEST(ObjectTest, SetCreatesOwnPropertyWhenInheritedWritable) {
     Value* own = ctx->createNumber(2);
     EXPECT_EQ(ctx->setProperty(obj, "x", own), own);
     // 在自身上新建，原型不受影响
-    EXPECT_EQ(ctx->getProperty(obj, "x"), own);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (own)->data());
     EXPECT_DOUBLE_EQ(
         static_cast<NumberData*>(ctx->getProperty(proto, "x")->data())->value, 1.0);
     auto* d = static_cast<ObjectData*>(obj->data());
@@ -603,7 +630,7 @@ TEST(ObjectTest, PrototypeSurvivesGcWhileObjectAlive) {
 
     ctx->gc()->collect();
     // obj 在 scope → 标记 → 遍历 prototype → proto 保活 → 其属性值也保活
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
     EXPECT_EQ(ctx->getProperty(obj, "x")->type()->kind(), TypeKind::Number);
 }
 
@@ -633,7 +660,7 @@ TEST(ObjectTest, SymbolKeySetAndGet) {
     Value* val = ctx->createNumber(42);
 
     ctx->setProperty(obj, sym, val);
-    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (val)->data());
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, sym));
 
     // 走 symbols 容器，不进 properties
@@ -674,8 +701,8 @@ TEST(ObjectTest, SymbolKeyDoesNotCollideWithStringKey) {
     ctx->setProperty(obj, sym, symVal);
 
     // 字符串键与 symbol 键互不干扰
-    EXPECT_EQ(ctx->getProperty(obj, "k"), strVal);
-    EXPECT_EQ(ctx->getProperty(obj, sym), symVal);
+    EXPECT_EQ((ctx->getProperty(obj, "k"))->data(), (strVal)->data());
+    EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (symVal)->data());
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_EQ(d->properties.size(), 1u);
     EXPECT_EQ(d->symbols.size(), 1u);
@@ -693,7 +720,7 @@ TEST(ObjectTest, NonStringPrimitiveKeysCoerceToString) {
     ctx->setProperty(obj, numKey, val);
 
     // 1 和 "1" 是同一个键
-    EXPECT_EQ(ctx->getProperty(obj, "1"), val);
+    EXPECT_EQ((ctx->getProperty(obj, "1"))->data(), (val)->data());
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "1"));
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_EQ(d->properties.count("1"), 1u);
@@ -731,8 +758,8 @@ TEST(ObjectTest, SymbolKeyDefinePropertyDescriptor) {
 
     auto* d = static_cast<ObjectData*>(obj->data());
     const auto& sp = d->symbols.at(sym->data());
-    EXPECT_EQ(sp.key, sym);
-    EXPECT_EQ(sp.prop.value, val);
+    EXPECT_EQ((sp.key)->data(), (sym)->data());
+    EXPECT_EQ((sp.prop.value)->data(), (val)->data());
     EXPECT_FALSE(sp.prop.writable);
     // 不可写 → set 报错
     EXPECT_EQ(ctx->setProperty(obj, sym, ctx->createNumber(2))->type()->kind(),
@@ -754,7 +781,7 @@ TEST(ObjectTest, SymbolKeyInheritedThroughPrototype) {
     ctx->setPrototype(obj, proto);
 
     // symbol 键同样沿原型链查找
-    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (val)->data());
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, sym));
 }
 
@@ -771,6 +798,6 @@ TEST(ObjectTest, SymbolKeySurvivesGc) {
 
     // symbol 键只被对象持有（未绑定 scope），靠 enumerateChildren 保活
     ctx->gc()->collect();
-    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (val)->data());
     EXPECT_EQ(static_cast<NumberData*>(val->data())->value, 5.0);
 }

@@ -66,7 +66,7 @@ TEST(PrimitiveWrapperPipelineTest, AllWrapperConstructorsRegistered) {
         Value* fn = globalOf(ctx.get(), name);
         ASSERT_NE(fn, nullptr) << name;
         EXPECT_EQ(fn->type()->kind(), TypeKind::Function) << name;
-        EXPECT_EQ(ctx->getPrototype(fn), ctx->functionPrototype()) << name;
+        EXPECT_EQ((ctx->getPrototype(fn))->data(), (ctx->functionPrototype())->data()) << name;
     }
 }
 

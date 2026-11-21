@@ -243,7 +243,7 @@ TEST(WellKnownSymbolTest, WellKnownSymbolsAreConstructorProperties) {
     for (size_t i = 0; i < kWellKnownSymbolCount; ++i) {
         auto which = static_cast<WellKnownSymbol>(i);
         Value* got = ctx->getProperty(symbolFn, wellKnownSymbolName(which));
-        EXPECT_EQ(got, ctx->getWellKnownSymbol(which));
+        EXPECT_EQ((got)->data(), (ctx->getWellKnownSymbol(which))->data());
     }
 }
 

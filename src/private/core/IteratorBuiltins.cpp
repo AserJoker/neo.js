@@ -67,7 +67,7 @@ bool inheritsIteratorPrototype(IContext* ctx, Value* v) {
         Value* next = ctx->getPrototype(cur);
         if (detail::isErrorValue(next)) return false;
         if (next->type()->kind() == TypeKind::Null) return false;
-        if (next == proto) return true;
+        if (next->data() == proto->data()) return true;
         cur = next;
     }
     return false;

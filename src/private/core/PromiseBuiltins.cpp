@@ -205,7 +205,8 @@ Value* resolveFunction(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[
     if (cellTaken(ctx, cell)) return ctx->createUndefined();
     takeCell(ctx, cell);
 
-    if (resolution == promise) {
+    // 跨域复制后 Value* 不同但共享 data，按对象身份比较 data（ADR-065 §4）。
+    if (resolution->data() == promise->data()) {
         rejectPromise(ctx, promise,
                       errorReason(ctx, ErrorKind::TypeError,
                                   "Chaining cycle detected for promise"));
@@ -395,7 +396,7 @@ Value* promiseResolveCtor(IContext* ctx, Value* ctor, Value* x) {
     if (asPromise(x) != nullptr) {
         Value* xCtor = ctx->getProperty(x, "constructor");
         if (detail::isErrorValue(xCtor)) return xCtor;
-        if (xCtor == ctor) return x;
+        if (xCtor->data() == ctor->data()) return x;
     }
     PromiseCapability cap;
     if (Value* err = newPromiseCapability(ctx, ctor, cap)) return err;

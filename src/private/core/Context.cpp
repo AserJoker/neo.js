@@ -742,11 +742,14 @@ Value* Context::initializeInstanceElements(Value* instance, Value* classCtor) {
                 if (detail::isErrorValue(er)) return er;
             }
         } else {
+            // scope→data 跨域：私有槽值存 data-owned 副本（ADR-065 §4）。
+            Value* stored = copyForStorage(value);
+            if (stored == oomValue_) return stored;
             if (PrivateSlot* existing = findPrivateSlot(slots, elem.name)) {
-                existing->value = value;
+                existing->value = stored;
             } else {
                 ::neo::core::retainPrivateName(elem.name);
-                slots->push_back({elem.name, value});
+                slots->push_back({elem.name, stored});
             }
         }
     }
@@ -880,11 +883,14 @@ Value* Context::initializeStaticPrivateField(Value* classCtor, PrivateName* name
         value = call(def->initializer, classCtor, 0, nullptr);
         if (detail::isErrorValue(value)) return value;
     }
+    // scope→data 跨域：私有槽值存 data-owned 副本（ADR-065 §4）。
+    Value* stored = copyForStorage(value);
+    if (stored == oomValue_) return stored;
     if (PrivateSlot* existing = findPrivateSlot(&cd->slots, name)) {
-        existing->value = value;
+        existing->value = stored;
     } else {
         ::neo::core::retainPrivateName(name);
-        cd->slots.push_back({name, value});
+        cd->slots.push_back({name, stored});
     }
     return createUndefined();
 }
@@ -924,7 +930,10 @@ Value* Context::setPrivate(Value* obj, PrivateName* name, Value* value) {
     if (slot->value == nullptr) {
         return privateMemberError(this, name, "write non-field");
     }
-    slot->value = value;
+    // scope→data 跨域：私有槽值存 data-owned 副本（ADR-065 §4）。
+    Value* stored = copyForStorage(value);
+    if (stored == oomValue_) return stored;
+    slot->value = stored;
     return createUndefined();
 }
 
@@ -1671,6 +1680,14 @@ Value* Context::cloneValue(Value* source) {
     return createTracked(source->type(), cloned, {});
 }
 
+Value* Context::copyForStorage(Value* source) {
+    if (source == nullptr) return nullptr;
+    // data-owned 副本：与源共享 data，不进入当前作用域（ADR-065 §4）。
+    Value* copy = gc_->createValue(source->type(), source->data());
+    if (copy == nullptr) return oomValue_;
+    return copy;
+}
+
 void Context::setFunctionConstructor(Value* fn, NativeFn ctor) {
     // 仅对 Function 类型有效（内建注册用），其他类型忽略
     if (fn->type()->kind() != TypeKind::Function) return;
@@ -1836,16 +1853,30 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
         return oomValue_;
     }
     d->boundTarget = target;
-    d->boundThis = boundThis != nullptr ? boundThis : createUndefined();
-    if (argc > 0) d->boundArgs.assign(argv, argv + argc);
+    // 先登记函数 Value，使后续 data-owned 副本在创建后即可被 GC 标记到，
+    // 避免副本在挂入 boundThis/boundArgs 前被回收（ADR-065 §4 分配窗口）。
+    Value* fnValue = createTracked(getFunctionType(), d, {});
+    if (fnValue == oomValue_) return fnValue;
+    // scope→data 跨域：绑定 this/实参存 data-owned 副本（ADR-065 §4）。
+    d->boundThis = boundThis != nullptr ? copyForStorage(boundThis)
+                                        : createUndefined();
+    if (d->boundThis == oomValue_) return d->boundThis;
+    if (argc > 0) {
+        d->boundArgs.reserve(argc);
+        for (size_t i = 0; i < argc; ++i) {
+            Value* copy = copyForStorage(argv[i]);
+            if (copy == oomValue_) return copy;
+            d->boundArgs.push_back(copy);
+        }
+    }
     // §10.4.1.3 step 2：绑定函数继承 target 的 [[Construct]] 能力
     // （target 可以是可构造的 Proxy）。
     d->constructible = detail::isConstructor(target);
 
-    Value* fnValue = createTracked(getFunctionType(), d, {});
-    if (fnValue == oomValue_) return fnValue;
     if (functionPrototype_ != nullptr) {
-        static_cast<ObjectData*>(fnValue->data())->prototype = functionPrototype_;
+        Value* proto = copyForStorage(functionPrototype_);
+        if (proto == oomValue_) return proto;
+        static_cast<ObjectData*>(fnValue->data())->prototype = proto;
     }
     // 绑定函数的 name = "bound " + target.name（ES2024 §10.4.1.3 step 6）
     Value* targetName = getProperty(target, "name");

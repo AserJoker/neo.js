@@ -336,7 +336,7 @@ TEST(AccessorTest, DefinePropertyOverridesAccessor) {
     // 改成数据属性
     Value* val = ctx->createNumber(1);
     ctx->defineProperty(obj, "x", val);
-    EXPECT_EQ(ctx->getProperty(obj, "x"), val);
+    EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (val)->data());
 
     auto* d = static_cast<ObjectData*>(obj->data());
     EXPECT_EQ(d->properties.at("x").getter, nullptr);
@@ -394,7 +394,7 @@ TEST(AccessorTest, AccessorDescriptorFlags) {
 
     auto* d = static_cast<ObjectData*>(obj->data());
     const auto& p = d->properties.at("x");
-    EXPECT_EQ(p.getter, getter);
+    EXPECT_EQ((p.getter)->data(), (getter)->data());
     EXPECT_EQ(p.setter, nullptr);
     EXPECT_EQ(p.value, nullptr);
     EXPECT_TRUE(p.enumerable);
@@ -544,7 +544,7 @@ TEST(AccessorTest, SymbolKeyDefinePropertyOverridesAccessor) {
     ctx->defineAccessor(obj, sym, ctx->createNativeFunction(getter42, 0), nullptr);
     Value* val = ctx->createNumber(1);
     ctx->defineProperty(obj, sym, val);
-    EXPECT_EQ(ctx->getProperty(obj, sym), val);
+    EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (val)->data());
 }
 
 TEST(AccessorTest, SymbolKeyDefineAccessorOverridesExisting) {

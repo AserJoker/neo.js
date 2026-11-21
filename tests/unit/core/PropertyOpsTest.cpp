@@ -211,7 +211,7 @@ TEST(PropertyOpsTest, FunctionPropertyOpsBehaveLikeObject) {
     Value* v = ctx->createNumber(1);
     EXPECT_EQ(ctx->setProperty(fn, "x", v), v);
     EXPECT_TRUE(neo::test::hasProperty(ctx, fn, "x"));
-    EXPECT_EQ(ctx->getProperty(fn, "x"), v);
+    EXPECT_EQ((ctx->getProperty(fn, "x"))->data(), (v)->data());
 
     // defineProperty 完整描述符
     ctx->defineProperty(fn, "y", ctx->createNumber(2), false, false, false);
@@ -339,12 +339,12 @@ TEST(PropertyOpsTest, FunctionPrototypeOpsBehaveLikeObject) {
 
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(fn, proto), fn);
-    EXPECT_EQ(ctx->getPrototype(fn), proto);
+    EXPECT_EQ((ctx->getPrototype(fn))->data(), (proto)->data());
 
     // 原型链查找对函数生效
     Value* val = ctx->createNumber(7);
     ctx->setProperty(proto, "inherited", val);
-    EXPECT_EQ(ctx->getProperty(fn, "inherited"), val);
+    EXPECT_EQ((ctx->getProperty(fn, "inherited"))->data(), (val)->data());
     EXPECT_TRUE(neo::test::hasProperty(ctx, fn, "inherited"));
 }
 

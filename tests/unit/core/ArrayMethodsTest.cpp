@@ -219,7 +219,7 @@ TEST(ArrayMethodsTest, ConcatSpreadableAndHoles) {
     Value* result2 = f.call(a, "concat", 1, args2);
     auto* d = static_cast<ArrayData*>(result2->data());
     ASSERT_EQ(d->length(), 3u);
-    EXPECT_EQ(d->elementAt(2), obj);
+    EXPECT_EQ((d->elementAt(2))->data(), (obj)->data());
 }
 
 TEST(ArrayMethodsTest, SpliceInsertDeleteAndReturn) {

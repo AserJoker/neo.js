@@ -122,7 +122,7 @@ TEST(ObjectStaticsTest, GetOwnPropertySymbols) {
     Value* symbols = f.callStatic("getOwnPropertySymbols", 1, args);
     ASSERT_FALSE(isError(symbols));
     ASSERT_EQ(lengthOf(symbols), 1u);
-    EXPECT_EQ(elementAt(symbols, 0), sym);
+    EXPECT_EQ((elementAt(symbols, 0))->data(), (sym)->data());
 }
 
 TEST(ObjectStaticsTest, FromEntries) {

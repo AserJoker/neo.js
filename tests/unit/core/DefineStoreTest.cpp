@@ -553,7 +553,7 @@ TEST(ScopeFlagTest, NonStrictStoreDefinesGlobal) {
     auto* result = ctx->store("implicit", ctx->createNumber(42.0));
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->type()->kind(), TypeKind::Number);
-    EXPECT_EQ(result, ctx->global()->lookup("implicit"));
+    EXPECT_EQ((result)->data(), (ctx->global()->lookup("implicit"))->data());
 
     auto* d = static_cast<NumberData*>(result->data());
     EXPECT_DOUBLE_EQ(d->value, 42.0);
@@ -574,7 +574,7 @@ TEST(ScopeFlagTest, NonStrictStoreInChildScopeDefinesGlobal) {
     // 子 scope 中非严格 store → 定义到 global（不是当前 scope）
     auto* result = ctx->store("g", ctx->createNumber(7.0));
     ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result, ctx->global()->lookup("g"));
+    EXPECT_EQ((result)->data(), (ctx->global()->lookup("g"))->data());
     EXPECT_EQ(ctx->current()->lookup("g"), nullptr);
 
     ctx->popScope();

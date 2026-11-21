@@ -1099,7 +1099,8 @@ Value* arrayFrom(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* thisArg = argOrUndefined(ctx, argc, argv, 2);
 
     Value* arrayCtor = ctx->global()->lookup("Array");
-    bool useDefault = !detail::isCallable(self) || self == arrayCtor;
+    bool useDefault = !detail::isCallable(self) || arrayCtor == nullptr ||
+                      self->data() == arrayCtor->data();
 
     Value* iteratorMethod =
         ctx->getProperty(items, ctx->getWellKnownSymbol(WellKnownSymbol::Iterator));
@@ -1157,7 +1158,8 @@ Value* arrayFrom(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 // Array.of(...items)（ES2024 §23.1.2.3）
 Value* arrayOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* arrayCtor = ctx->global()->lookup("Array");
-    Value* result = (!detail::isCallable(self) || self == arrayCtor)
+    Value* result = (!detail::isCallable(self) || arrayCtor == nullptr ||
+                     self->data() == arrayCtor->data())
                         ? ctx->createArray()
                         : ctx->construct(self, 0, nullptr);
     if (detail::isErrorValue(result)) return result;

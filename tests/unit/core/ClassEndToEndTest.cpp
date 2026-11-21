@@ -162,7 +162,7 @@ TEST(ClassEndToEndTest, DerivedClassWithFieldsMethodsSuperAndGc) {
 
     Value* inst = ctx->construct(derived.ctor, 0, nullptr);
     ASSERT_EQ(inst->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(inst), derived.proto);
+    EXPECT_EQ((ctx->getPrototype(inst))->data(), (derived.proto)->data());
     EXPECT_EQ(numOf(ctx->getProperty(inst, ctx->createString("baseField"))), 10.0);
     EXPECT_EQ(numOf(ctx->getProperty(inst, ctx->createString("derivedField"))), 20.0);
 
@@ -193,12 +193,12 @@ TEST(ClassEndToEndTest, DerivedClassWithFieldsMethodsSuperAndGc) {
     ASSERT_EQ(bound->type()->kind(), TypeKind::Function);
     Value* boundInst = ctx->construct(bound, 0, nullptr);
     ASSERT_EQ(boundInst->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(boundInst), derived.proto);
+    EXPECT_EQ((ctx->getPrototype(boundInst))->data(), (derived.proto)->data());
     EXPECT_EQ(numOf(ctx->getProperty(boundInst, ctx->createString("derivedField"))), 20.0);
 
     // GC 后实例、原型、方法、字段仍可用
     ctx->gc()->collect();
-    EXPECT_EQ(ctx->getPrototype(inst), derived.proto);
+    EXPECT_EQ((ctx->getPrototype(inst))->data(), (derived.proto)->data());
     EXPECT_EQ(numOf(ctx->getProperty(inst, ctx->createString("baseField"))), 10.0);
     Value* r2 = ctx->call(ctx->getProperty(inst, ctx->createString("hello")), inst, 0,
                           nullptr);

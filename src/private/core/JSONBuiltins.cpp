@@ -615,7 +615,7 @@ private:
         }
 
         for (Value* active : stack_) {
-            if (active == value) {
+            if (active->data() == value->data()) {
                 return detail::typeError(ctx_,
                                          "Converting circular structure to JSON");
             }

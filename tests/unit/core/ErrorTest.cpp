@@ -87,10 +87,10 @@ TEST(ErrorTest, PrototypeIsErrorPrototype) {
     Value* proto = f.ctx->getPrototype(err);
     EXPECT_EQ(proto, f.ctx->errorPrototype());
     // %Error.prototype% 的原型是 Object.prototype
-    EXPECT_EQ(f.ctx->getPrototype(f.ctx->errorPrototype()), f.ctx->objectPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(f.ctx->errorPrototype()))->data(), (f.ctx->objectPrototype())->data());
     // 双向 constructor
-    EXPECT_EQ(f.ctx->getProperty(f.ctx->errorPrototype(), "constructor"),
-              f.ctx->global()->lookup("Error"));
+    EXPECT_EQ(f.ctx->getProperty(f.ctx->errorPrototype(), "constructor")->data(),
+              f.ctx->global()->lookup("Error")->data());
 }
 
 TEST(ErrorTest, GlobalErrorIsConstructor) {
@@ -98,7 +98,7 @@ TEST(ErrorTest, GlobalErrorIsConstructor) {
     Value* errorFn = f.ctx->global()->lookup("Error");
     ASSERT_NE(errorFn, nullptr);
     EXPECT_EQ(errorFn->type()->kind(), TypeKind::Function);
-    EXPECT_EQ(f.ctx->getProperty(errorFn, "prototype"), f.ctx->errorPrototype());
+    EXPECT_EQ((f.ctx->getProperty(errorFn, "prototype"))->data(), (f.ctx->errorPrototype())->data());
     EXPECT_EQ(str(f.ctx->getProperty(errorFn, "name")), "Error");
 }
 
@@ -329,12 +329,12 @@ TEST(ErrorTest, NativeErrorConstructorsRegistered) {
         // 子类原型的原型是 %Error.prototype%
         Value* proto = f.ctx->getProperty(fn, "prototype");
         ASSERT_NE(proto, nullptr) << name;
-        EXPECT_EQ(f.ctx->getPrototype(proto), f.ctx->errorPrototype()) << name;
+        EXPECT_EQ((f.ctx->getPrototype(proto))->data(), (f.ctx->errorPrototype())->data()) << name;
         // 子类原型是普通对象（无 [[ErrorData]]，§20.5.6.3）
         EXPECT_EQ(proto->type()->kind(), TypeKind::Object) << name;
         // 自有 name + 双向 constructor
         EXPECT_EQ(str(f.ctx->getProperty(proto, "name")), name) << name;
-        EXPECT_EQ(f.ctx->getProperty(proto, "constructor"), fn) << name;
+        EXPECT_EQ((f.ctx->getProperty(proto, "constructor"))->data(), (fn)->data()) << name;
     }
 }
 
@@ -355,7 +355,7 @@ TEST(ErrorTest, NativeErrorConstructWithMessage) {
         ASSERT_EQ(err->type()->kind(), TypeKind::Error) << name;
         EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "bad") << name;
         // 实例原型是该子类原型，不是 %Error.prototype%
-        EXPECT_EQ(f.ctx->getPrototype(err), f.ctx->getProperty(fn, "prototype")) << name;
+        EXPECT_EQ((f.ctx->getPrototype(err))->data(), (f.ctx->getProperty(fn, "prototype"))->data()) << name;
         // name 沿原型链读到自己子类的 name
         EXPECT_EQ(str(f.ctx->getProperty(err, "name")), name) << name;
     }
@@ -421,9 +421,9 @@ TEST(ErrorTest, AggregateErrorRegisteredAsErrorSubclass) {
     Value* proto = f.ctx->getProperty(fn, "prototype");
     // 原型是普通对象，原型链指向 %Error.prototype%
     EXPECT_EQ(proto->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(f.ctx->getPrototype(proto), f.ctx->errorPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(proto))->data(), (f.ctx->errorPrototype())->data());
     EXPECT_EQ(str(f.ctx->getProperty(proto, "name")), "AggregateError");
-    EXPECT_EQ(f.ctx->getProperty(proto, "constructor"), fn);
+    EXPECT_EQ((f.ctx->getProperty(proto, "constructor"))->data(), (fn)->data());
 }
 
 TEST(ErrorTest, AggregateErrorCollectsErrorsFromIterable) {
@@ -439,7 +439,7 @@ TEST(ErrorTest, AggregateErrorCollectsErrorsFromIterable) {
     ASSERT_EQ(err->type()->kind(), TypeKind::Error);
     EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "AggregateError");
     EXPECT_EQ(str(f.ctx->getProperty(err, "message")), "two failed");
-    EXPECT_EQ(f.ctx->getPrototype(err), f.ctx->getProperty(fn, "prototype"));
+    EXPECT_EQ((f.ctx->getPrototype(err))->data(), (f.ctx->getProperty(fn, "prototype"))->data());
 
     Value* stored = f.ctx->getProperty(err, "errors");
     ASSERT_EQ(stored->type()->kind(), TypeKind::Array);
@@ -521,7 +521,7 @@ TEST(ErrorTest, NativeErrorInstanceOfViaPrototypeChain) {
     Value* cur = f.ctx->getPrototype(err);
     int i = 0;
     for (; cur != nullptr && i < 3; cur = f.ctx->getPrototype(cur), ++i) {
-        EXPECT_EQ(cur, chain[i]) << "chain depth " << i;
+        EXPECT_EQ((cur)->data(), (chain[i])->data()) << "chain depth " << i;
     }
     EXPECT_EQ(i, 3);
 }

@@ -101,7 +101,7 @@ TEST(ArrayTest, ArrayPrototypeIsArrayAndInheritsObjectPrototype) {
     Value* proto = ctx->arrayPrototype();
     ASSERT_NE(proto, nullptr);
     EXPECT_EQ(proto->type()->kind(), TypeKind::Array);
-    EXPECT_EQ(ctx->getPrototype(proto), ctx->objectPrototype());
+    EXPECT_EQ((ctx->getPrototype(proto))->data(), (ctx->objectPrototype())->data());
 }
 
 TEST(ArrayTest, CreateArrayWithBindName) {
@@ -129,6 +129,23 @@ TEST(ArrayTest, SetAndGetIndex) {
     EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 10.0);
     EXPECT_EQ(numOf(ctx->getProperty(arr, "1")), 20.0);
     EXPECT_EQ(dataOf(arr)->length(), 2u);
+}
+
+// ADR-065 §4：数组元素存 data-owned 副本，绑定原地改写不影响已存元素。
+TEST(ArrayTest, ElementDoesNotAliasBinding) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    Value* slot = ctx->createNumber(1);
+    ctx->global()->bind("v", slot);
+    Value* arr = ctx->createArray();
+    ctx->setProperty(arr, "0", slot);
+
+    ctx->store("v", ctx->createNumber(2));
+
+    EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 1.0);
 }
 
 TEST(ArrayTest, NumberKeyIsSameAsStringKey) {
@@ -776,7 +793,7 @@ TEST(ArrayTest, SetPrototypeWorks) {
     Value* arr = ctx->createArray();
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(arr, proto), arr);
-    EXPECT_EQ(ctx->getPrototype(arr), proto);
+    EXPECT_EQ((ctx->getPrototype(arr))->data(), (proto)->data());
 }
 
 TEST(ArrayTest, SetPrototypeRejectsPrimitive) {

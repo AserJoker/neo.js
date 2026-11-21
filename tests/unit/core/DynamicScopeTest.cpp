@@ -231,6 +231,7 @@ TEST(DynamicScopeTest, ExplicitEnvironmentCapturePrimitive) {
 TEST(DynamicScopeTest, UnreachableEnvironmentClosureReclaimsPinnedScope) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baselineValues = gc->valueCount();
     size_t baselineChildren = f.ctx->root()->childCount();
 
@@ -316,6 +317,7 @@ TEST(DynamicScopeTest, SimulatedEvalReadsAndWritesCallerBinding) {
 TEST(DynamicScopeTest, SimulatedEvalEnvironmentIsReclaimedWhenClosureDies) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baselineValues = gc->valueCount();
     size_t baselineChildren = f.ctx->root()->childCount();
 
@@ -345,6 +347,7 @@ TEST(DynamicScopeTest, SimulatedEvalEnvironmentIsReclaimedWhenClosureDies) {
 TEST(DynamicScopeTest, NestedPinnedScopesAreReclaimedBottomUp) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baselineValues = gc->valueCount();
     size_t baselineChildren = f.ctx->root()->childCount();
 

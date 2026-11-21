@@ -79,6 +79,23 @@ inline bool isSymbolKey(Value* key) {
     return key->type()->kind() == TypeKind::Symbol;
 }
 
+// 暂时钉住 data-owned 副本：创建后到挂入 data 字段前若发生 GC，
+// 未登记的副本会被回收（ADR-065 §4 跨域复制的分配窗口）。
+struct PinGuard {
+    Value* value = nullptr;
+    explicit PinGuard(Value* v = nullptr) { reset(v); }
+    ~PinGuard() {
+        if (value != nullptr) value->pinRefDec();
+    }
+    void reset(Value* v) {
+        if (value != nullptr) value->pinRefDec();
+        value = v;
+        if (value != nullptr) value->pinRefInc();
+    }
+    PinGuard(const PinGuard&) = delete;
+    PinGuard& operator=(const PinGuard&) = delete;
+};
+
 // 键转字符串（非 symbol 键）。走 ToPropertyKey（ES2024 §7.1.19）：
 // 对象键先 ToPrimitive(STRING)，故可触发用户 valueOf/toString/@@toPrimitive。
 // 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal。
@@ -673,7 +690,11 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) {
     auto* d = static_cast<ObjectData*>(self->data());
-    Property desc{value, writable, enumerable, configurable, nullptr, nullptr};
+    // scope→data 跨域：属性值必须是 data-owned 副本（ADR-065 §4）。
+    Value* storedValue = value != nullptr ? ctx->copyForStorage(value) : nullptr;
+    if (storedValue == ctx->oomValue()) return storedValue;
+    PinGuard pinValue(storedValue);  // keyString/键复制可能触发 GC
+    Property desc{storedValue, writable, enumerable, configurable, nullptr, nullptr};
 
     // —— symbol 键 ——
     if (isSymbolKey(key)) {
@@ -687,7 +708,9 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
             return ctx->createBoolean(true);
         }
         if (!d->extensible) return ctx->createBoolean(false);
-        d->symbols.emplace(ident, SymbolProperty{key, desc});
+        Value* storedKey = ctx->copyForStorage(key);
+        if (storedKey == ctx->oomValue()) return storedKey;
+        d->symbols.emplace(ident, SymbolProperty{storedKey, desc});
         d->symbolOrder.push_back(ident);
         return ctx->createBoolean(true);
     }
@@ -722,6 +745,20 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     // null 统一存成 nullptr（无访问器）
     Value* g = (getter != nullptr && detail::isCallable(getter)) ? getter : nullptr;
     Value* s = (setter != nullptr && detail::isCallable(setter)) ? setter : nullptr;
+    // scope→data 跨域：访问器函数必须是 data-owned 副本（ADR-065 §4）。
+    // 副本挂入 data 前若发生 GC 会被回收，故逐个钉住。
+    PinGuard pinGetter;
+    PinGuard pinSetter;
+    if (g != nullptr) {
+        g = ctx->copyForStorage(g);
+        if (g == ctx->oomValue()) return g;
+        pinGetter.reset(g);
+    }
+    if (s != nullptr) {
+        s = ctx->copyForStorage(s);
+        if (s == ctx->oomValue()) return s;
+        pinSetter.reset(s);
+    }
 
     auto* d = static_cast<ObjectData*>(self->data());
     // 访问器描述符：value 为空、writable 无意义（数据属性字段置 false）
@@ -739,7 +776,9 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
             return ctx->createBoolean(true);
         }
         if (!d->extensible) return ctx->createBoolean(false);
-        d->symbols.emplace(ident, SymbolProperty{key, acc});
+        Value* storedKey = ctx->copyForStorage(key);
+        if (storedKey == ctx->oomValue()) return storedKey;
+        d->symbols.emplace(ident, SymbolProperty{storedKey, acc});
         d->symbolOrder.push_back(ident);
         return ctx->createBoolean(true);
     }
@@ -776,15 +815,22 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环。
     // 经内部方法遍历，原型链上的 Proxy 也能正确参与（trap 抛错则透传）。
-    std::unordered_set<Value*> seen;
+    std::unordered_set<IData*> seen;
     for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
-        if (cur == self) return ctx->createBoolean(false);
-        if (!seen.insert(cur).second) break;  // 已有环（内部契约被破坏），终止遍历
+        if (cur->data() == self->data()) return ctx->createBoolean(false);
+        if (!seen.insert(cur->data()).second) break;  // 已有环（内部契约被破坏），终止遍历
         Value* next = cur->type()->getPrototype(ctx, cur);
         if (isErrorResult(next)) return next;
         cur = (next != nullptr && kindHasObjectLayout(next->type()->kind())) ? next : nullptr;
     }
-    static_cast<ObjectData*>(self->data())->prototype = (pk == TypeKind::Null) ? nullptr : proto;
+    if (pk == TypeKind::Null) {
+        static_cast<ObjectData*>(self->data())->prototype = nullptr;
+    } else {
+        // scope→data 跨域：原型存 data-owned 副本（ADR-065 §4）。
+        Value* storedProto = ctx->copyForStorage(proto);
+        if (storedProto == ctx->oomValue()) return storedProto;
+        static_cast<ObjectData*>(self->data())->prototype = storedProto;
+    }
     return ctx->createBoolean(true);
 }
 

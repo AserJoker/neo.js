@@ -237,7 +237,7 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         // ES2024 §10.4.1.3 [[Construct]]：若 newTarget 就是绑定函数本身，
         // 替换为 target；否则保留显式 newTarget（Reflect.construct）。
         Value* nt = ctx->newTarget();
-        if (nt == self) nt = d->boundTarget;
+        if (nt != nullptr && nt->data() == self->data()) nt = d->boundTarget;
         return ctx->construct(d->boundTarget, nt,
                               static_cast<size_t>(args.size()), args.data());
     }

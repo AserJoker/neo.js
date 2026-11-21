@@ -235,8 +235,8 @@ TEST(IteratorTest, PrototypeChainAndTags) {
 
     Value* arrayIterProto = ctx->getPrototype(iter);
     ASSERT_EQ(arrayIterProto->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(arrayIterProto), ctx->iteratorPrototype());
-    EXPECT_EQ(ctx->getPrototype(ctx->iteratorPrototype()), ctx->objectPrototype());
+    EXPECT_EQ((ctx->getPrototype(arrayIterProto))->data(), (ctx->iteratorPrototype())->data());
+    EXPECT_EQ((ctx->getPrototype(ctx->iteratorPrototype()))->data(), (ctx->objectPrototype())->data());
 
     // tag
     Value* toStringFn = ctx->getProperty(ctx->objectPrototype(), "toString");
@@ -258,7 +258,7 @@ TEST(IteratorTest, ArraySymbolIteratorIsValues) {
     Value* values = ctx->getProperty(arrayProto, "values");
     Value* symIter = ctx->getProperty(
         arrayProto, ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::Iterator));
-    EXPECT_EQ(values, symIter);
+    EXPECT_EQ((values)->data(), (symIter)->data());
 
     // 通过 @@iterator 拿到的迭代器与 values() 行为一致
     Value* arr = makeArray(ctx.get(), 2);
@@ -301,7 +301,7 @@ TEST(IteratorTest, IteratorPrototypeConstructorAccessor) {
 
     Value* iteratorFn = globalOf(ctx.get(), "Iterator");
     Value* proto = ctx->iteratorPrototype();
-    EXPECT_EQ(ctx->getProperty(proto, "constructor"), iteratorFn);
+    EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (iteratorFn)->data());
 
     // setter：在 this 上建自有属性
     Value* obj = ctx->createObject();
@@ -362,7 +362,7 @@ TEST(IteratorTest, FromWrapsIteratorLikeObject) {
     Value* wrapped = ctx->call(from, iteratorFn, 1, args);
     ASSERT_EQ(wrapped->type()->kind(), TypeKind::IteratorWrapper);
     EXPECT_NE(wrapped, obj);
-    EXPECT_EQ(ctx->getPrototype(ctx->getPrototype(wrapped)), ctx->iteratorPrototype());
+    EXPECT_EQ((ctx->getPrototype(ctx->getPrototype(wrapped)))->data(), (ctx->iteratorPrototype())->data());
 
     Value* r = callMethod(ctx.get(), wrapped, "next", 0, nullptr);
     EXPECT_DOUBLE_EQ(numOf(resultValue(ctx.get(), r)), 5.0);
@@ -384,7 +384,7 @@ TEST(IteratorTest, FromAcceptsStringByWrapping) {
     Value* args[1] = {ctx->createString("ab")};
     Value* iter = ctx->call(from, iteratorFn, 1, args);
     ASSERT_EQ(iter->type()->kind(), TypeKind::StringIterator);
-    EXPECT_EQ(ctx->getPrototype(ctx->getPrototype(iter)), ctx->iteratorPrototype());
+    EXPECT_EQ((ctx->getPrototype(ctx->getPrototype(iter)))->data(), (ctx->iteratorPrototype())->data());
 }
 
 TEST(IteratorTest, FromRejectsNonObjectPrimitives) {
@@ -674,7 +674,7 @@ TEST(IteratorTest, IteratorArithmeticAndPrototypeOps) {
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(iter, "acc")), 5.0);
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(iter, proto), iter);
-    EXPECT_EQ(ctx->getPrototype(iter), proto);
+    EXPECT_EQ((ctx->getPrototype(iter))->data(), (proto)->data());
 }
 
 TEST(IteratorTest, WrapperArithmeticAndPrototypeOps) {
@@ -717,7 +717,7 @@ TEST(IteratorTest, WrapperArithmeticAndPrototypeOps) {
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(w, "acc")), 5.0);
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(w, proto), w);
-    EXPECT_EQ(ctx->getPrototype(w), proto);
+    EXPECT_EQ((ctx->getPrototype(w))->data(), (proto)->data());
 
     // 迭代器不可调用 / 不可构造
     EXPECT_EQ(ctx->call(w, ctx->createUndefined(), 0, nullptr)->type()->kind(),

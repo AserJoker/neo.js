@@ -135,11 +135,11 @@ TEST(PrimitiveWrapperTest, PrototypesInheritObjectPrototype) {
                          ctx->stringPrototype()}) {
         ASSERT_NE(proto, nullptr);
         EXPECT_EQ(proto->type()->kind(), TypeKind::PrimitiveWrapper);
-        EXPECT_EQ(ctx->getPrototype(proto), ctx->objectPrototype());
+        EXPECT_EQ((ctx->getPrototype(proto))->data(), (ctx->objectPrototype())->data());
     }
     // Symbol.prototype 是普通对象（规范如此）
     EXPECT_EQ(ctx->symbolPrototype()->type()->kind(), TypeKind::Object);
-    EXPECT_EQ(ctx->getPrototype(ctx->symbolPrototype()), ctx->objectPrototype());
+    EXPECT_EQ((ctx->getPrototype(ctx->symbolPrototype()))->data(), (ctx->objectPrototype())->data());
 }
 
 TEST(PrimitiveWrapperTest, PrototypesHoldDefaultPrimitiveValues) {
@@ -456,8 +456,8 @@ TEST(PrimitiveWrapperTest, ConstructorAndPrototypeCrossReference) {
     const char* names[3] = {"Boolean", "Number", "String"};
     for (int i = 0; i < 3; ++i) {
         Value* fn = globalOf(ctx.get(), names[i]);
-        EXPECT_EQ(ctx->getProperty(fn, "prototype"), cases[i][1]) << names[i];
-        EXPECT_EQ(ctx->getProperty(cases[i][1], "constructor"), fn) << names[i];
+        EXPECT_EQ((ctx->getProperty(fn, "prototype"))->data(), (cases[i][1])->data()) << names[i];
+        EXPECT_EQ((ctx->getProperty(cases[i][1], "constructor"))->data(), (fn)->data()) << names[i];
     }
 }
 
@@ -962,5 +962,5 @@ TEST(PrimitiveWrapperTest, SetPrototypeWorks) {
     Value* w = ctx->createPrimitiveWrapper(ctx->createNumber(1));
     Value* proto = ctx->createObject();
     EXPECT_EQ(ctx->setPrototype(w, proto), w);
-    EXPECT_EQ(ctx->getPrototype(w), proto);
+    EXPECT_EQ((ctx->getPrototype(w))->data(), (proto)->data());
 }

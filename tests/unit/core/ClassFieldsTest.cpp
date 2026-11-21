@@ -130,7 +130,7 @@ TEST(ClassFieldsTest, FieldInitializerThisIsInstance) {
     Value* inst = f.ctx->createObject();
     ASSERT_EQ(f.ctx->initializeInstanceElements(inst, cls)->type()->kind(),
               TypeKind::Undefined);
-    EXPECT_EQ(f.ctx->getProperty(inst, f.ctx->createString("self")), inst);
+    EXPECT_EQ((f.ctx->getProperty(inst, f.ctx->createString("self")))->data(), (inst)->data());
 }
 
 TEST(ClassFieldsTest, FieldInitializerErrorPropagates) {

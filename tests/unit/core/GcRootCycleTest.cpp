@@ -65,6 +65,7 @@ Value* noop(IContext* ctx, Value*, size_t, Value*[]) { return ctx->createUndefin
 TEST(GcRootCycleTest, SelfReferentialClosureIsCollected) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {
@@ -86,6 +87,7 @@ TEST(GcRootCycleTest, SelfReferentialClosureIsCollected) {
 TEST(GcRootCycleTest, ClosureObjectFunctionCycleIsCollected) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {
@@ -146,6 +148,7 @@ TEST(GcRootCycleTest, PinnedValueSurvivesWithoutScopeReachability) {
 TEST(GcRootCycleTest, ClosureCapturedValueCollectedWithFunction) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {

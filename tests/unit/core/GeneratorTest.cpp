@@ -241,11 +241,11 @@ TEST(GeneratorTest, PrototypeChain) {
     Value* fnProto = f.ctx->getPrototype(gen);
     EXPECT_EQ(fnProto, f.prop(fn, "prototype"));
     // fn.prototype → %GeneratorPrototype%
-    EXPECT_EQ(f.ctx->getPrototype(fnProto), genProto);
+    EXPECT_EQ((f.ctx->getPrototype(fnProto))->data(), (genProto)->data());
     // %GeneratorPrototype% → %Iterator.prototype%
-    EXPECT_EQ(f.ctx->getPrototype(genProto), f.ctx->iteratorPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(genProto))->data(), (f.ctx->iteratorPrototype())->data());
     // %Iterator.prototype% → Object.prototype
-    EXPECT_EQ(f.ctx->getPrototype(f.ctx->iteratorPrototype()), f.ctx->objectPrototype());
+    EXPECT_EQ((f.ctx->getPrototype(f.ctx->iteratorPrototype()))->data(), (f.ctx->objectPrototype())->data());
 }
 
 TEST(GeneratorTest, IteratorSymbolReturnsThis) {

@@ -421,6 +421,7 @@ public:
                             bool isStatic) override;
     void bindFunctionThis(Value* fn, Value* thisValue) override;
     Value* cloneValue(Value* source) override;
+    Value* copyForStorage(Value* source) override;
     Value* setClosure(Value* fn, std::string_view name) override;
     Value* captureValue(Value* fn, std::string_view name, Value* value) override;
 

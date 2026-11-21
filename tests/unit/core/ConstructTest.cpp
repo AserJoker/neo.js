@@ -104,7 +104,7 @@ TEST(ConstructTest, FunctionGetsPrototypeOnCreation) {
     Value* proto = ctx->getProperty(fn, "prototype");
     ASSERT_EQ(proto->type()->kind(), TypeKind::Object);
     // 原型对象的 constructor 指回函数
-    EXPECT_EQ(ctx->getProperty(proto, "constructor"), fn);
+    EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (fn)->data());
 }
 
 TEST(ConstructTest, PrototypeAndConstructorAreNotEnumerable) {
@@ -185,7 +185,7 @@ TEST(ConstructTest, ConstructSetsPrototypeOfNewObject) {
     Value* proto = ctx->getProperty(fn, "prototype");
     Value* obj = ctx->construct(fn, 0, nullptr);
 
-    EXPECT_EQ(ctx->getPrototype(obj), proto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
 }
 
 TEST(ConstructTest, ConstructReturnsThisWhenNativeReturnsUndefined) {
@@ -340,7 +340,7 @@ TEST(ConstructTest, InstanceInheritsFromPrototype) {
     // 实例自身有 x，原型上有 shared
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "x"));
     EXPECT_TRUE(neo::test::hasProperty(ctx, obj, "shared"));
-    EXPECT_EQ(ctx->getProperty(obj, "shared"), shared);
+    EXPECT_EQ((ctx->getProperty(obj, "shared"))->data(), (shared)->data());
 }
 
 TEST(ConstructTest, ReplacingPrototypeAffectsNewInstances) {
@@ -354,7 +354,7 @@ TEST(ConstructTest, ReplacingPrototypeAffectsNewInstances) {
     ctx->setProperty(fn, "prototype", newProto);
 
     Value* obj = ctx->construct(fn, 0, nullptr);
-    EXPECT_EQ(ctx->getPrototype(obj), newProto);
+    EXPECT_EQ((ctx->getPrototype(obj))->data(), (newProto)->data());
 }
 
 TEST(ConstructTest, NonObjectPrototypeTreatedAsNull) {
@@ -387,7 +387,7 @@ TEST(ConstructTest, FunctionAndPrototypeSurviveGc) {
     ctx->gc()->collect();
     // fn 在 scope → 遍历属性 prototype → proto 保活；proto 的 constructor → fn 保活
     EXPECT_EQ(ctx->getProperty(fn, "prototype"), proto);
-    EXPECT_EQ(ctx->getProperty(proto, "constructor"), fn);
+    EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (fn)->data());
 }
 
 TEST(ConstructTest, InstanceSurvivesGcWithPrototypeChain) {

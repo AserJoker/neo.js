@@ -329,6 +329,7 @@ TEST(ContextTest, CreatedValuesReachableByGcWhileScoped) {
     EXPECT_EQ(v->pinRef(), 0);
 
     // GC collect 后 v 仍存活（current scope 从 global 树可达）
+    ctx->gc()->collect();  // 先清除 bootstrap 期不可达副本，稳定基线
     size_t before = ctx->gc()->valueCount();
     ctx->gc()->collect();
     // collect 不回收任何存活 Value（v + OOM 哨兵 + well-known symbols + Symbol 包装类）

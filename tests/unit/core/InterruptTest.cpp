@@ -129,6 +129,7 @@ TEST(InterruptTest, PropertyAndCallPassthrough) {
 TEST(InterruptTest, PayloadKeptAliveWithPinnedInterrupt) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     Value* payload = nullptr;
@@ -158,6 +159,7 @@ TEST(InterruptTest, PayloadKeptAliveWithPinnedInterrupt) {
 TEST(InterruptTest, UnreachableInterruptCollectedWithPayload) {
     Fixture f;
     IGCEngine* gc = f.ctx->gc();
+    gc->collect();  // 清除 bootstrap 期不可达的 data-owned 副本（ADR-065）
     size_t baseline = gc->valueCount();
 
     {

@@ -123,7 +123,7 @@ Value* objectProtoIsPrototypeOf(IContext* ctx, Value* self, size_t argc, Value* 
     for (Value* cur = ctx->getPrototype(argv[0]);
          cur != nullptr && detail::isObjectKind(cur->type()->kind());
          cur = ctx->getPrototype(cur)) {
-        if (cur == self) return ctx->createBoolean(true);
+        if (cur->data() == self->data()) return ctx->createBoolean(true);
     }
     return ctx->createBoolean(false);
 }
