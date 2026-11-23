@@ -532,7 +532,7 @@ Value* stringConcat(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     for (size_t i = 0; i < argc; ++i) {
         Value* next = detail::toStringValue(ctx, argv[i]);
         if (detail::isErrorValue(next)) return next;
-        result += stringValue(next);
+        unicode::appendCanonical(result, stringValue(next));
     }
     return ctx->createString(result);
 }

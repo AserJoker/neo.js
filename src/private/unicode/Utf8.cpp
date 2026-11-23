@@ -65,4 +65,40 @@ void encodeCodePoint(uint32_t cp, std::string& out) {
     }
 }
 
+namespace {
+
+// 判断 3 字节序列是否为代理码点的 WTF-8 编码；是则返回码点。
+bool decodeSurrogate3(const char* p, bool high, uint32_t& cp) {
+    const auto b0 = static_cast<unsigned char>(p[0]);
+    const auto b1 = static_cast<unsigned char>(p[1]);
+    const auto b2 = static_cast<unsigned char>(p[2]);
+    if (b0 != 0xED || b2 < 0x80 || b2 > 0xBF) return false;
+    if (high) {
+        if (b1 < 0xA0 || b1 > 0xAF) return false;
+        cp = 0xD800u + ((static_cast<uint32_t>(b1 - 0xA0) << 6) |
+                        static_cast<uint32_t>(b2 - 0x80));
+    } else {
+        if (b1 < 0xB0 || b1 > 0xBF) return false;
+        cp = 0xDC00u + ((static_cast<uint32_t>(b1 - 0xB0) << 6) |
+                        static_cast<uint32_t>(b2 - 0x80));
+    }
+    return true;
+}
+
+}  // namespace
+
+void appendCanonical(std::string& out, std::string_view text) {
+    size_t skip = 0;
+    uint32_t high = 0;
+    uint32_t low = 0;
+    if (out.size() >= 3 && text.size() >= 3 &&
+        decodeSurrogate3(out.data() + out.size() - 3, true, high) &&
+        decodeSurrogate3(text.data(), false, low)) {
+        out.resize(out.size() - 3);
+        encodeCodePoint(combineSurrogates(high, low), out);
+        skip = 3;
+    }
+    out.append(text.substr(skip));
+}
+
 }  // namespace neo::unicode

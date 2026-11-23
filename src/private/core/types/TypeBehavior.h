@@ -27,6 +27,7 @@
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/Proxy.h"
 #include "core/types/String.h"
+#include "unicode/Utf8.h"
 
 #include <charconv>
 #include <cmath>
@@ -475,7 +476,11 @@ inline Value* addValues(IContext* ctx, Value* l, Value* r) {
         if (isErrorValue(ls)) return ls;
         Value* rs = toStringValue(ctx, rp);
         if (isErrorValue(rs)) return rs;
-        return ctx->createString(valueToString(ls) + valueToString(rs));
+        // 拼接边界上的高/低代理合并为单一码点，保证字符串表示规范。
+        std::string joined;
+        unicode::appendCanonical(joined, valueToString(ls));
+        unicode::appendCanonical(joined, valueToString(rs));
+        return ctx->createString(joined);
     }
     // 数值相加：两侧 ToNumeric（Symbol 在此抛 TypeError，ES2024 §7.1.4）
     Value* ln = toNumericValue(ctx, lp);

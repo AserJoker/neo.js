@@ -9,7 +9,7 @@
 #ifndef NEO_REGEX_COMPILER_H
 #define NEO_REGEX_COMPILER_H
 
-#include "regex/RegexAST.h"
+#include "regex/RegexAst.h"
 #include "regex/RegexFlags.h"
 #include "regex/RegexProgram.h"
 #include "regex/RegexUnicode.h"

@@ -352,6 +352,22 @@ Value* execString(IContext* ctx, Value* regexp, const RegExpData& data,
 
 // —— 构造器 ——
 
+namespace {
+
+// §22.2.4.1：构造路径按 NewTarget.prototype 决定实例原型（支持子类化）。
+// 普通调用（construct=false）不读 new.target，避免受外层构造上下文影响。
+Value* applyNewTargetPrototype(IContext* ctx, Value* regexp, bool construct) {
+    if (!construct || isError(regexp)) return regexp;
+    Value* newTarget = ctx->newTarget();
+    if (newTarget == nullptr) return regexp;
+    Value* proto = ctx->getProperty(newTarget, "prototype");
+    if (isError(proto)) return proto;
+    if (!detail::isObjectKind(proto->type()->kind())) return regexp;
+    return ctx->setPrototype(regexp, proto);
+}
+
+}  // namespace
+
 Value* regexpCreate(IContext* ctx, size_t argc, Value* argv[], bool construct) {
     Value* patternArg = argc > 0 ? argv[0] : undefinedOf(ctx);
     Value* flagsArg = argc > 1 ? argv[1] : undefinedOf(ctx);
@@ -360,11 +376,13 @@ Value* regexpCreate(IContext* ctx, size_t argc, Value* argv[], bool construct) {
         RegExpData* source = regexpData(patternArg);
         if (flagsArg->type()->kind() == TypeKind::Undefined) {
             if (!construct) return patternArg;
-            return ctx->createRegExp(source->source, source->flags);
+            Value* result = ctx->createRegExp(source->source, source->flags);
+            return applyNewTargetPrototype(ctx, result, construct);
         }
         Value* flags = toStringArg(ctx, flagsArg);
         if (isError(flags)) return flags;
-        return ctx->createRegExp(source->source, *stringData(flags));
+        Value* result = ctx->createRegExp(source->source, *stringData(flags));
+        return applyNewTargetPrototype(ctx, result, construct);
     }
 
     Value* pattern = undefinedOf(ctx);
@@ -383,7 +401,8 @@ Value* regexpCreate(IContext* ctx, size_t argc, Value* argv[], bool construct) {
         flags = ctx->createString("");
     }
 
-    return ctx->createRegExp(*stringData(pattern), *stringData(flags));
+    Value* result = ctx->createRegExp(*stringData(pattern), *stringData(flags));
+    return applyNewTargetPrototype(ctx, result, construct);
 }
 
 Value* regexpCtor(IContext* ctx, Value*, size_t argc, Value* argv[]) {

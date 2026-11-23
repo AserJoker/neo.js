@@ -90,6 +90,9 @@ struct Backreference final : Node {
     // Annex B：无效数字反向引用退化为 LegacyOctalEscapeSequence。
     bool legacyOctal = false;
     std::string digits;
+    // Annex B：无对应命名组的 \k<name> 退化为字面量 "k<name>"。
+    bool literal = false;
+    std::string literalText;
 };
 
 struct PropertyEscape final : Node {

@@ -1014,6 +1014,9 @@ NodePtr RegexParser::parseAtomEscape() {
                     fail(start, "Invalid named reference");
                     return nullptr;
                 }
+                // 仅当模式完全没有命名组时才是字面量；延后到 validateBackrefs
+                // 判定（命名组可能出现在 \k 之后）。
+                bareKOffsets_.push_back(start);
                 return std::make_unique<Character>(start, 'k');
             }
             if (!dialect_.allowBackrefs) {
@@ -1316,9 +1319,21 @@ RegexParser::QuantResult RegexParser::tryParseQuantifierSpec(
 
 void RegexParser::validateBackrefs() {
     if (failed_) return;
+    if (!namedGroups_.empty() && !bareKOffsets_.empty()) {
+        fail(bareKOffsets_.front(), "Invalid named reference");
+        return;
+    }
     for (const BackrefRef& ref : backrefs_) {
         if (!ref.name.empty()) {
             if (namedGroups_.find(ref.name) == namedGroups_.end()) {
+                // Annex B：模式中完全没有命名组时，\k<name> 退化为字面量
+                // "k<name>"；存在命名组则仍是无效引用。
+                if (!(flags_.unicode || flags_.unicodeSets) && dialect_.annexB &&
+                    namedGroups_.empty() && ref.node != nullptr) {
+                    ref.node->literal = true;
+                    ref.node->literalText = "k<" + ref.name + ">";
+                    continue;
+                }
                 fail(ref.offset, "Invalid named capture referenced");
                 return;
             }

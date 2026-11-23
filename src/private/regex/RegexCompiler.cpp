@@ -23,6 +23,8 @@ CompileResult RegexCompiler::compile(const ParseResult& parsed,
                                      Dialect dialect) {
     program_.source = std::string(source);
     program_.flags = flags;
+    // v 模式与 u 模式一样按码点推进；VM 只看 unicode 标志，这里统一。
+    program_.flags.unicode = flags.unicode || flags.unicodeSets;
     program_.dialect = dialect;
     program_.captureCount = parsed.captureCount;
     program_.namedGroups = parsed.namedGroups;
@@ -128,6 +130,13 @@ void RegexCompiler::compileAlternative(const Alternative& node) {
 }
 
 void RegexCompiler::compileCharacter(const Character& node) {
+    // 非 unicode 模式按 UTF-16 码元匹配：astral 字面量拆成代理对。
+    if (!program_.flags.unicode && node.codePoint > 0xFFFFu) {
+        const std::uint32_t offset = node.codePoint - 0x10000u;
+        emit(OpCode::Char, 0xD800u + (offset >> 10));
+        emit(OpCode::Char, 0xDC00u + (offset & 0x3FFu));
+        return;
+    }
     emit(OpCode::Char, node.codePoint);
 }
 
@@ -347,6 +356,13 @@ void RegexCompiler::compileLookaround(const Group& node, bool behind,
 }
 
 void RegexCompiler::compileBackreference(const Backreference& node) {
+    if (node.literal) {
+        for (const char c : node.literalText) {
+            emit(OpCode::Char, static_cast<std::uint32_t>(
+                                   static_cast<unsigned char>(c)));
+        }
+        return;
+    }
     if (node.legacyOctal) {
         emitLegacyOctal(node.digits);
         return;

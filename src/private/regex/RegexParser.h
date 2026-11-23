@@ -8,7 +8,7 @@
 #ifndef NEO_REGEX_PARSER_H
 #define NEO_REGEX_PARSER_H
 
-#include "regex/RegexAST.h"
+#include "regex/RegexAst.h"
 #include "regex/RegexFlags.h"
 
 #include <cstddef>
@@ -87,6 +87,8 @@ private:
     std::uint32_t captureCount_ = 0;
     std::unordered_map<std::string, std::uint32_t> namedGroups_;
     std::vector<BackrefRef> backrefs_;
+    // Annex B 下把裸 \k 当字面量的位置；若模式含命名组则应为语法错误。
+    std::vector<std::size_t> bareKOffsets_;
 };
 
 }  // namespace neo::regex

@@ -2,7 +2,7 @@
 //
 // 引擎单测不依赖 IContext：TestHost 只提供空的 Unicode 表与永不中止策略。
 
-#include "regex/RegexAST.h"
+#include "regex/RegexAst.h"
 #include "regex/RegexEngine.h"
 #include "regex/RegexFlags.h"
 #include "regex/RegexHost.h"
@@ -178,7 +178,10 @@ TEST(RegexParserTest, RejectsDuplicateNamedGroup) {
 
 TEST(RegexParserTest, RejectsUnknownNamedBackreference) {
     Fixture f;
-    expectError(f.compile("\\k<x>"), "Invalid named capture");
+    // u 模式没有 Annex B 退化，未知命名引用是语法错误。
+    expectError(f.compile("\\k<x>", "u"), "Invalid named capture");
+    // 存在命名组时，未知名字同样是语法错误（非 u 模式亦然）。
+    expectError(f.compile("(?<a>.)\\k<b>"), "Invalid named capture");
 }
 
 TEST(RegexParserTest, RejectsUnknownBackreference) {

@@ -27,6 +27,10 @@ bool decodeCodePoint(std::string_view s, size_t& i, uint32_t& cp);
 // 把码点编码为 UTF-8 / WTF-8（代理码点按 3 字节编码）。
 void encodeCodePoint(uint32_t cp, std::string& out);
 
+// 追加 text 到 out，并把 out 末尾的高代理与 text 开头的低代理合并为单一码点。
+// 维持“代理对不以 WTF-8 落盘”的规范表示（与 UTF-16 语义的字符串相等一致）。
+void appendCanonical(std::string& out, std::string_view text);
+
 }  // namespace neo::unicode
 
 #endif  // NEO_UNICODE_UTF8_H
