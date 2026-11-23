@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <new>
 #include <string_view>
+#include <vector>
 
 namespace neo::core {
 
@@ -70,6 +71,10 @@ public:
     // yield* 委托：value 已是迭代器结果对象，消费方须原样返回而非重新包装
     // （§14.4.14 GeneratorYield(innerResult)）。
     bool delegateResult = false;
+    // TailCall 载荷：被调函数、this 与实参（由 invokeScriptFunction 复用帧）。
+    Value* tailFn = nullptr;    // GC 需遍历
+    Value* tailThis = nullptr;  // GC 需遍历
+    std::vector<Value*> tailArgs;  // GC 需遍历
 
     InterruptData(InterruptKind k, uint64_t off, Value* v)
         : kind(k), offset(off), value(v) {}

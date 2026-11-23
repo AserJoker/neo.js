@@ -4696,6 +4696,40 @@ TEST(CompilerTest, AsyncGeneratorParameterDefaultThrowsAtCallSite) {
     EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
 }
 
+// 场景：return 位置的调用复用当前执行帧（§15.10.1），深递归不增长栈。
+TEST(CompilerTest, TailCallReusesFrame) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var calls = 0;"
+        "function f(n) {"
+        "  if (n === 0) { calls += 1; return 0; }"
+        "  return f(n - 1);"
+        "}"
+        "f(20000);"
+        "var result = calls;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 1.0);
+}
+
+// 场景：成员调用的尾调用保留 receiver 作为被调函数的 this。
+TEST(CompilerTest, TailCallMethodKeepsReceiver) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var calls = 0;"
+        "var o = { m: function f(n) {"
+        "  if (n === 0) { calls += 1; return this === o; }"
+        "  return this.m(n - 1);"
+        "} };"
+        "var ok = o.m(5000);"
+        "var result = ok && calls === 1;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(static_cast<BooleanData*>(value->data())->value);
+}
+
 // 场景：参数正常时，生成器函数体在首次 next() 前不执行。
 TEST(CompilerTest, GeneratorBodyRunsOnlyOnFirstNext) {
     Fixture f;

@@ -249,6 +249,8 @@ private:
     neo::core::Value* opCallMethod();
     neo::core::Value* opCallSpread();
     neo::core::Value* opCallMethodSpread();
+    neo::core::Value* opTailCall();
+    neo::core::Value* opTailCallMethod();
     neo::core::Value* opNew();
     neo::core::Value* opNewSpread();
     neo::core::Value* opLoadNewTarget();

@@ -30,6 +30,9 @@ enum class InterruptKind : uint8_t {
     // VM 专用：生成器函数参数绑定完成、函数体开始处。生成器调用时先同步
     // 执行到这里（参数初始化可能抛错），再创建协程并从该点恢复。
     BodyStart,
+    // VM 专用：尾调用（§15.10.1 HasCallInTailPosition）。载荷为被调函数、
+    // this 与实参；invokeScriptFunction 复用当前 C++ 帧执行被调函数。
+    TailCall,
 };
 
 // 挂起信号：函数返回后必须保留现场（execScope/断点），等待 runner 恢复。

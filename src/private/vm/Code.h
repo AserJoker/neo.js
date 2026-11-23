@@ -631,6 +631,16 @@ struct Code {
     }
     uint32_t callSpread() { return emitOp(OpCode::CallSpread); }
     uint32_t callMethodSpread() { return emitOp(OpCode::CallMethodSpread); }
+    uint32_t tailCall(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::TailCall);
+        emitU32(argc);
+        return pc;
+    }
+    uint32_t tailCallMethod(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::TailCallMethod);
+        emitU32(argc);
+        return pc;
+    }
     uint32_t construct(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::New);
         emitU32(argc);

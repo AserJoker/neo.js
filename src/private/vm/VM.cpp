@@ -185,6 +185,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::CallMethod:    return "call_method";
         case OpCode::CallSpread:    return "call_spread";
         case OpCode::CallMethodSpread: return "call_method_spread";
+        case OpCode::TailCall:      return "tail_call";
+        case OpCode::TailCallMethod: return "tail_call_method";
         case OpCode::New:           return "new";
         case OpCode::NewSpread:     return "new_spread";
         case OpCode::LoadNewTarget: return "load_new_target";
@@ -352,6 +354,8 @@ const VM::Handler* VM::handlers() {
         &VM::opCallMethod,
         &VM::opCallSpread,
         &VM::opCallMethodSpread,
+        &VM::opTailCall,
+        &VM::opTailCallMethod,
         &VM::opNew,
         &VM::opNewSpread,
         &VM::opLoadNewTarget,
@@ -2766,6 +2770,55 @@ Value* VM::opCallMethodSpread() {
     if (detail::isInterruptValue(result)) return result;
     push(result);
     return nullptr;
+}
+
+Value* VM::opTailCall() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("tail_call: truncated operand");
+    }
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 1) {
+        return badBytecode("tail_call: operand stack underflow");
+    }
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+    Value* signal =
+        ctx_->createInterrupt(neo::core::InterruptKind::TailCall, pc_, nullptr);
+    if (detail::isErrorValue(signal)) return signal;
+    auto* data = neo::core::asInterrupt(signal);
+    data->tailFn = fn;
+    data->tailThis = ctx_->createUndefined();
+    data->tailArgs = std::move(args);
+    // 尾调用等价于 return <call>：先展开本帧剩余的 finally（若有），
+    // 展开完毕才把信号交给调用方复用执行帧。
+    return unwindReturn(signal);
+}
+
+Value* VM::opTailCallMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("tail_call_method: truncated operand");
+    }
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 2) {
+        return badBytecode("tail_call_method: operand stack underflow");
+    }
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+    Value* signal =
+        ctx_->createInterrupt(neo::core::InterruptKind::TailCall, pc_, nullptr);
+    if (detail::isErrorValue(signal)) return signal;
+    auto* data = neo::core::asInterrupt(signal);
+    data->tailFn = fn;
+    data->tailThis = receiver;
+    data->tailArgs = std::move(args);
+    return unwindReturn(signal);
 }
 
 Value* VM::opNew() {

@@ -307,6 +307,11 @@ private:
     uint32_t destTempId_ = 0;
     // class 计算属性名临时绑定唯一编号（先求值、后定义元素）。
     uint32_t classKeyTempId_ = 0;
+    // 尾调用候选：return 的参数是调用表达式时置位，由 compileCallExpression 消费。
+    bool tailCallCandidate_ = false;
+    // >0 表示当前位置的 return 不是安全尾位置（待执行 finally / for-of close /
+    // 生成器/async/构造器边界）。函数边界会重置该计数。
+    int tailUnsafeDepth_ = 0;
     // delete 可选链：短路出口压 true，最外层成员改为 delete_prop。
     bool deleteChain_ = false;
     bool deleteChainTarget_ = false;

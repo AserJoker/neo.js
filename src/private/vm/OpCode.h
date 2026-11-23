@@ -278,6 +278,10 @@ enum class OpCode : uint16_t {
     CallMethod,     // u32 argc：[receiver, fn, argv...] → [ret]，thisArg=receiver
     CallSpread,     // [fn, argsArray] → [ret]，thisArg=undefined
     CallMethodSpread,  // [receiver, fn, argsArray] → [ret]，thisArg=receiver
+    // 尾调用（§15.10.1）：语义同 Call/CallMethod，但产生 TailCall 信号，
+    // 由调用方复用当前执行帧（不增长 C++/VM 栈）。
+    TailCall,          // u32 argc：[fn, argv...] → 信号
+    TailCallMethod,    // u32 argc：[receiver, fn, argv...] → 信号
     New,            // u32 argc：[ctor, argv...] → [instance]，new.target=ctor
     NewSpread,      // [ctor, argsArray] → [instance]，new.target=ctor
     LoadNewTarget,  // [] → [new.target]（普通调用为 undefined）

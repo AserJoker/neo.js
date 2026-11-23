@@ -25,6 +25,8 @@
 #include "core/types/TypeBehavior.h"
 #include "vm/VM.h"
 
+#include <vector>
+
 namespace neo::core {
 
 namespace {
@@ -193,116 +195,154 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
 
 Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
                             Value* argv[], Value* newTarget, Value** outThis) {
-    auto* d = static_cast<FunctionData*>(fn->data());
-    if (d->code == nullptr) {
-        return detail::typeError(ctx, "script function has no code");
-    }
-
-    // 1. 保存调用方状态
-    Scope* savedRoot = ctx->root();
-    Scope* savedCurrent = ctx->current();
-    Scope* savedFunctionEnv = ctx->currentFunctionEnv();
-    Value* savedFunction = ctx->currentFunction();
-
-    // 2. 切换到被调函数的模块根作用域，最外层调用挂载闭包作用域
-    ctx->setRootScope(d->rootScope);
-    if (!d->capturesEnvironment && d->activeCalls == 0) {
-        d->closureScope->reparent(d->rootScope);
-    }
-    ++d->activeCalls;
-
-    // 3. 执行作用域（execScope → closureScope → rootScope → global）
-    Scope* execScope = ctx->pushNewScope(d->closureScope);
-    if (execScope == nullptr) {
-        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+    // 尾调用实参存储：跨迭代存活（被调函数执行期间 argv 指向它）。
+    std::vector<Value*> tailArgsStorage;
+    // 上一次尾调用信号：根在调用方作用域，保证实参在被调函数执行期间存活；
+    // 被调函数返回后立即移除，避免 10 万次尾调用在作用域里堆积不可回收的值。
+    Value* pendingTailRoot = nullptr;
+    for (;;) {
+        auto* d = static_cast<FunctionData*>(fn->data());
+        if (d->code == nullptr) {
+            return detail::typeError(ctx, "script function has no code");
         }
-        ctx->setRootScope(savedRoot);
-        ctx->setCurrentScope(savedCurrent);
-        ctx->setCurrentFunctionEnv(savedFunctionEnv);
-        ctx->setCurrentFunction(savedFunction);
-        return ctx->oomValue();
-    }
 
-    // this 优先级：函数自身绑定（箭头/bind）> 调用点传入（按严格性替换）。
-    Value* boundThis =
-        d->self != nullptr ? d->self : ordinaryCallThis(ctx, d, thisArg);
-    if (detail::isErrorValue(boundThis)) {
-        while (ctx->current() != d->closureScope) ctx->popScope();
-        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+        // 1. 保存调用方状态
+        Scope* savedRoot = ctx->root();
+        Scope* savedCurrent = ctx->current();
+        Scope* savedFunctionEnv = ctx->currentFunctionEnv();
+        Value* savedFunction = ctx->currentFunction();
+
+        // 2. 切换到被调函数的模块根作用域，最外层调用挂载闭包作用域
+        ctx->setRootScope(d->rootScope);
+        if (!d->capturesEnvironment && d->activeCalls == 0) {
+            d->closureScope->reparent(d->rootScope);
         }
-        ctx->setCurrentScope(savedCurrent);
-        ctx->setRootScope(savedRoot);
-        ctx->setCurrentFunctionEnv(savedFunctionEnv);
-        ctx->setCurrentFunction(savedFunction);
-        return boundThis;
-    }
-    execScope->setThis(boundThis);
-    execScope->setNewTarget(newTarget != nullptr ? newTarget
-                                                 : ctx->createUndefined());
-    ctx->setCurrentFunctionEnv(execScope);
-    ctx->setCurrentFunction(fn);
+        ++d->activeCalls;
 
-    // 4. arguments 对象（§10.4.4）：在形参绑定与函数体执行前创建，
-    //    使默认参数表达式与 eval 也能看到它。
-    if (d->needsArguments) {
-        Value* err = bindArgumentsObject(ctx, execScope, fn, argc, argv,
-                                         d->argumentsMapped);
-        if (err != nullptr) {
+        // 3. 执行作用域（execScope → closureScope → rootScope → global）
+        Scope* execScope = ctx->pushNewScope(d->closureScope);
+        if (execScope == nullptr) {
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setRootScope(savedRoot);
+            ctx->setCurrentScope(savedCurrent);
             ctx->setCurrentFunctionEnv(savedFunctionEnv);
             ctx->setCurrentFunction(savedFunction);
+            return ctx->oomValue();
+        }
+
+        // this 优先级：函数自身绑定（箭头/bind）> 调用点传入（按严格性替换）。
+        Value* boundThis =
+            d->self != nullptr ? d->self : ordinaryCallThis(ctx, d, thisArg);
+        if (detail::isErrorValue(boundThis)) {
             while (ctx->current() != d->closureScope) ctx->popScope();
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
                 d->closureScope->reparent(nullptr);
             }
             ctx->setCurrentScope(savedCurrent);
             ctx->setRootScope(savedRoot);
-            return err;
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            return boundThis;
         }
-    }
+        execScope->setThis(boundThis);
+        execScope->setNewTarget(newTarget != nullptr ? newTarget
+                                                     : ctx->createUndefined());
+        ctx->setCurrentFunctionEnv(execScope);
+        ctx->setCurrentFunction(fn);
 
-    // 5. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）。
-    //    rest 函数需保留全部实参，由序言 RestArgs 收集多余部分。
-    vm::VM machine(ctx, d->code);
-    size_t total = d->paramCount;
-    if (d->hasRest && argc > total) total = argc;
-    for (size_t i = total; i > 0; --i) {
-        size_t index = i - 1;
-        machine.push(index < argc ? argv[index] : ctx->createUndefined());
-    }
-    machine.push(boundThis);
+        // 4. arguments 对象（§10.4.4）：在形参绑定与函数体执行前创建，
+        //    使默认参数表达式与 eval 也能看到它。
+        if (d->needsArguments) {
+            Value* err = bindArgumentsObject(ctx, execScope, fn, argc, argv,
+                                             d->argumentsMapped);
+            if (err != nullptr) {
+                ctx->setCurrentFunctionEnv(savedFunctionEnv);
+                ctx->setCurrentFunction(savedFunction);
+                while (ctx->current() != d->closureScope) ctx->popScope();
+                if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                    d->closureScope->reparent(nullptr);
+                }
+                ctx->setCurrentScope(savedCurrent);
+                ctx->setRootScope(savedRoot);
+                return err;
+            }
+        }
 
-    Value* res = machine.run(d->entryPc);
+        // 5. 新 VM：逆序压形参（缺省补 undefined），self 最后压入（栈顶）。
+        //    rest 函数需保留全部实参，由序言 RestArgs 收集多余部分。
+        vm::VM machine(ctx, d->code);
+        size_t total = d->paramCount;
+        if (d->hasRest && argc > total) total = argc;
+        for (size_t i = total; i > 0; --i) {
+            size_t index = i - 1;
+            machine.push(index < argc ? argv[index] : ctx->createUndefined());
+        }
+        machine.push(boundThis);
 
-    // 5. Fatal：不恢复现场、不平衡栈（不可捕获），只摘除闭包挂载
-    if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
+        Value* res = machine.run(d->entryPc);
+
+        // 5. Fatal：不恢复现场、不平衡栈（不可捕获），只摘除闭包挂载
+        if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
+            if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+                d->closureScope->reparent(nullptr);
+            }
+            ctx->setRootScope(savedRoot);
+            ctx->setCurrentScope(savedCurrent);
+            ctx->setCurrentFunctionEnv(savedFunctionEnv);
+            ctx->setCurrentFunction(savedFunction);
+            return res;
+        }
+
+        // 6. 返回值归属调用方作用域（restoreValue 语义）
+        if (res != nullptr) savedCurrent->add(res);
+        if (outThis != nullptr) *outThis = execScope->thisValue();
+
+        // 7. 平衡作用域并恢复调用方
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        while (ctx->current() != d->closureScope) {
+            ctx->popScope();
+        }
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
             d->closureScope->reparent(nullptr);
         }
-        ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
-        ctx->setCurrentFunctionEnv(savedFunctionEnv);
-        ctx->setCurrentFunction(savedFunction);
+        ctx->setRootScope(savedRoot);
+
+        // 被调函数已返回：解除上一次尾调用信号的根。
+        if (pendingTailRoot != nullptr) {
+            savedCurrent->remove(pendingTailRoot);
+            pendingTailRoot = nullptr;
+        }
+
+        // 8. 尾调用：复用当前 C++ 帧执行被调函数（§15.10.1）。
+        if (res != nullptr && detail::isInterruptValue(res)) {
+            auto* ir = asInterrupt(res);
+            if (ir != nullptr && ir->kind == InterruptKind::TailCall) {
+                Value* tailFn = ir->tailFn;
+                Value* tailThis = ir->tailThis;
+                tailArgsStorage = ir->tailArgs;
+                if (tailFn != nullptr &&
+                    tailFn->type()->kind() == TypeKind::Function &&
+                    static_cast<FunctionData*>(tailFn->data())->code != nullptr) {
+                    fn = tailFn;
+                    thisArg = tailThis;
+                    argc = tailArgsStorage.size();
+                    argv = tailArgsStorage.data();
+                    newTarget = nullptr;
+                    // 信号已加入调用方作用域（步骤 6），下一轮返回后移除。
+                    pendingTailRoot = res;
+                    continue;
+                }
+                // 非脚本函数：正常调用（当前帧已拆除）。
+                return ctx->call(tailFn, tailThis, tailArgsStorage.size(),
+                                 tailArgsStorage.data());
+            }
+        }
         return res;
     }
-
-    // 6. 返回值归属调用方作用域（restoreValue 语义）
-    if (res != nullptr) savedCurrent->add(res);
-    if (outThis != nullptr) *outThis = execScope->thisValue();
-
-    // 7. 平衡作用域并恢复调用方
-    ctx->setCurrentFunctionEnv(savedFunctionEnv);
-    ctx->setCurrentFunction(savedFunction);
-    while (ctx->current() != d->closureScope) {
-        ctx->popScope();
-    }
-    if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-        d->closureScope->reparent(nullptr);
-    }
-    ctx->setCurrentScope(savedCurrent);
-    ctx->setRootScope(savedRoot);
-    return res;
 }
 
 GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,

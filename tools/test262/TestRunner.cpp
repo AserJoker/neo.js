@@ -429,11 +429,22 @@ bool runVariant(const RunnerOptions& options, const std::string& absPath,
     neo::infra::Console console(&sink);
     std::unique_ptr<IContext> ctx = neo::core::createContext(alloc.get(), &console);
 
+    // 尾调用用例需连续执行 10 万次调用；调试构建下耗时远超普通用例，
+    // 对该 feature 单独放宽超时，避免把性能差异误判为失败。
+    int timeoutMs = options.timeoutMs;
+    if (timeoutMs > 0) {
+        for (const std::string& feature : meta.features) {
+            if (feature == "tail-call-optimization" && timeoutMs < 30000) {
+                timeoutMs = 30000;
+            }
+        }
+    }
+
     HostState host;
     host.ctx = ctx.get();
     host.test262Root = options.test262Root;
     host.filename = result.path;
-    host.timeoutMs = options.timeoutMs;
+    host.timeoutMs = timeoutMs;
     host.verbose = options.verbose;
     g_host = &host;
 
@@ -453,7 +464,7 @@ bool runVariant(const RunnerOptions& options, const std::string& absPath,
     const std::string source = readFile(absPath);
     const bool strict = variant == "strict";
     ScriptOutcome outcome =
-        executeScript(ctx.get(), source, result.path, strict, options.timeoutMs);
+        executeScript(ctx.get(), source, result.path, strict, timeoutMs);
     g_host = nullptr;
 
     if (meta.hasNegative) {

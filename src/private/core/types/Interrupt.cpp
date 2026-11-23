@@ -59,6 +59,11 @@ Value* InterruptType::construct(IContext* /*ctx*/, Value* self, size_t /*argc*/,
 void InterruptData::enumerateChildren(IGCVisitor* visitor) {
     // value 永远不为 nullptr（无载荷时用 undefined Value 表示）
     if (value != nullptr) visitor->visit(value);
+    if (tailFn != nullptr) visitor->visit(tailFn);
+    if (tailThis != nullptr) visitor->visit(tailThis);
+    for (Value* arg : tailArgs) {
+        if (arg != nullptr) visitor->visit(arg);
+    }
 }
 
 IData* InterruptData::clone(neo::infra::IAllocator* /*alloc*/) const {

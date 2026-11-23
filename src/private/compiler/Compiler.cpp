@@ -579,7 +579,15 @@ void Compiler::compileExpressionStatement(
 
 void Compiler::compileReturnStatement(const frontend::ReturnStatement& node) {
     if (node.argument) {
+        // 尾调用（§15.10.1）：return 的整个参数是一个调用表达式。
+        // 待执行 finally / for-of close 时调用不在尾位置。
+        // 只有函数体内的 return 才可能是尾调用（脚本/模块顶层无 return）。
+        const bool tailCandidate =
+            functionDepth_ > 0 && tailUnsafeDepth_ == 0 &&
+            node.argument->kind() == NodeKind::CallExpression;
+        if (tailCandidate) tailCallCandidate_ = true;
         compileExpression(*node.argument);
+        tailCallCandidate_ = false;
     } else {
         code_->pushUndefined();
     }
@@ -1204,7 +1212,10 @@ void Compiler::compileForOfStatement(
     code_->load(kForValue);
     compileForTarget(node.left, kForValue);
     if (evalCompletion_) emitClearCompletion();
+    // for-of 的 return 之后仍须 IteratorClose，调用不在尾位置。
+    ++tailUnsafeDepth_;
     if (node.body) compileStatement(*node.body);
+    --tailUnsafeDepth_;
     if (evalCompletion_) emitUpdateLoopValue(loopSlot);
     if (lexical) code_->popScope();
     code_->jmp(loop);
@@ -1603,6 +1614,9 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
     // 产生 Interrupt，VM 负责跳转与 try 帧平衡，编译器不发射 jmp。
     uint32_t tryBeginPc = code_->tryBegin();
 
+    // 有 finally 时，try/catch 内的 return 调用之后仍须执行 finally，
+    // 因此不处于尾位置；finally 体内自身恢复可尾调用。
+    if (node.finalizer) ++tailUnsafeDepth_;
     // try 体独立求值：B 从 EMPTY 开始（不继承外层 StatementList 值）。
     if (evalCompletion_) emitClearCompletion();
     if (node.block) compileStatement(*node.block);
@@ -1625,6 +1639,8 @@ void Compiler::compileTryStatement(const frontend::TryStatement& node) {
             code_->catchEnd();
         }
     }
+
+    if (node.finalizer) --tailUnsafeDepth_;
 
     uint32_t finallyStart = 0;
     if (node.finalizer) {
@@ -2278,6 +2294,9 @@ void Compiler::compileArrowFunctionExpression(
 }
 
 void Compiler::compileCallExpression(const frontend::CallExpression& node) {
+    // 先消费尾调用候选：callee/实参内部的嵌套调用不是尾位置。
+    const bool tailCall = tailCallCandidate_;
+    tailCallCandidate_ = false;
     if (!node.callee) {
         error(node, "compiler: call expression missing callee");
         code_->pushUndefined();
@@ -2307,9 +2326,11 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     }
 
     bool isMember = node.callee->kind() == NodeKind::MemberExpression;
+    bool chainOptional = node.optional;
     if (isMember) {
         const auto& member =
             static_cast<const frontend::MemberExpression&>(*node.callee);
+        chainOptional = chainOptional || member.optional;
         if (!member.object) {
             error(node, "compiler: member call missing object");
             code_->pushUndefined();
@@ -2393,9 +2414,15 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         ++argc;
     }
     if (isMember) {
-        code_->callMethod(argc);
+        if (tailCall && !chainOptional) {
+            code_->tailCallMethod(argc);
+        } else {
+            code_->callMethod(argc);
+        }
     } else if (directEvalCandidate) {
         code_->directEval(argc);
+    } else if (tailCall && !chainOptional) {
+        code_->tailCall(argc);
     } else {
         code_->call(argc);
     }
@@ -4519,8 +4546,13 @@ void Compiler::compileFunctionObject(const Node& node,
     // 普通函数是 arguments 与字段初始化器上下文的边界；箭头继承外层。
     const bool savedInFieldInitializer = inFieldInitializer_;
     if (!arrow) inFieldInitializer_ = false;
+    // 尾位置上下文按函数边界重置：生成器/async/构造器内不做尾调用。
+    const int savedTailUnsafe = tailUnsafeDepth_;
+    const bool isConstructor = info != nullptr && info->isConstructor;
+    tailUnsafeDepth_ = (generator || async || isConstructor) ? 1 : 0;
     compileFunctionBody(params, body, arrow || method, false, !arrow, strict,
                         generator);
+    tailUnsafeDepth_ = savedTailUnsafe;
     inFieldInitializer_ = savedInFieldInitializer;
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
