@@ -2149,6 +2149,17 @@ TEST(CompilerTest, ForOfStringIteratesCodePoints) {
     EXPECT_DOUBLE_EQ(numberValue(value), 21.0);
 }
 
+TEST(CompilerTest, BreakInsideIfYieldsUndefinedCompletion) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = eval("
+        "  'for (var i = 0; i < 5; i++) { i; if (i === 3) break; }'"
+        ");");
+    ASSERT_NE(value, nullptr);
+    EXPECT_EQ(value->type()->kind(), TypeKind::Undefined);
+}
+
 TEST(CompilerTest, NamedFunctionExpressionHasInnerNameBinding) {
     Fixture f;
     Value* value = runScriptResult(

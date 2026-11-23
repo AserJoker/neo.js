@@ -589,10 +589,14 @@ void Compiler::compileReturnStatement(const frontend::ReturnStatement& node) {
 void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     if (!node.test) return;
     std::string completionSlot;
+    uint32_t tryBeginPc = 0;
     if (evalCompletion_) {
         completionSlot = newCompletionSlot("*eval-if-");
         emitDefineCompletionSlot(completionSlot);
         emitSaveCompletion(completionSlot);
+        // IfStatement 返回 UpdateEmpty(branch, undefined)：分支的 abrupt
+        // 完成若携带 EMPTY（如 break），跨出 if 时归一化为 undefined。
+        tryBeginPc = code_->tryBegin();
     }
     compileExpression(*node.test);
     uint32_t toElse = code_->jfalse();
@@ -618,6 +622,11 @@ void Compiler::compileIfStatement(const frontend::IfStatement& node) {
     }
     if (evalCompletion_) {
         emitCompletionToUndefined();
+        code_->tryBodyEnd();
+        uint32_t tryEnd = code_->here();
+        code_->patchU32(tryBeginPc + 2, 0);
+        code_->patchU32(tryBeginPc + 6, 0);
+        code_->patchU32(tryBeginPc + 10, tryEnd);
         emitMergeCompletion(completionSlot);
     }
 }
