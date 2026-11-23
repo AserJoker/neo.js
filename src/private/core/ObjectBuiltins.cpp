@@ -72,6 +72,7 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::Function:  tag = "Function"; break;
         case TypeKind::Object:    tag = "Object"; break;
         case TypeKind::Array:     tag = "Array"; break;
+        case TypeKind::Arguments: tag = "Arguments"; break;
         case TypeKind::Error:     tag = "Error"; break;
         // 包装对象按 [[PrimitiveValue]] 的类型给出 tag（ES2024 §20.1.3.6）。
         // 包装对象的 primitive 恒为 Boolean/Number/BigInt/String/Symbol 之一

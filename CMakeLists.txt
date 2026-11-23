@@ -199,6 +199,7 @@ add_library(neojs STATIC
     src/private/core/FunctionInvoke.cpp
     src/private/unicode/Utf8.cpp
     src/private/unicode/UnicodeClassification.cpp
+    src/private/unicode/UnicodeCaseNorm.cpp
     src/private/regex/RegexFlags.cpp
     src/private/regex/RegexParser.cpp
     src/private/regex/RegexCompiler.cpp

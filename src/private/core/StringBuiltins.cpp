@@ -16,7 +16,7 @@
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
-#include "regex/RegexUnicode.h"
+#include "unicode/UnicodeCaseNorm.h"
 #include "unicode/UnicodeClassification.h"
 #include "unicode/Utf8.h"
 
@@ -71,20 +71,6 @@ std::string fromUtf16(const std::vector<uint16_t>& units) {
             ++i;
         }
         unicode::encodeCodePoint(cp, out);
-    }
-    return out;
-}
-
-std::vector<uint32_t> toCodePoints(const std::vector<uint16_t>& units) {
-    std::vector<uint32_t> out;
-    for (size_t i = 0; i < units.size(); ++i) {
-        uint32_t cp = units[i];
-        if (unicode::isHighSurrogate(cp) && i + 1 < units.size() &&
-            unicode::isLowSurrogate(units[i + 1])) {
-            cp = unicode::combineSurrogates(cp, units[i + 1]);
-            ++i;
-        }
-        out.push_back(cp);
     }
     return out;
 }
@@ -556,6 +542,11 @@ Value* stringLocaleCompare(IContext* ctx, Value* self, size_t argc, Value* argv[
     if (detail::isErrorValue(str)) return str;
     Value* that = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
     if (detail::isErrorValue(that)) return that;
+    // 规范要求规范等价（NFC）的字符串比较结果为 0，先归一化再比较。
+    Value* left = ctx->createString(unicode::normalize(
+        stringValue(str), unicode::NormalizationForm::NFC));
+    Value* right = ctx->createString(unicode::normalize(
+        stringValue(that), unicode::NormalizationForm::NFC));
     // 有 Intl 时委托给 %Collator%（ECMA-402 §22.1.3.10）；否则退化为码元序。
     Value* intl = ctx->global()->lookup("Intl");
     if (intl != nullptr && detail::isObjectKind(intl->type()->kind())) {
@@ -567,12 +558,12 @@ Value* stringLocaleCompare(IContext* ctx, Value* self, size_t argc, Value* argv[
             if (detail::isErrorValue(collator)) return collator;
             Value* compare = ctx->getProperty(collator, "compare");
             if (detail::isErrorValue(compare)) return compare;
-            Value* compareArgs[2] = {str, that};
+            Value* compareArgs[2] = {left, right};
             return ctx->call(compare, collator, 2, compareArgs);
         }
     }
-    std::vector<uint16_t> a = toUtf16(stringValue(str));
-    std::vector<uint16_t> b = toUtf16(stringValue(that));
+    std::vector<uint16_t> a = toUtf16(stringValue(left));
+    std::vector<uint16_t> b = toUtf16(stringValue(right));
     if (std::lexicographical_compare(a.begin(), a.end(), b.begin(), b.end())) {
         return ctx->createNumber(-1.0);
     }
@@ -585,11 +576,28 @@ Value* stringLocaleCompare(IContext* ctx, Value* self, size_t argc, Value* argv[
 Value* caseMap(IContext* ctx, Value* self, bool upper, const char* method) {
     Value* str = requireStringThis(ctx, self, method);
     if (detail::isErrorValue(str)) return str;
-    std::vector<uint32_t> cps = toCodePoints(toUtf16(stringValue(str)));
-    for (uint32_t& cp : cps) {
-        cp = upper ? regex::simpleUpper(cp) : regex::simpleFold(cp);
+    const std::string& text = stringValue(str);
+    return ctx->createString(upper ? unicode::toUpperFull(text)
+                                   : unicode::toLowerFull(text));
+}
+
+// String.prototype.normalize ( [ form ] )（ES2024 §22.1.3.12）。
+Value* stringNormalize(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    Value* str = requireStringThis(ctx, self, "normalize");
+    if (detail::isErrorValue(str)) return str;
+    std::string form = "NFC";
+    if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
+        Value* formValue = detail::toStringValue(ctx, argv[0]);
+        if (detail::isErrorValue(formValue)) return formValue;
+        form = stringValue(formValue);
     }
-    return ctx->createString(fromUtf16(fromCodePoints(cps)));
+    unicode::NormalizationForm normalization;
+    if (!unicode::parseNormalizationForm(form, normalization)) {
+        return detail::rangeError(
+            ctx,
+            "The normalization form should be one of NFC, NFD, NFKC, NFKD");
+    }
+    return ctx->createString(unicode::normalize(stringValue(str), normalization));
 }
 
 Value* stringToLowerCase(IContext* ctx, Value* self, size_t, Value*[]) {
@@ -737,6 +745,8 @@ bool registerStringBuiltins(IContext* ctx, Value* ctor, Value* proto) {
     if (!defineMethod(ctx, proto, "trimEnd", stringTrimEnd, 0, 0)) return false;
     if (!defineMethod(ctx, proto, "padStart", stringPadStart, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "padEnd", stringPadEnd, 0, 1)) return false;
+    if (!defineMethod(ctx, proto, "normalize", stringNormalize, 0, 0))
+        return false;
     if (!defineMethod(ctx, proto, "repeat", stringRepeat, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "concat", stringConcat, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "isWellFormed", stringIsWellFormed, 0, 0))
