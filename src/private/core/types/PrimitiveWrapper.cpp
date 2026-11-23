@@ -15,12 +15,44 @@
 #include "core/types/PrimitiveWrapper.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
+#include "unicode/Utf8.h"
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 namespace neo::core {
 
 namespace {
+
+// 把 UTF-8/WTF-8 字符串拆成 UTF-16 码元序列（String 包装的索引单位）。
+std::vector<uint16_t> toUtf16Units(const std::string& s) {
+    std::vector<uint16_t> units;
+    size_t i = 0;
+    while (i < s.size()) {
+        uint32_t cp = 0;
+        if (!unicode::decodeCodePoint(s, i, cp)) {
+            units.push_back(static_cast<uint8_t>(s[i]));
+            ++i;
+            continue;
+        }
+        if (cp > 0xFFFF) {
+            cp -= 0x10000;
+            units.push_back(static_cast<uint16_t>(0xD800 + (cp >> 10)));
+            units.push_back(static_cast<uint16_t>(0xDC00 + (cp & 0x3FF)));
+        } else {
+            units.push_back(static_cast<uint16_t>(cp));
+        }
+    }
+    return units;
+}
+
+// 单个 UTF-16 码元按 WTF-8 编码（孤立代理保留 3 字节形式）。
+std::string unitToString(uint16_t unit) {
+    std::string out;
+    unicode::encodeCodePoint(unit, out);
+    return out;
+}
 
 // 包装对象若是 String 包装，返回被包装的字符串；否则 nullptr。
 const std::string* stringPayload(Value* self) {
@@ -128,7 +160,9 @@ bool resolveStringWrapperKey(IContext* ctx, const std::string* s, Value* key,
         return true;
     }
     uint32_t index = 0;
-    if (parseArrayIndex(k, index) && index < s->size()) matches = true;
+    if (parseArrayIndex(k, index) && index < toUtf16Units(*s).size()) {
+        matches = true;
+    }
     return true;
 }
 
@@ -142,14 +176,47 @@ bool PrimitiveWrapperType::hasIndexedLength(Value* self) const {
 
 uint32_t PrimitiveWrapperType::indexedLength(Value* self) const {
     const std::string* s = stringPayload(self);
-    return s != nullptr ? static_cast<uint32_t>(s->size()) : 0;
+    return s != nullptr ? static_cast<uint32_t>(toUtf16Units(*s).size()) : 0;
 }
 
 Value* PrimitiveWrapperType::indexedElement(IContext* ctx, Value* self,
                                             uint32_t index) const {
     const std::string* s = stringPayload(self);
-    if (s == nullptr || index >= s->size()) return nullptr;
-    return ctx->createString(std::string(1, (*s)[index]));
+    if (s == nullptr) return nullptr;
+    const std::vector<uint16_t> units = toUtf16Units(*s);
+    if (index >= units.size()) return nullptr;
+    return ctx->createString(unitToString(units[index]));
+}
+
+// String 包装的 length/索引自有属性（§10.4.3.1/§10.4.3.2）：
+// length 不可写/不可枚举/不可配置；索引不可写/可枚举/不可配置。
+Value* PrimitiveWrapperType::getOwnProperty(IContext* ctx, Value* self,
+                                            const PropertyKey& key, bool& exists,
+                                            Property& out) const {
+    const std::string* s = stringPayload(self);
+    if (s != nullptr && !key.isSymbol) {
+        const std::vector<uint16_t> units = toUtf16Units(*s);
+        if (key.name == "length") {
+            exists = true;
+            out = Property{};
+            out.value = ctx->createNumber(static_cast<double>(units.size()));
+            out.writable = false;
+            out.enumerable = false;
+            out.configurable = false;
+            return nullptr;
+        }
+        uint32_t index = 0;
+        if (parseArrayIndex(key.name, index) && index < units.size()) {
+            exists = true;
+            out = Property{};
+            out.value = ctx->createString(unitToString(units[index]));
+            out.writable = false;
+            out.enumerable = true;
+            out.configurable = false;
+            return nullptr;
+        }
+    }
+    return IType::getOwnProperty(ctx, self, key, exists, out);
 }
 
 Value* PrimitiveWrapperType::getProperty(IContext* ctx, Value* self, Value* key) {
@@ -159,10 +226,13 @@ Value* PrimitiveWrapperType::getProperty(IContext* ctx, Value* self, Value* key)
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, s, key, k, matches, err)) {
         if (matches) {
-            if (k == "length") return ctx->createNumber(static_cast<double>(s->size()));
+            const std::vector<uint16_t> units = toUtf16Units(*s);
+            if (k == "length") {
+                return ctx->createNumber(static_cast<double>(units.size()));
+            }
             uint32_t index = 0;
             parseArrayIndex(k, index);
-            return ctx->createString(std::string(1, (*s)[index]));
+            return ctx->createString(unitToString(units[index]));
         }
     } else if (err != nullptr) {
         return err;

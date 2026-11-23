@@ -50,6 +50,8 @@ public:
     Value* construct(IContext* ctx, Value* self, size_t argc, Value* argv[]) override;
 
     // 属性操作：String 包装的 length/索引本地处理，其余委托 ObjectType
+    Value* getOwnProperty(IContext* ctx, Value* self, const PropertyKey& key,
+                          bool& exists, Property& out) const override;
     Value* getProperty(IContext* ctx, Value* self, Value* key) override;
     Value* setProperty(IContext* ctx, Value* self, Value* key, Value* value) override;
     Value* hasProperty(IContext* ctx, Value* self, Value* key) override;

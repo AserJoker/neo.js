@@ -790,7 +790,10 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 // 定义方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
@@ -800,7 +803,10 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 // 定义以 symbol 为键的方法
 bool defineSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
                         const char* name, NativeFn fn, size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     return ctx->defineProperty(target, ctx->getWellKnownSymbol(which), f, true, false,

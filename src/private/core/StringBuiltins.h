@@ -11,8 +11,9 @@ namespace neo::core {
 class IContext;
 class Value;
 
-// 注册 String.prototype 方法（toString/valueOf 由包装类注册）。
-bool registerStringBuiltins(IContext* ctx, Value* proto);
+// 注册 String.prototype 方法与 String 静态方法
+// （toString/valueOf 由包装类注册）。
+bool registerStringBuiltins(IContext* ctx, Value* ctor, Value* proto);
 
 }  // namespace neo::core
 

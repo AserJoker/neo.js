@@ -13,6 +13,7 @@
 
 #include "core/IContext.h"
 #include "core/IType.h"
+#include "core/OperatorBehavior.h"
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
@@ -316,7 +317,10 @@ Value* execString(IContext* ctx, Value* regexp, const RegExpData& data,
                   const std::u16string& subject, Value* input) {
     std::size_t start = 0;
     Value* error = nullptr;
-    if (!readLastIndex(ctx, regexp, start, error)) return error;
+    // lastIndex 仅在 global/sticky 时参与匹配（§22.2.7.2 step 9-10）。
+    if (data.global || data.sticky) {
+        if (!readLastIndex(ctx, regexp, start, error)) return error;
+    }
     if (start > subject.size()) {
         // §22.2.7.2 step 13.a：lastIndex 越界时重置并直接失败。
         if (data.global || data.sticky) {
@@ -364,7 +368,7 @@ Value* regexpCreate(IContext* ctx, size_t argc, Value* argv[], bool construct) {
     }
 
     Value* pattern = undefinedOf(ctx);
-    if (argc > 0) {
+    if (argc > 0 && patternArg->type()->kind() != TypeKind::Undefined) {
         pattern = toStringArg(ctx, patternArg);
         if (isError(pattern)) return pattern;
     } else {
@@ -372,7 +376,7 @@ Value* regexpCreate(IContext* ctx, size_t argc, Value* argv[], bool construct) {
     }
 
     Value* flags = undefinedOf(ctx);
-    if (argc > 1) {
+    if (argc > 1 && flagsArg->type()->kind() != TypeKind::Undefined) {
         flags = toStringArg(ctx, flagsArg);
         if (isError(flags)) return flags;
     } else {
@@ -544,10 +548,19 @@ Value* regexpToString(IContext* ctx, Value* self, size_t, Value*[]) {
         return detail::typeError(
             ctx, "RegExp.prototype.toString called on incompatible receiver");
     }
+    // §22.2.6.15：source 与 flags 均经属性读取（flags 为规范顺序且可被覆盖）。
+    Value* sourceValue = ctx->getProperty(self, "source");
+    if (isError(sourceValue)) return sourceValue;
+    Value* sourceText = toStringArg(ctx, sourceValue);
+    if (isError(sourceText)) return sourceText;
+    Value* flagsValue = ctx->getProperty(self, "flags");
+    if (isError(flagsValue)) return flagsValue;
+    Value* flagsText = toStringArg(ctx, flagsValue);
+    if (isError(flagsText)) return flagsText;
     std::string text = "/";
-    text += escapeRegExpPattern(data->source);
+    text += *stringData(sourceText);
     text += "/";
-    text += data->flags;
+    text += *stringData(flagsText);
     return ctx->createString(text);
 }
 
@@ -709,6 +722,12 @@ Value* expandReplacementValue(IContext* ctx, const std::string& replacement,
     std::size_t index = 0;
     if (Value* error = matchIndexValue(ctx, match, index)) return error;
 
+    // m = 捕获组数量（match 数组长度减 1，首元素是整体匹配）。
+    uint32_t matchLength = 0;
+    if (Value* error = detail::lengthOf(ctx, match, matchLength)) return error;
+    const std::size_t captureCount =
+        matchLength > 0 ? static_cast<std::size_t>(matchLength - 1) : 0;
+
     std::string out;
     for (std::size_t i = 0; i < replacement.size(); ++i) {
         if (replacement[i] != '$' || i + 1 >= replacement.size()) {
@@ -728,47 +747,56 @@ Value* expandReplacementValue(IContext* ctx, const std::string& replacement,
         } else if (next == '\'') {
             out += slice(subject, index + matchedLength, subject.size());
             ++i;
-        } else if (next >= '1' && next <= '9') {
-            std::size_t captureIndex =
-                static_cast<std::size_t>(next - '0');
+        } else if (next >= '0' && next <= '9') {
+            // "$n" / "$nn"（nn 为 01–99）：优先两位，其次一位；
+            // 无效索引（含 $0、$00）按字面量保留（Table 53）。
+            std::size_t captureIndex = static_cast<std::size_t>(next - '0');
             std::size_t consumed = 1;
+            bool valid = captureIndex >= 1 && captureIndex <= captureCount;
             if (i + 2 < replacement.size() && replacement[i + 2] >= '0' &&
                 replacement[i + 2] <= '9') {
                 const std::size_t two =
                     captureIndex * 10 +
                     static_cast<std::size_t>(replacement[i + 2] - '0');
-                Value* candidate = matchElement(ctx, match, two);
-                if (isError(candidate)) return candidate;
-                if (candidate->type()->kind() != TypeKind::Undefined) {
+                if (two >= 1 && two <= captureCount) {
                     captureIndex = two;
                     consumed = 2;
+                    valid = true;
                 }
             }
-            Value* capture = matchElement(ctx, match, captureIndex);
-            if (isError(capture)) return capture;
-            if (capture->type()->kind() != TypeKind::Undefined) {
-                Value* text = toStringArg(ctx, capture);
-                if (isError(text)) return text;
-                out += *stringData(text);
-            }
-            i += consumed;
-        } else if (next == '<') {
-            const std::size_t close = replacement.find('>', i + 2);
-            if (close == std::string::npos) {
-                out += replacement[i];
-                continue;
-            }
-            const std::string name = replacement.substr(i + 2, close - i - 2);
-            Value* groups = ctx->getProperty(match, "groups");
-            if (isError(groups)) return groups;
-            if (groups->type()->kind() != TypeKind::Undefined) {
-                Value* capture = ctx->getProperty(groups, name);
+            if (!valid) {
+                out += '$';
+            } else {
+                Value* capture = matchElement(ctx, match, captureIndex);
                 if (isError(capture)) return capture;
                 if (capture->type()->kind() != TypeKind::Undefined) {
                     Value* text = toStringArg(ctx, capture);
                     if (isError(text)) return text;
                     out += *stringData(text);
                 }
+                i += consumed;
+            }
+        } else if (next == '<') {
+            Value* groups = ctx->getProperty(match, "groups");
+            if (isError(groups)) return groups;
+            // namedCaptures 为 undefined 时替换文本就是字面量 "$<"。
+            if (groups->type()->kind() == TypeKind::Undefined) {
+                out += "$<";
+                ++i;
+                continue;
+            }
+            const std::size_t close = replacement.find('>', i + 2);
+            if (close == std::string::npos) {
+                out += replacement[i];
+                continue;
+            }
+            const std::string name = replacement.substr(i + 2, close - i - 2);
+            Value* capture = ctx->getProperty(groups, name);
+            if (isError(capture)) return capture;
+            if (capture->type()->kind() != TypeKind::Undefined) {
+                Value* text = toStringArg(ctx, capture);
+                if (isError(text)) return text;
+                out += *stringData(text);
             }
             i = close;
         } else {
@@ -899,12 +927,12 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
     const std::u16string subject = toUtf16(*stringData(input));
 
     std::uint32_t limit = 0xFFFFFFFFu;
-    if (argc > 1) {
+    // limit 为 undefined 时取 2^32-1；否则 ToUint32（NaN → 0）。
+    if (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined) {
         Value* number = detail::toNumberValue(ctx, argv[1]);
         if (isError(number)) return number;
-        const double n = static_cast<NumberData*>(number->data())->value;
-        if (n <= 0.0) return ctx->createArray();
-        if (n < 4294967295.0) limit = static_cast<std::uint32_t>(n);
+        limit = detail::toUint32(
+            static_cast<NumberData*>(number->data())->value);
     }
     if (limit == 0) return ctx->createArray();
 
@@ -1156,17 +1184,38 @@ Value* regexpSymbolMatchAll(IContext* ctx, Value* self, size_t argc,
 
 // —— String.prototype 六个方法 ——
 
-Value* stringReceiver(IContext* ctx, Value* self) {
+// RequireObjectCoercible：仅检查 null/undefined，不做 ToString。
+Value* requireObjectCoercible(IContext* ctx, Value* self) {
     if (self == nullptr || self->type()->kind() == TypeKind::Null ||
         self->type()->kind() == TypeKind::Undefined) {
         return detail::typeError(
             ctx, "String.prototype method called on null or undefined");
     }
-    return toStringArg(ctx, self);
+    return nullptr;
+}
+
+// IsRegExp（§7.2.8）：对象先读 @@match，非 undefined 则 ToBoolean；
+// 否则看是否 [[RegExpMatcher]]（RegExp 类型）。返回错误或 nullptr。
+Value* isRegExpValue(IContext* ctx, Value* value, bool& result) {
+    result = false;
+    if (!detail::isObjectKind(value->type()->kind())) return nullptr;
+    Value* matcher =
+        ctx->getProperty(value, ctx->getWellKnownSymbol(WellKnownSymbol::Match));
+    if (isError(matcher)) return matcher;
+    if (matcher->type()->kind() != TypeKind::Undefined) {
+        result = detail::toBoolean(matcher);
+        return nullptr;
+    }
+    result = value->type()->kind() == TypeKind::RegExp;
+    return nullptr;
 }
 
 Value* toRegExp(IContext* ctx, Value* value, const char* flags = "") {
     if (value->type()->kind() == TypeKind::RegExp) return value;
+    // new RegExp(undefined) 等价于空模式（§22.2.3.1）。
+    if (value->type()->kind() == TypeKind::Undefined) {
+        return ctx->createRegExp("", flags);
+    }
     Value* text = toStringArg(ctx, value);
     if (isError(text)) return text;
     return ctx->createRegExp(*stringData(text), flags);
@@ -1203,8 +1252,9 @@ std::string escapeLiteralPattern(const std::string& text) {
     return out;
 }
 
-Value* toRegExpLiteral(IContext* ctx, Value* value, const char* flags = "") {
-    if (value->type()->kind() == TypeKind::RegExp) return value;
+// replace/replaceAll 的字符串搜索路径：即使 searchValue 是 RegExp 对象
+// （其 @@replace 被置为 undefined），也按 ToString(searchValue) 的字面量匹配。
+Value* toLiteralRegExp(IContext* ctx, Value* value, const char* flags = "") {
     Value* text = toStringArg(ctx, value);
     if (isError(text)) return text;
     return ctx->createRegExp(escapeLiteralPattern(*stringData(text)), flags);
@@ -1220,10 +1270,56 @@ Value* callSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
     return ctx->call(method, thisArg, argc, argv);
 }
 
+// GetMethod(target, @@which)：undefined/null → 无方法；非可调用 → TypeError。
+// 成功返回 nullptr 并写 method（nullptr 表示无方法）。
+Value* getSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
+                       Value*& method) {
+    method = nullptr;
+    Value* value = ctx->getProperty(target, ctx->getWellKnownSymbol(which));
+    if (isError(value)) return value;
+    TypeKind kind = value->type()->kind();
+    if (kind == TypeKind::Undefined || kind == TypeKind::Null) return nullptr;
+    if (!detail::isCallable(value)) {
+        return detail::typeError(ctx, "Symbol method is not callable");
+    }
+    method = value;
+    return nullptr;
+}
+
+// 若 pattern 提供 @@which 方法则调用并返回其结果（§22.1.3 各方法步骤 3）。
+// handled=false 表示无方法，调用方走默认 RegExp 路径。
+Value* trySymbolProtocol(IContext* ctx, Value* pattern, WellKnownSymbol which,
+                         size_t argc, Value* argv[], bool& handled) {
+    handled = false;
+    TypeKind kind = pattern->type()->kind();
+    if (kind == TypeKind::Undefined || kind == TypeKind::Null) return nullptr;
+    // 原始值没有 @@ 方法（不装箱读取原型上的 getter）。
+    if (!detail::isObjectKind(kind)) return nullptr;
+    Value* method = nullptr;
+    if (Value* err = getSymbolMethod(ctx, pattern, which, method)) {
+        handled = true;  // 错误同样终止默认路径
+        return err;
+    }
+    if (method == nullptr) return nullptr;
+    handled = true;
+    return ctx->call(method, pattern, argc, argv);
+}
+
 Value* stringMatch(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // §22.1.3.12：RequireObjectCoercible → GetMethod(@@match) → ToString(O)
+    // → RegExpCreate(regexp) → Invoke(rx, @@match, «S»)。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        Value* protocolArgs[1] = {self};
+        bool handled = false;
+        Value* result = trySymbolProtocol(ctx, pattern, WellKnownSymbol::Match, 1,
+                                          protocolArgs, handled);
+        if (handled) return result;
+    }
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
     Value* regexp = toRegExp(ctx, pattern);
     if (isError(regexp)) return regexp;
     Value* args[1] = {text};
@@ -1232,10 +1328,28 @@ Value* stringMatch(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 }
 
 Value* stringMatchAll(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // §22.1.3.13：RequireObjectCoercible → GetMethod(@@matchAll) → ToString(O)
+    // → RegExpCreate(regexp, "g") → Invoke(rx, @@matchAll, «S»)。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExp(ctx, pattern, "g");
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        Value* protocolArgs[1] = {self};
+        bool handled = false;
+        Value* result = trySymbolProtocol(ctx, pattern, WellKnownSymbol::MatchAll, 1,
+                                          protocolArgs, handled);
+        if (handled) return result;
+    }
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
+    // RegExpCreate(regexp, "g")：RegExp 对象按 source 重建并强制 g 标志。
+    Value* regexp = nullptr;
+    if (pattern->type()->kind() == TypeKind::RegExp) {
+        RegExpData* source = regexpData(pattern);
+        regexp = ctx->createRegExp(source->source, "g");
+    } else {
+        regexp = toRegExp(ctx, pattern, "g");
+    }
     if (isError(regexp)) return regexp;
     Value* args[1] = {text};
     return callSymbolMethod(ctx, regexp, WellKnownSymbol::MatchAll, regexp, 1,
@@ -1243,9 +1357,20 @@ Value* stringMatchAll(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 }
 
 Value* stringSearch(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // §22.1.3.18：RequireObjectCoercible → GetMethod(@@search) → ToString(O)
+    // → RegExpCreate(regexp) → Invoke(rx, @@search, «S»)。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        Value* protocolArgs[1] = {self};
+        bool handled = false;
+        Value* result = trySymbolProtocol(ctx, pattern, WellKnownSymbol::Search, 1,
+                                          protocolArgs, handled);
+        if (handled) return result;
+    }
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
     Value* regexp = toRegExp(ctx, pattern);
     if (isError(regexp)) return regexp;
     Value* args[1] = {text};
@@ -1254,43 +1379,103 @@ Value* stringSearch(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 }
 
 Value* stringReplace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // §22.1.3.19：RequireObjectCoercible → GetMethod(@@replace)（以原 O 调用）
+    // → ToString(O) → 字符串搜索路径。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExpLiteral(ctx, pattern);
+    Value* replaceValue = argc > 1 ? argv[1] : undefinedOf(ctx);
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        Value* protocolArgs[2] = {self, replaceValue};
+        bool handled = false;
+        Value* result = trySymbolProtocol(ctx, pattern, WellKnownSymbol::Replace,
+                                          2, protocolArgs, handled);
+        if (handled) return result;
+    }
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
+    Value* args[2] = {text, replaceValue};
+    Value* regexp = toLiteralRegExp(ctx, pattern);
     if (isError(regexp)) return regexp;
-    Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
     return callSymbolMethod(ctx, regexp, WellKnownSymbol::Replace, regexp, 2,
                             args);
 }
 
 Value* stringReplaceAll(IContext* ctx, Value* self, size_t argc,
                         Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // 步骤 1：RequireObjectCoercible(this)，此时不做 ToString。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExpLiteral(ctx, pattern, "g");
-    if (isError(regexp)) return regexp;
-    RegExpData* data = regexpData(regexp);
-    if (data == nullptr || !data->global) {
-        return detail::typeError(
-            ctx, "String.prototype.replaceAll called with a non-global RegExp");
+    // 步骤 2：searchValue 非 undefined/null 且 IsRegExp 时，flags 必须可强制
+    // 转换且包含 "g"，否则抛 TypeError（§22.1.3.20）。
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        bool regexp = false;
+        if (Value* err = isRegExpValue(ctx, pattern, regexp)) return err;
+        if (regexp) {
+            Value* flags = ctx->getProperty(pattern, "flags");
+            if (isError(flags)) return flags;
+            if (flags->type()->kind() == TypeKind::Undefined ||
+                flags->type()->kind() == TypeKind::Null) {
+                return detail::typeError(
+                    ctx, "String.prototype.replaceAll flags is not coercible");
+            }
+            Value* flagText = toStringArg(ctx, flags);
+            if (isError(flagText)) return flagText;
+            if (stringData(flagText)->find('g') == std::string::npos) {
+                return detail::typeError(
+                    ctx,
+                    "String.prototype.replaceAll called with a non-global RegExp");
+            }
+        }
     }
-    Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
+    // 步骤 2.c-d：GetMethod(@@replace) 以原 O 调用，先于 ToString(O)。
+    Value* replaceValue = argc > 1 ? argv[1] : undefinedOf(ctx);
+    if (pattern->type()->kind() != TypeKind::Undefined &&
+        pattern->type()->kind() != TypeKind::Null) {
+        Value* protocolArgs[2] = {self, replaceValue};
+        bool handled = false;
+        Value* result = trySymbolProtocol(ctx, pattern, WellKnownSymbol::Replace,
+                                          2, protocolArgs, handled);
+        if (handled) return result;
+    }
+    // 步骤 3：S = ToString(O)。
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
+    Value* args[2] = {text, replaceValue};
+    Value* regexp = toLiteralRegExp(ctx, pattern, "g");
+    if (isError(regexp)) return regexp;
     return callSymbolMethod(ctx, regexp, WellKnownSymbol::Replace, regexp, 2,
                             args);
 }
 
 Value* stringSplit(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* text = stringReceiver(ctx, self);
-    if (isError(text)) return text;
+    // 步骤 1：RequireObjectCoercible(this)，此时不做 ToString。
+    if (Value* err = requireObjectCoercible(ctx, self)) return err;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    if (pattern->type()->kind() == TypeKind::RegExp) {
-        Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
-        return callSymbolMethod(ctx, pattern, WellKnownSymbol::Split, pattern, 2,
-                                args);
+    Value* limitArg = argc > 1 ? argv[1] : undefinedOf(ctx);
+    // 步骤 2：separator 非 undefined/null 时优先 @@split，thisArg/首参是原 O。
+    Value* args[2] = {self, limitArg};
+    bool handled = false;
+    Value* protocolResult = trySymbolProtocol(
+        ctx, pattern, WellKnownSymbol::Split, 2, args, handled);
+    if (handled) return protocolResult;
+
+    // 步骤 3：S = ToString(O)，先于 limit 与 separator 的强制转换。
+    Value* text = toStringArg(ctx, self);
+    if (isError(text)) return text;
+    // 步骤 4-6：ToUint32(limit) 先于 ToString(separator)，lim=0 返回空数组。
+    std::uint32_t limit = 0xFFFFFFFFu;
+    if (limitArg->type()->kind() != TypeKind::Undefined) {
+        Value* number = detail::toNumberValue(ctx, limitArg);
+        if (isError(number)) return number;
+        limit = detail::toUint32(
+            static_cast<NumberData*>(number->data())->value);
     }
-    // 字符串分隔符按字面量切分（ES2024 §22.1.3.23），不经过正则。
+    Value* sepValue = toStringArg(ctx, pattern);
+    if (isError(sepValue)) return sepValue;
+    if (limit == 0) return ctx->createArray();
+    // 步骤 7：separator 为 undefined 时返回只含 S 的数组。
     if (pattern->type()->kind() == TypeKind::Undefined) {
         Value* result = ctx->createArray();
         if (isError(result)) return result;
@@ -1299,20 +1484,9 @@ Value* stringSplit(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         if (isError(ctx->arrayAppend(result, item))) return ctx->oomValue();
         return result;
     }
-    Value* sepValue = toStringArg(ctx, pattern);
-    if (isError(sepValue)) return sepValue;
+
     const std::u16string subject = toUtf16(*stringData(text));
     const std::u16string sep = toUtf16(*stringData(sepValue));
-
-    std::uint32_t limit = 0xFFFFFFFFu;
-    if (argc > 1) {
-        Value* number = detail::toNumberValue(ctx, argv[1]);
-        if (isError(number)) return number;
-        const double n = static_cast<NumberData*>(number->data())->value;
-        if (n <= 0.0) return ctx->createArray();
-        if (n < 4294967295.0) limit = static_cast<std::uint32_t>(n);
-    }
-    if (limit == 0) return ctx->createArray();
 
     Value* result = ctx->createArray();
     if (isError(result)) return result;
@@ -1520,16 +1694,40 @@ Value* regexpEscape(IContext* ctx, Value*, size_t argc, Value* argv[]) {
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t length) {
-    Value* method = ctx->createNativeFunction(fn, length);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* method = ctx->createNativeFunction(fn, length, {}, opts);
     if (method == ctx->oomValue()) return false;
     ctx->setFunctionName(method, name);
     return !isError(ctx->defineProperty(target, name, method, true, false,
                                         true));
 }
 
+// String.prototype 方法：length 是规范属性值，不是最小实参数（缺参合法）。
+bool defineStringMethod(IContext* ctx, Value* target, const char* name,
+                        NativeFn fn, size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* method = ctx->createNativeFunction(fn, 0, {}, opts);
+    if (method == ctx->oomValue()) return false;
+    ctx->setFunctionName(method, name);
+    Value* len = ctx->createNumber(static_cast<double>(length));
+    if (len == ctx->oomValue()) return false;
+    if (isError(ctx->defineProperty(method, "length", len, false, false, true))) {
+        return false;
+    }
+    return !isError(ctx->defineProperty(target, name, method, true, false,
+                                        true));
+}
+
 bool defineSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
                         NativeFn fn, size_t length) {
-    Value* method = ctx->createNativeFunction(fn, length);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* method = ctx->createNativeFunction(fn, length, {}, opts);
     if (method == ctx->oomValue()) return false;
     ctx->setFunctionName(method, wellKnownSymbolName(which));
     return !isError(ctx->defineProperty(
@@ -1654,16 +1852,18 @@ bool registerRegExpBuiltins(IContext* ctx) {
     if (stringCtor == nullptr) return false;
     Value* stringProto = ctx->getProperty(stringCtor, "prototype");
     if (isError(stringProto)) return false;
-    if (!defineMethod(ctx, stringProto, "match", stringMatch, 0)) return false;
-    if (!defineMethod(ctx, stringProto, "matchAll", stringMatchAll, 0))
+    if (!defineStringMethod(ctx, stringProto, "match", stringMatch, 1))
         return false;
-    if (!defineMethod(ctx, stringProto, "replace", stringReplace, 0))
+    if (!defineStringMethod(ctx, stringProto, "matchAll", stringMatchAll, 1))
         return false;
-    if (!defineMethod(ctx, stringProto, "replaceAll", stringReplaceAll, 0))
+    if (!defineStringMethod(ctx, stringProto, "replace", stringReplace, 2))
         return false;
-    if (!defineMethod(ctx, stringProto, "search", stringSearch, 0))
+    if (!defineStringMethod(ctx, stringProto, "replaceAll", stringReplaceAll, 2))
         return false;
-    if (!defineMethod(ctx, stringProto, "split", stringSplit, 0)) return false;
+    if (!defineStringMethod(ctx, stringProto, "search", stringSearch, 1))
+        return false;
+    if (!defineStringMethod(ctx, stringProto, "split", stringSplit, 2))
+        return false;
 
     return true;
 }

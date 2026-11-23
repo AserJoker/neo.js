@@ -612,7 +612,7 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
                     stream_.advance();
                     ++count;
                 }
-                out.push_back(static_cast<char>(value));
+                unicode::encodeCodePoint(static_cast<uint32_t>(value), out);
                 return true;
             }
             out.push_back('\0');
@@ -647,7 +647,7 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
                 error_ = "Octal escape sequence out of range";
                 return false;
             }
-            out.push_back(static_cast<char>(value));
+            unicode::encodeCodePoint(static_cast<uint32_t>(value), out);
             return true;
         }
         case '8':
@@ -677,7 +677,7 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
                 value = value * 16 + static_cast<uint32_t>(digit);
                 stream_.advance();
             }
-            out.push_back(static_cast<char>(value));
+            unicode::encodeCodePoint(value, out);
             return true;
         }
         case 'u': {

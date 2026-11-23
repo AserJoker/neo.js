@@ -129,9 +129,12 @@ Value* stringRaw(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     return ctx->createString(result);
 }
 
-// new String(value) → 包装对象
-Value* stringConstruct(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    Value* s = stringCtor(ctx, self, argc, argv);
+// new String(value) → 包装对象。
+// 与 call 路径不同：Symbol 不走 SymbolDescriptiveString，而是 ToString 抛 TypeError
+// （ES2024 §22.1.1.1 step 2.b：仅 NewTarget 为 undefined 时才特判 Symbol）。
+Value* stringConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    if (argc == 0) return ctx->createPrimitiveWrapper(ctx->createString(""));
+    Value* s = detail::toStringValue(ctx, argv[0]);
     if (detail::isErrorValue(s)) return s;
     return ctx->createPrimitiveWrapper(s);
 }
@@ -212,7 +215,11 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    // 内建原型方法不可构造且无自有 prototype 属性（§20.3.3 等）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
@@ -228,6 +235,12 @@ bool registerWrapperCtor(IContext* ctx, const char* name, NativeFn ctor, NativeF
     if (fn == ctx->oomValue()) return false;
     if (outFn != nullptr) *outFn = fn;
     ctx->setFunctionName(fn, name);
+    // 构造函数 length = 1（§20.3.2.1 等）；createNativeFunction 以 minArgc=0
+    // 建过（构造调用允许零实参），此处按规范重定义。
+    if (ctx->defineProperty(fn, "length", ctx->createNumber(1.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // call/construct 语义不同：new 走专用钩子返回包装对象
     ctx->setFunctionConstructor(fn, constructFn);
     // fn.prototype → proto（不可写/不可枚举/不可配置，ES2024 §20.3.2.1 等）
@@ -311,9 +324,12 @@ bool registerPrimitiveWrapperBuiltins(IContext* ctx) {
         return false;
     }
     // String.prototype 常用方法（ES2024 §22.1.3）。
-    if (!registerStringBuiltins(ctx, stringProto)) return false;
+    if (!registerStringBuiltins(ctx, stringFn, stringProto)) return false;
     // String.raw（ES2024 §22.1.2.4）：不可写/不可枚举/可配置的静态方法。
-    Value* rawFn = ctx->createNativeFunction(stringRaw, 1);
+    FunctionCreateOptions rawOpts;
+    rawOpts.constructible = false;
+    rawOpts.hasPrototypeProperty = false;
+    Value* rawFn = ctx->createNativeFunction(stringRaw, 1, {}, rawOpts);
     if (rawFn == ctx->oomValue()) return false;
     ctx->setFunctionName(rawFn, "raw");
     if (ctx->defineProperty(stringFn, "raw", rawFn, true, false, true)

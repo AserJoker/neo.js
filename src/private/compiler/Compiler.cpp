@@ -272,8 +272,16 @@ void Compiler::compileStatement(const Node& node) {
     switch (node.kind()) {
         case NodeKind::EmptyStatement:
         case NodeKind::DebuggerStatement:
-        case NodeKind::Directive:
             // debugger 暂为 no-op；指令序言（"use strict"）只影响 Sema/编译选项。
+            break;
+        case NodeKind::Directive:
+            // 指令序言仍是 ExpressionStatement（§12.1），其字符串值参与完成值。
+            if (evalCompletion_) {
+                code_->push(static_cast<const frontend::Directive&>(node).value);
+                code_->dup();
+                code_->store(kEvalCompletion);
+                code_->pop();
+            }
             break;
         case NodeKind::ExpressionStatement:
             compileExpressionStatement(

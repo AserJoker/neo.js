@@ -112,7 +112,8 @@ Value* requireStringThis(IContext* ctx, Value* self, const char* method) {
             ctx, std::string("String.prototype.") + method +
                      " called on null or undefined");
     }
-    return ctx->toString(self);
+    // ToString 语义（Symbol 抛 TypeError；不能用 String() 的 Symbol 特例）。
+    return detail::toStringValue(ctx, self);
 }
 
 const std::string& stringValue(Value* v) {
@@ -151,6 +152,35 @@ uint32_t clampPos(double idx, uint32_t len) {
 
 Value* argOrUndefined(IContext* ctx, size_t argc, Value* argv[], size_t i) {
     return i < argc ? argv[i] : ctx->createUndefined();
+}
+
+// IsRegExp（§7.2.8）：对象先读 @@match，非 undefined 则 ToBoolean；
+// 否则看是否 [[RegExpMatcher]]（即 RegExp 类型）。返回错误或 nullptr。
+Value* isRegExpValue(IContext* ctx, Value* value, bool& result) {
+    result = false;
+    if (!detail::isObjectKind(value->type()->kind())) return nullptr;
+    Value* matcher =
+        ctx->getProperty(value, ctx->getWellKnownSymbol(WellKnownSymbol::Match));
+    if (detail::isErrorValue(matcher)) return matcher;
+    if (matcher->type()->kind() != TypeKind::Undefined) {
+        result = detail::toBoolean(matcher);
+        return nullptr;
+    }
+    result = value->type()->kind() == TypeKind::RegExp;
+    return nullptr;
+}
+
+// includes/startsWith/endsWith 共用的 searchString 前置检查：
+// IsRegExp(searchString) 为 true 时抛 TypeError（§22.1.3.7 step 6 等）。
+Value* rejectRegExpSearchString(IContext* ctx, Value* search, const char* method) {
+    bool regexp = false;
+    if (Value* err = isRegExpValue(ctx, search, regexp)) return err;
+    if (regexp) {
+        return detail::typeError(
+            ctx, std::string("String.prototype.") + method +
+                     " does not accept a RegExp searchString");
+    }
+    return nullptr;
 }
 
 // 在 hay 中从 from 起查找 needle，返回码元下标或 kNotFound。
@@ -234,7 +264,9 @@ Value* stringAt(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* stringIncludes(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* str = requireStringThis(ctx, self, "includes");
     if (detail::isErrorValue(str)) return str;
-    Value* search = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
+    Value* searchArg = argOrUndefined(ctx, argc, argv, 0);
+    if (Value* err = rejectRegExpSearchString(ctx, searchArg, "includes")) return err;
+    Value* search = detail::toStringValue(ctx, searchArg);
     if (detail::isErrorValue(search)) return search;
     std::vector<uint16_t> hay = toUtf16(stringValue(str));
     std::vector<uint16_t> needle = toUtf16(stringValue(search));
@@ -248,7 +280,10 @@ Value* stringIncludes(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* stringStartsWith(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* str = requireStringThis(ctx, self, "startsWith");
     if (detail::isErrorValue(str)) return str;
-    Value* search = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
+    Value* searchArg = argOrUndefined(ctx, argc, argv, 0);
+    if (Value* err = rejectRegExpSearchString(ctx, searchArg, "startsWith"))
+        return err;
+    Value* search = detail::toStringValue(ctx, searchArg);
     if (detail::isErrorValue(search)) return search;
     std::vector<uint16_t> hay = toUtf16(stringValue(str));
     std::vector<uint16_t> needle = toUtf16(stringValue(search));
@@ -265,7 +300,10 @@ Value* stringStartsWith(IContext* ctx, Value* self, size_t argc, Value* argv[]) 
 Value* stringEndsWith(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* str = requireStringThis(ctx, self, "endsWith");
     if (detail::isErrorValue(str)) return str;
-    Value* search = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
+    Value* searchArg = argOrUndefined(ctx, argc, argv, 0);
+    if (Value* err = rejectRegExpSearchString(ctx, searchArg, "endsWith"))
+        return err;
+    Value* search = detail::toStringValue(ctx, searchArg);
     if (detail::isErrorValue(search)) return search;
     std::vector<uint16_t> hay = toUtf16(stringValue(str));
     std::vector<uint16_t> needle = toUtf16(stringValue(search));
@@ -310,8 +348,8 @@ Value* stringLastIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[])
         Value* nv = detail::toNumberValue(ctx, argv[1]);
         if (detail::isErrorValue(nv)) return nv;
         raw = static_cast<NumberData*>(nv->data())->value;
-        // ToIntegerOrInfinity(NaN) = +0，规范中的 NaN 分支不可达。
-        if (std::isnan(raw)) raw = 0.0;
+        // §22.1.3.8：position 为 NaN 时取 +∞（而非 ToIntegerOrInfinity 的 +0）。
+        if (std::isnan(raw)) raw = std::numeric_limits<double>::infinity();
     }
     double maxPos = static_cast<double>(hay.size());
     double pos = raw < 0.0 ? 0.0 : std::min(raw, maxPos);
@@ -567,10 +605,95 @@ Value* stringToLocaleUpperCase(IContext* ctx, Value* self, size_t, Value*[]) {
     return caseMap(ctx, self, true, "toLocaleUpperCase");
 }
 
+// String.fromCharCode(...codes)（ES2024 §22.1.2.1）：每个参数 ToUint16。
+Value* stringFromCharCode(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    std::vector<uint16_t> units;
+    units.reserve(argc);
+    for (size_t i = 0; i < argc; ++i) {
+        Value* nv = detail::toNumberValue(ctx, argv[i]);
+        if (detail::isErrorValue(nv)) return nv;
+        double n = static_cast<const NumberData*>(nv->data())->value;
+        uint16_t unit = 0;
+        if (std::isfinite(n)) {
+            double t = std::trunc(n);
+            double m = std::fmod(t, 65536.0);
+            if (m < 0) m += 65536.0;
+            unit = static_cast<uint16_t>(m);
+        }
+        units.push_back(unit);
+    }
+    return ctx->createString(fromUtf16(units));
+}
+
+// String.fromCodePoint(...codePoints)（ES2024 §22.1.2.2）：
+// 非整数或越界抛 RangeError。
+Value* stringFromCodePoint(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    std::vector<uint32_t> cps;
+    cps.reserve(argc);
+    for (size_t i = 0; i < argc; ++i) {
+        Value* nv = detail::toNumberValue(ctx, argv[i]);
+        if (detail::isErrorValue(nv)) return nv;
+        double n = static_cast<const NumberData*>(nv->data())->value;
+        if (!std::isfinite(n) || std::trunc(n) != n || n < 0 || n > 0x10FFFF) {
+            return detail::rangeError(ctx,
+                                      "Invalid code point " + std::to_string(n));
+        }
+        cps.push_back(static_cast<uint32_t>(n));
+    }
+    return ctx->createString(fromUtf16(fromCodePoints(cps)));
+}
+
+// String.prototype.isWellFormed（ES2024 §22.1.3.29）：
+// 存在孤立代理码元返回 false。
+Value* stringIsWellFormed(IContext* ctx, Value* self, size_t, Value*[]) {
+    Value* str = requireStringThis(ctx, self, "isWellFormed");
+    if (detail::isErrorValue(str)) return str;
+    std::vector<uint16_t> units = toUtf16(stringValue(str));
+    for (size_t i = 0; i < units.size(); ++i) {
+        uint16_t u = units[i];
+        if (u >= 0xD800 && u <= 0xDBFF) {
+            if (i + 1 < units.size() && units[i + 1] >= 0xDC00 &&
+                units[i + 1] <= 0xDFFF) {
+                ++i;
+                continue;
+            }
+            return ctx->createBoolean(false);
+        }
+        if (u >= 0xDC00 && u <= 0xDFFF) return ctx->createBoolean(false);
+    }
+    return ctx->createBoolean(true);
+}
+
+// String.prototype.toWellFormed（ES2024 §22.1.3.32）：
+// 孤立代理码元替换为 U+FFFD。
+Value* stringToWellFormed(IContext* ctx, Value* self, size_t, Value*[]) {
+    Value* str = requireStringThis(ctx, self, "toWellFormed");
+    if (detail::isErrorValue(str)) return str;
+    std::vector<uint16_t> units = toUtf16(stringValue(str));
+    for (size_t i = 0; i < units.size(); ++i) {
+        uint16_t u = units[i];
+        if (u >= 0xD800 && u <= 0xDBFF) {
+            if (i + 1 < units.size() && units[i + 1] >= 0xDC00 &&
+                units[i + 1] <= 0xDFFF) {
+                ++i;
+                continue;
+            }
+            units[i] = 0xFFFD;
+        } else if (u >= 0xDC00 && u <= 0xDFFF) {
+            units[i] = 0xFFFD;
+        }
+    }
+    return ctx->createString(fromUtf16(units));
+}
+
 // 定义 prototype 方法（writable/不可枚举/可配置）。
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc, int lengthOverride) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    // 内建原型方法不可构造且无 prototype 属性（§22.1.3）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     if (lengthOverride >= 0) {
@@ -587,7 +710,13 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 
 }  // namespace
 
-bool registerStringBuiltins(IContext* ctx, Value* proto) {
+bool registerStringBuiltins(IContext* ctx, Value* ctor, Value* proto) {
+    // String 静态方法（§22.1.2）：不可构造。
+    if (!defineMethod(ctx, ctor, "fromCharCode", stringFromCharCode, 0, 1))
+        return false;
+    if (!defineMethod(ctx, ctor, "fromCodePoint", stringFromCodePoint, 0, 1))
+        return false;
+
     if (!defineMethod(ctx, proto, "charAt", stringCharAt, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "charCodeAt", stringCharCodeAt, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "codePointAt", stringCodePointAt, 0, 1)) return false;
@@ -610,6 +739,10 @@ bool registerStringBuiltins(IContext* ctx, Value* proto) {
     if (!defineMethod(ctx, proto, "padEnd", stringPadEnd, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "repeat", stringRepeat, 0, 1)) return false;
     if (!defineMethod(ctx, proto, "concat", stringConcat, 0, 1)) return false;
+    if (!defineMethod(ctx, proto, "isWellFormed", stringIsWellFormed, 0, 0))
+        return false;
+    if (!defineMethod(ctx, proto, "toWellFormed", stringToWellFormed, 0, 0))
+        return false;
     if (!defineMethod(ctx, proto, "localeCompare", stringLocaleCompare, 0, 1))
         return false;
 

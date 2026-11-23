@@ -28,6 +28,7 @@
 #include "core/types/Proxy.h"
 #include "core/types/String.h"
 
+#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <limits>
@@ -260,7 +261,9 @@ inline Value* toPrimitive(IContext* ctx, Value* input,
 
     Value* exotic = ctx->getProperty(input, ctx->getWellKnownSymbol(WellKnownSymbol::ToPrimitive));
     if (isErrorValue(exotic)) return exotic;
-    if (exotic->type()->kind() != TypeKind::Undefined) {
+    // @@toPrimitive 为 undefined/null 视作未定义（GetMethod 语义），继续回退。
+    if (exotic->type()->kind() != TypeKind::Undefined &&
+        exotic->type()->kind() != TypeKind::Null) {
         if (!isCallable(exotic)) {
             return typeError(ctx, "Symbol.toPrimitive is not a function");
         }
@@ -295,28 +298,48 @@ inline double toNumber(Value* v) {
     }
 }
 
-// —— NumberToString（简化版，ES2024 §6.1.6.1.20 近似）——
-// NaN → "NaN", +Infinity → "Infinity", -Infinity → "-Infinity", +0/-0 → "0"
-// 整数 → 无小数点，小数 → 裁剪 trailing zeros
+// —— NumberToString（ES2024 §6.1.6.1.20）——
+// 取最短可回读的十进制有效数字，再按规范阈值选择定点/指数形式：
+//   k ≤ n ≤ 21 → 数字后补零；0 < n ≤ 21 → 小数点插在第 n 位；
+//   -6 < n ≤ 0 → "0." + 补零 + 数字；否则 d.dddde±(n-1)。
 inline std::string numberToString(double n) {
     if (std::isnan(n)) return "NaN";
     if (std::isinf(n)) return n > 0 ? "Infinity" : "-Infinity";
     if (n == 0.0) return "0";  // +0 和 -0 都 → "0"
 
-    // 整数：无小数点
-    if (std::floor(n) == n && std::abs(n) < 1e16) {
-        return std::to_string(static_cast<long long>(n));
-    }
+    const bool negative = n < 0;
+    // scientific 形式给出最短可回读的有效数字（如 "1.2345e-03"）。
+    char buf[64];
+    auto result = std::to_chars(buf, buf + sizeof buf, std::fabs(n),
+                                std::chars_format::scientific);
+    std::string sci(buf, result.ptr);
+    const size_t epos = sci.find('e');
+    const int exponent = std::stoi(sci.substr(epos + 1));
 
-    // 小数：用 std::to_string 后裁剪 trailing zeros（std::to_string(double) 必含 '.'）
-    std::string s = std::to_string(n);
-    size_t last = s.find_last_not_of('0');
-    if (s[last] == '.') {
-        s.erase(last);       // "3.0" → "3"
-    } else {
-        s.erase(last + 1);   // "3.14000" → "3.14"
+    std::string digits;
+    for (size_t i = 0; i < epos; ++i) {
+        if (sci[i] != '.') digits.push_back(sci[i]);
     }
-    return s;
+    const int k = static_cast<int>(digits.size());
+    const int point = exponent + 1;  // 值 = 0.digits × 10^point
+
+    std::string out;
+    if (k <= point && point <= 21) {
+        out = digits + std::string(static_cast<size_t>(point - k), '0');
+    } else if (0 < point && point <= 21) {
+        out = digits.substr(0, static_cast<size_t>(point)) + "." +
+              digits.substr(static_cast<size_t>(point));
+    } else if (-6 < point && point <= 0) {
+        out = "0." + std::string(static_cast<size_t>(-point), '0') + digits;
+    } else {
+        const int e = point - 1;
+        out = digits.substr(0, 1);
+        if (k > 1) out += "." + digits.substr(1);
+        out += 'e';
+        out += e >= 0 ? '+' : '-';
+        out += std::to_string(std::abs(e));
+    }
+    return negative ? "-" + out : out;
 }
 
 // —— ToString 转换（ES2024 §7.1.14，无对象 ToPrimitive 退化）——
