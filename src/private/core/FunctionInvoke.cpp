@@ -39,6 +39,25 @@ Value* bindArgumentsObject(IContext* ctx, Scope* execScope, Value* fn,
     return nullptr;
 }
 
+// 普通调用的 this 绑定（§10.4.3 OrdinaryCallBindThis）：
+// 严格函数原样使用；非严格函数把 null/undefined 换成全局对象，原始值装箱。
+// 箭头/绑定函数已由 d->self 固定 this，不在此处替换。
+Value* ordinaryCallThis(IContext* ctx, FunctionData* d, Value* thisArg) {
+    Value* value = thisArg != nullptr ? thisArg : ctx->createUndefined();
+    if (detail::isErrorValue(value)) return value;
+    if (d->closureScope != nullptr && d->closureScope->hasFlag("strict")) {
+        return value;
+    }
+    TypeKind kind = value->type()->kind();
+    if (kind == TypeKind::Null || kind == TypeKind::Undefined) {
+        return ctx->globalObject();
+    }
+    if (!detail::isObjectKind(kind)) {
+        return ctx->createPrimitiveWrapper(value);
+    }
+    return value;
+}
+
 }  // namespace
 
 Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t argc,
@@ -205,10 +224,20 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         return ctx->oomValue();
     }
 
-    // this 优先级：函数自身绑定（箭头/bind）> 调用点传入 > undefined
-    Value* boundThis = d->self != nullptr
-                           ? d->self
-                           : (thisArg != nullptr ? thisArg : ctx->createUndefined());
+    // this 优先级：函数自身绑定（箭头/bind）> 调用点传入（按严格性替换）。
+    Value* boundThis =
+        d->self != nullptr ? d->self : ordinaryCallThis(ctx, d, thisArg);
+    if (detail::isErrorValue(boundThis)) {
+        while (ctx->current() != d->closureScope) ctx->popScope();
+        if (--d->activeCalls == 0 && !d->capturesEnvironment) {
+            d->closureScope->reparent(nullptr);
+        }
+        ctx->setCurrentScope(savedCurrent);
+        ctx->setRootScope(savedRoot);
+        ctx->setCurrentFunctionEnv(savedFunctionEnv);
+        ctx->setCurrentFunction(savedFunction);
+        return boundThis;
+    }
     execScope->setThis(boundThis);
     execScope->setNewTarget(newTarget != nullptr ? newTarget
                                                  : ctx->createUndefined());
@@ -310,9 +339,8 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
         return out;
     }
 
-    Value* boundThis = d->self != nullptr
-                           ? d->self
-                           : (thisArg != nullptr ? thisArg : ctx->createUndefined());
+    Value* boundThis =
+        d->self != nullptr ? d->self : ordinaryCallThis(ctx, d, thisArg);
     execScope->setThis(boundThis);
     execScope->setNewTarget(ctx->createUndefined());
     ctx->setCurrentFunctionEnv(execScope);
@@ -426,10 +454,9 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
             return ctx->oomValue();
         }
         co->execScope = execScope;
-        Value* boundThis = d->self != nullptr
-                               ? d->self
-                               : (co->receiver != nullptr ? co->receiver
-                                                          : ctx->createUndefined());
+        Value* boundThis =
+            d->self != nullptr ? d->self
+                               : ordinaryCallThis(ctx, d, co->receiver);
         execScope->setThis(boundThis);
         execScope->setNewTarget(ctx->createUndefined());
     } else {

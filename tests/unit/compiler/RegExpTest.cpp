@@ -181,6 +181,40 @@ TEST(RegExpTest, StringSplit) {
     EXPECT_EQ(stringValue(result), "a:b:c");
 }
 
+TEST(RegExpTest, StringSplitTreatsStringSeparatorLiterally) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = 'a.b.c'.split('.').join(':');");
+    EXPECT_EQ(stringValue(result), "a:b:c");
+}
+
+TEST(RegExpTest, StringSplitUndefinedSeparatorReturnsWholeString) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var parts = 'undefined'.split();"
+        "var result = parts.length + ':' + parts[0];");
+    EXPECT_EQ(stringValue(result), "1:undefined");
+}
+
+TEST(RegExpTest, StringSplitEmptySeparatorSplitsCodePoints) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var parts = '\\u{1F600}x'.split('');"
+        "var result = parts.length + ':' + parts[0];");
+    EXPECT_EQ(stringValue(result), "2:\xF0\x9F\x98\x80");
+}
+
+TEST(RegExpTest, StringReplaceTreatsStringPatternLiterally) {
+    Fixture f;
+    Value* result = runScript(
+        f,
+        "var result = 'a.b'.replace('.', '-');");
+    EXPECT_EQ(stringValue(result), "a-b");
+}
+
 TEST(RegExpTest, MatchAllIterator) {
     Fixture f;
     Value* result = runScript(

@@ -287,6 +287,17 @@ struct Code {
         emitU32(addString(std::string(completionName)));
         return pc;
     }
+    uint32_t setFunctionSloppy() { return emitOp(OpCode::SetFunctionSloppy); }
+    uint32_t setFunctionLength(uint32_t length) {
+        uint32_t pc = emitOp(OpCode::SetFunctionLength);
+        emitU32(length);
+        return pc;
+    }
+    uint32_t updatePendingCompletion(std::string_view slotName) {
+        uint32_t pc = emitOp(OpCode::UpdatePendingCompletion);
+        emitU32(addString(std::string(slotName)));
+        return pc;
+    }
     uint32_t loadCompletionResult(std::string_view completionName) {
         uint32_t pc = emitOp(OpCode::LoadCompletionResult);
         emitU32(addString(std::string(completionName)));

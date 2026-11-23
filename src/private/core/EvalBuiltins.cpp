@@ -88,6 +88,9 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
         currentFunction_->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(currentFunction_->data());
         semaOptions.allowsNewTarget = true;
+        // class 字段初始化器内的直接 eval：ContainsArguments 为语法错误
+        // （§19.2.1.1 Additional Early Error Rules for Eval Inside Initializer）。
+        if (d->inFieldInitializer) semaOptions.allowsArguments = false;
         bool baseConstructor = false;
         if (d->isClassConstructor) {
             auto* cd = static_cast<ClassData*>(d);

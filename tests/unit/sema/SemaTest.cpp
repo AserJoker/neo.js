@@ -66,6 +66,24 @@ TEST(SemaTest, ReportsScopeErrors) {
     EXPECT_FALSE(result.sema.ok());
 }
 
+TEST(SemaTest, ReportsDuplicateLexicalNamesInSwitchCaseBlock) {
+    Analysis result = analyze(
+        "switch (0) { case 1: let x; default: const x = 1; }");
+    ASSERT_TRUE(result.parsed.ok());
+    EXPECT_FALSE(result.sema.ok());
+
+    Analysis functions = analyze(
+        "switch (0) { case 1: function f() {} default: function* f() {} }");
+    ASSERT_TRUE(functions.parsed.ok());
+    EXPECT_FALSE(functions.sema.ok());
+}
+
+TEST(SemaTest, ReportsDuplicateDefaultClause) {
+    Analysis result = analyze(
+        "switch (0) { default: 1; default: 2; }");
+    EXPECT_FALSE(result.parsed.ok());
+}
+
 TEST(SemaTest, ReportsLexicalBindingNamedLet) {
     Analysis result = analyze("let\nlet;");
     ASSERT_TRUE(result.parsed.ok());

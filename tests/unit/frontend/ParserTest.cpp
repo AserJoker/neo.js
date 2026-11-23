@@ -4902,6 +4902,11 @@ TEST(ParserTest, YieldStopsAtLineTerminator) {
     EXPECT_EQ(body.body[1]->kind(), NodeKind::ExpressionStatement);
 }
 
+TEST(ParserTest, YieldDelegateRejectsLineTerminatorBeforeStar) {
+    ParseResult result = parse("function* g() { yield\n* 1; }");
+    EXPECT_FALSE(result.ok());
+}
+
 TEST(ParserTest, YieldIsIdentifierOutsideGenerator) {
     ParseResult result = parse("yield;");
 

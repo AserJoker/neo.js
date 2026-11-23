@@ -1172,6 +1172,44 @@ Value* toRegExp(IContext* ctx, Value* value, const char* flags = "") {
     return ctx->createRegExp(*stringData(text), flags);
 }
 
+// split/replace 的字符串分隔符按字面量处理：把正则语法字符转义后再建 RegExp。
+std::string escapeLiteralPattern(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char ch : text) {
+        switch (ch) {
+            case '^':
+            case '$':
+            case '\\':
+            case '.':
+            case '*':
+            case '+':
+            case '?':
+            case '(':
+            case ')':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case '|':
+            case '/':
+                out.push_back('\\');
+                break;
+            default:
+                break;
+        }
+        out.push_back(ch);
+    }
+    return out;
+}
+
+Value* toRegExpLiteral(IContext* ctx, Value* value, const char* flags = "") {
+    if (value->type()->kind() == TypeKind::RegExp) return value;
+    Value* text = toStringArg(ctx, value);
+    if (isError(text)) return text;
+    return ctx->createRegExp(escapeLiteralPattern(*stringData(text)), flags);
+}
+
 Value* callSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
                         Value* thisArg, size_t argc, Value* argv[]) {
     Value* method = ctx->getProperty(target, ctx->getWellKnownSymbol(which));
@@ -1219,7 +1257,7 @@ Value* stringReplace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* text = stringReceiver(ctx, self);
     if (isError(text)) return text;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExp(ctx, pattern);
+    Value* regexp = toRegExpLiteral(ctx, pattern);
     if (isError(regexp)) return regexp;
     Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
     return callSymbolMethod(ctx, regexp, WellKnownSymbol::Replace, regexp, 2,
@@ -1231,7 +1269,7 @@ Value* stringReplaceAll(IContext* ctx, Value* self, size_t argc,
     Value* text = stringReceiver(ctx, self);
     if (isError(text)) return text;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExp(ctx, pattern, "g");
+    Value* regexp = toRegExpLiteral(ctx, pattern, "g");
     if (isError(regexp)) return regexp;
     RegExpData* data = regexpData(regexp);
     if (data == nullptr || !data->global) {
@@ -1247,11 +1285,80 @@ Value* stringSplit(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* text = stringReceiver(ctx, self);
     if (isError(text)) return text;
     Value* pattern = argc > 0 ? argv[0] : undefinedOf(ctx);
-    Value* regexp = toRegExp(ctx, pattern);
-    if (isError(regexp)) return regexp;
-    Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
-    return callSymbolMethod(ctx, regexp, WellKnownSymbol::Split, regexp, 2,
-                            args);
+    if (pattern->type()->kind() == TypeKind::RegExp) {
+        Value* args[2] = {text, argc > 1 ? argv[1] : undefinedOf(ctx)};
+        return callSymbolMethod(ctx, pattern, WellKnownSymbol::Split, pattern, 2,
+                                args);
+    }
+    // 字符串分隔符按字面量切分（ES2024 §22.1.3.23），不经过正则。
+    if (pattern->type()->kind() == TypeKind::Undefined) {
+        Value* result = ctx->createArray();
+        if (isError(result)) return result;
+        Value* item = ctx->createString(*stringData(text));
+        if (isError(item)) return item;
+        if (isError(ctx->arrayAppend(result, item))) return ctx->oomValue();
+        return result;
+    }
+    Value* sepValue = toStringArg(ctx, pattern);
+    if (isError(sepValue)) return sepValue;
+    const std::u16string subject = toUtf16(*stringData(text));
+    const std::u16string sep = toUtf16(*stringData(sepValue));
+
+    std::uint32_t limit = 0xFFFFFFFFu;
+    if (argc > 1) {
+        Value* number = detail::toNumberValue(ctx, argv[1]);
+        if (isError(number)) return number;
+        const double n = static_cast<NumberData*>(number->data())->value;
+        if (n <= 0.0) return ctx->createArray();
+        if (n < 4294967295.0) limit = static_cast<std::uint32_t>(n);
+    }
+    if (limit == 0) return ctx->createArray();
+
+    Value* result = ctx->createArray();
+    if (isError(result)) return result;
+    std::uint32_t count = 0;
+    Value* appendErr = nullptr;
+    auto append = [&](std::size_t begin, std::size_t end) {
+        if (count >= limit) return false;
+        Value* item = ctx->createString(
+            fromUtf16(std::u16string_view(subject).substr(begin, end - begin)));
+        if (isError(item)) {
+            appendErr = item;
+            return false;
+        }
+        if (isError(ctx->arrayAppend(result, item))) {
+            appendErr = ctx->oomValue();
+            return false;
+        }
+        ++count;
+        return true;
+    };
+
+    if (sep.empty()) {
+        // 空分隔符按码点切分（代理对算一个字符）。
+        std::size_t i = 0;
+        while (i < subject.size()) {
+            std::size_t next = i + 1;
+            if (subject[i] >= 0xD800 && subject[i] <= 0xDBFF &&
+                next < subject.size() && subject[next] >= 0xDC00 &&
+                subject[next] <= 0xDFFF) {
+                next += 1;
+            }
+            if (!append(i, next)) break;
+            i = next;
+        }
+    } else {
+        std::size_t p = 0;
+        while (count < limit) {
+            std::size_t q = subject.find(sep, p);
+            if (q == std::u16string::npos) break;
+            if (!append(p, q)) break;
+            p = q + sep.size();
+        }
+        if (appendErr == nullptr && count < limit) append(p, subject.size());
+    }
+    if (appendErr != nullptr) return appendErr;
+    return result;
 }
 
 // ES2025 §22.2.5.1 RegExp.escape：把字符串转义为可安全嵌入 Pattern 的形式。

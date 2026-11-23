@@ -314,8 +314,8 @@ TEST(ErrorTest, ErrorPrototypeIsPlainObject) {
 
 namespace {
 
-const char* kNativeErrorNames[] = {"TypeError", "RangeError", "ReferenceError",
-                                   "SyntaxError", "URIError"};
+const char* kNativeErrorNames[] = {"EvalError",  "TypeError", "RangeError",
+                                   "ReferenceError", "SyntaxError", "URIError"};
 
 }  // namespace
 
@@ -338,10 +338,8 @@ TEST(ErrorTest, NativeErrorConstructorsRegistered) {
     }
 }
 
-TEST(ErrorTest, RemovedErrorTypesNotImplemented) {
+TEST(ErrorTest, UnimplementedErrorTypes) {
     Fixture f;
-    // EvalError 已不在 ES2024 规范中
-    EXPECT_EQ(f.ctx->global()->lookup("EvalError"), nullptr);
     // SuppressedError 不在本阶段范围（AggregateError 已实现，见下方用例）
     EXPECT_EQ(f.ctx->global()->lookup("SuppressedError"), nullptr);
 }

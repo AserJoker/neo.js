@@ -1296,11 +1296,18 @@ NodePtr Parser::parseSwitchStatement() {
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
 
     NodeList cases;
+    bool sawDefault = false;
     while (!at(TokenKind::RightBrace) && !at(TokenKind::EndOfInput)) {
         NodePtr clause;
         if (at(TokenKind::Case)) {
             clause = parseSwitchCase(false);
         } else if (at(TokenKind::Default)) {
+            if (sawDefault) {
+                error(current_.start,
+                      "More than one default clause in switch statement");
+                return nullptr;
+            }
+            sawDefault = true;
             clause = parseSwitchCase(true);
         } else {
             error(current_.start, "Expected 'case' or 'default'");
@@ -1972,7 +1979,8 @@ NodePtr Parser::parseYieldExpression() {
     advance();  // 'yield'
 
     bool delegate = false;
-    if (at(TokenKind::Star)) {
+    // `yield` 与 `*` 之间不允许换行（§15.5.5）；换行按 ASI 结束 yield 表达式。
+    if (at(TokenKind::Star) && !current_.precededByLineTerminator) {
         delegate = true;
         advance();
     }

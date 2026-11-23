@@ -5,8 +5,8 @@
 //   2. setErrorPrototype —— 此后 createError 自动挂链
 //   3. Error 构造函数（prototype 属性指向 Error.prototype，双向 constructor）
 //   4. Error.prototype.name / message / toString
-//   5. 一般性错误子类：TypeError / RangeError / ReferenceError / SyntaxError / URIError
-//      （ES2024 §20.5.6；EvalError 已不在规范中，不实现）
+//   5. 一般性错误子类：EvalError / TypeError / RangeError / ReferenceError /
+//      SyntaxError / URIError（ES2024 §20.5.5/§20.5.6）
 //   6. 注册到 global
 //
 // 子类原型都是**普通对象**（无 [[ErrorData]] 内部槽，§20.5.6.3），原型链指向
@@ -148,6 +148,9 @@ Value* syntaxErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[
 Value* uriErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     return nativeErrorCtor(ctx, "URIError", "URIError", argc, argv);
 }
+Value* evalErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    return nativeErrorCtor(ctx, "EvalError", "EvalError", argc, argv);
+}
 
 // Error.prototype.toString()（ES2024 §20.5.3.4）：
 //   name 缺省 "Error"，message 缺省 ""；两者按 "name: message" 拼接，
@@ -269,10 +272,11 @@ bool registerErrorBuiltins(IContext* ctx) {
     // —— 4. 注册到 global ——
     bindGlobal(ctx, "Error", errorFn);
 
-    // —— 5. 一般性错误子类（ES2024 §20.5.6）——
-    // EvalError 已不在规范中，不实现；AggregateError / SuppressedError 不在本阶段范围。
+    // —— 5. 一般性错误子类（ES2024 §20.5.5/§20.5.6）——
+    // AggregateError / SuppressedError 不在本阶段范围。
     // 每个子类：原型是**普通对象**（无 [[ErrorData]]），原型链指向 %Error.prototype%，
     // 自有 name（writable/不可枚举/可配置）与 constructor。
+    if (!registerNativeError(ctx, errorProto, "EvalError", evalErrorCtor)) return false;
     if (!registerNativeError(ctx, errorProto, "TypeError", typeErrorCtor)) return false;
     if (!registerNativeError(ctx, errorProto, "RangeError", rangeErrorCtor)) return false;
     if (!registerNativeError(ctx, errorProto, "ReferenceError", referenceErrorCtor))

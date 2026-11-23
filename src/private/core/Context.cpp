@@ -577,18 +577,22 @@ Value* Context::constructSuper(Value* superCtor, Value* newTarget, size_t argc,
         return detail::typeError(this, "Super constructor null is not a constructor");
     }
     Scope* env = currentFunctionEnv_;
-    if (env != nullptr) {
-        Value* current = env->thisValue();
-        if (current != nullptr && current->type()->kind() != TypeKind::Uninitialized) {
-            return detail::referenceError(this, "Super constructor may only be called once");
-        }
-    }
+    // §13.3.7.1：先 Construct 父构造器，再 BindThisValue；重复 super() 的
+    // ReferenceError 发生在父构造器已经执行之后。
     Value* obj = construct(superCtor, newTarget, argc, argv);
     if (detail::isErrorValue(obj)) return obj;
     if (!detail::isObjectKind(obj->type()->kind())) {
         return detail::typeError(this, "Super constructor must return an object");
     }
-    if (env != nullptr) env->setThis(obj);
+    if (env != nullptr) {
+        Value* current = env->thisValue();
+        if (current != nullptr &&
+            current->type()->kind() != TypeKind::Uninitialized) {
+            return detail::referenceError(
+                this, "Super constructor may only be called once");
+        }
+        env->setThis(obj);
+    }
     return obj;
 }
 
@@ -693,6 +697,12 @@ void Context::addInstanceField(Value* classCtor, Value* key, Value* initializer)
         initializer->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(initializer->data());
         if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+        // 字段初始化器的 [[HomeObject]] 是 class 原型（§15.7.10 DefineField），
+        // 供初始化器内箭头函数的 super 解析。
+        if (d->homeObject == nullptr) {
+            Value* proto = getProperty(classCtor, "prototype");
+            if (!detail::isErrorValue(proto)) d->homeObject = proto;
+        }
     }
     InstanceElement e;
     e.kind = InstanceElement::Kind::PublicField;
@@ -721,8 +731,18 @@ Value* Context::initializeInstanceElements(Value* instance, Value* classCtor) {
     }
 
     // 1. 先给私有方法/访问器加 brand（ES2024 §10.2.1.2），与字段声明顺序无关。
+    // PrivateMethodOrAccessorAdd：对象不可扩展或同名元素已存在时抛 TypeError。
     for (const PrivateElement& e : cd->privateElements) {
-        if (findPrivateSlot(slots, e.name) != nullptr) continue;
+        Value* ext = instance->type()->isExtensible(this, instance);
+        if (detail::isErrorValue(ext)) return ext;
+        if (!detail::toBoolean(ext)) {
+            return detail::typeError(
+                this, "Cannot add private method to non-extensible object");
+        }
+        if (findPrivateSlot(slots, e.name) != nullptr) {
+            return detail::typeError(this,
+                                     "Private method already initialized");
+        }
         ::neo::core::retainPrivateName(e.name);
         slots->push_back({e.name, nullptr});
     }
@@ -742,10 +762,24 @@ Value* Context::initializeInstanceElements(Value* instance, Value* classCtor) {
                 if (detail::isErrorValue(er)) return er;
             }
         } else {
+            // PrivateFieldAdd：不可扩展或同名槽已存在时抛 TypeError。
+            Value* ext = instance->type()->isExtensible(this, instance);
+            if (detail::isErrorValue(ext)) return ext;
+            if (!detail::toBoolean(ext)) {
+                return detail::typeError(
+                    this, "Cannot add private field to non-extensible object");
+            }
+            // 方法 brand 槽值为 nullptr，与同名字段（非法语法，但 native class
+            // 注册 API 允许）共存；只有已写入值的槽才算重复初始化。
+            PrivateSlot* existing = findPrivateSlot(slots, elem.name);
+            if (existing != nullptr && existing->value != nullptr) {
+                return detail::typeError(this,
+                                         "Private field already initialized");
+            }
             // scope→data 跨域：私有槽值存 data-owned 副本（ADR-065 §4）。
             Value* stored = copyForStorage(value);
             if (stored == oomValue_) return stored;
-            if (PrivateSlot* existing = findPrivateSlot(slots, elem.name)) {
+            if (existing != nullptr) {
                 existing->value = stored;
             } else {
                 ::neo::core::retainPrivateName(elem.name);
@@ -784,6 +818,10 @@ void Context::addPrivateField(Value* classCtor, PrivateName* name, Value* initia
         initializer->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(initializer->data());
         if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+        if (d->homeObject == nullptr) {
+            Value* proto = getProperty(classCtor, "prototype");
+            if (!detail::isErrorValue(proto)) d->homeObject = proto;
+        }
     }
     InstanceElement e;
     e.kind = InstanceElement::Kind::PrivateField;
@@ -801,6 +839,7 @@ void Context::addStaticPrivateField(Value* classCtor, PrivateName* name,
         initializer->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(initializer->data());
         if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+        if (d->homeObject == nullptr) d->homeObject = classCtor;
     }
     cd->staticPrivateFields.push_back({name, initializer});
 }
@@ -883,10 +922,21 @@ Value* Context::initializeStaticPrivateField(Value* classCtor, PrivateName* name
         value = call(def->initializer, classCtor, 0, nullptr);
         if (detail::isErrorValue(value)) return value;
     }
+    // PrivateFieldAdd：不可扩展或同名槽已存在时抛 TypeError。
+    Value* ext = classCtor->type()->isExtensible(this, classCtor);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        return detail::typeError(
+            this, "Cannot add private field to non-extensible object");
+    }
+    PrivateSlot* existing = findPrivateSlot(&cd->slots, name);
+    if (existing != nullptr && existing->value != nullptr) {
+        return detail::typeError(this, "Private field already initialized");
+    }
     // scope→data 跨域：私有槽值存 data-owned 副本（ADR-065 §4）。
     Value* stored = copyForStorage(value);
     if (stored == oomValue_) return stored;
-    if (PrivateSlot* existing = findPrivateSlot(&cd->slots, name)) {
+    if (existing != nullptr) {
         existing->value = stored;
     } else {
         ::neo::core::retainPrivateName(name);
@@ -1446,6 +1496,17 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
         static_cast<ObjectData*>(fnValue->data())->prototype = functionPrototype_;
     }
 
+    // —— 函数 "length" 属性（ES2024 §20.2.4.1）：形参个数 ——
+    // writable=false / enumerable=false / configurable=true。
+    // native 函数用 minArgc 作为形参个数。先于 name 定义，保证属性顺序
+    // length → name → prototype（§10.2.9 / §20.2.4）。
+    Value* lengthValue = createNumber(static_cast<double>(minArgc));
+    if (lengthValue == oomValue_) return lengthValue;
+    if (defineProperty(fnValue, "length", lengthValue, false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return oomValue_;
+    }
+
     // —— 函数名作为 "name" 属性（ES2024 §20.2.4.2）——
     // writable=false / enumerable=false / configurable=true；规范缺省为空串，
     // 由 setFunctionName 更新（对应 VM 的 setname 字节码）。
@@ -1453,16 +1514,6 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     if (anonName == oomValue_) return anonName;
     if (defineProperty(fnValue, "name", anonName, false, false, true)->type()->kind() ==
         TypeKind::Exception) {
-        return oomValue_;
-    }
-
-    // —— 函数 "length" 属性（ES2024 §20.2.4.1）：形参个数 ——
-    // writable=false / enumerable=false / configurable=true。
-    // native 函数用 minArgc 作为形参个数。
-    Value* lengthValue = createNumber(static_cast<double>(minArgc));
-    if (lengthValue == oomValue_) return lengthValue;
-    if (defineProperty(fnValue, "length", lengthValue, false, false, true)
-            ->type()->kind() == TypeKind::Exception) {
         return oomValue_;
     }
 
@@ -1659,6 +1710,7 @@ Value* Context::defineClassField(Value* classCtor, Value* key,
         if (init->type()->kind() == TypeKind::Function) {
             auto* d = static_cast<FunctionData*>(init->data());
             if (d->ownerClass == nullptr) d->ownerClass = classCtor;
+            if (d->homeObject == nullptr) d->homeObject = classCtor;
         }
         value = call(init, classCtor, 0, nullptr);
         if (detail::isErrorValue(value)) return value;
@@ -1750,6 +1802,13 @@ void Context::setFunctionArguments(Value* fn, bool needsArguments, bool mapped) 
     d->argumentsMapped = mapped;
 }
 
+void Context::setFunctionInFieldInitializer(Value* fn,
+                                            bool inFieldInitializer) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->inFieldInitializer =
+        inFieldInitializer;
+}
+
 void Context::setFunctionParamNames(Value* fn,
                                     const std::vector<std::string>& names) {
     if (fn->type()->kind() != TypeKind::Function) return;
@@ -1827,6 +1886,8 @@ void Context::setFunctionStrict(Value* fn) {
     // 且平时孤立，不会泄漏给调用方。
     auto* d = static_cast<FunctionData*>(fn->data());
     if (d->closureScope != nullptr) d->closureScope->setFlag("strict");
+    // 规范禁止为严格函数/方法/生成器创建自有 caller/arguments；读写受限行为
+    // 由 Function.prototype 上的访问器提供（§20.2.3.3/§20.2.3.4）。
 }
 
 void Context::setFunctionCapturesEnvironment(Value* fn) {

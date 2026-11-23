@@ -246,7 +246,11 @@ Value* mathRandom(IContext* ctx, Value*, size_t /*argc*/, Value* /*argv*/[]) {
 // 定义 Math 方法（writable/不可枚举/可配置）。
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc, int lengthOverride = -1) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    // Math 方法是内建函数，不是构造器（§21.3.2）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     if (lengthOverride >= 0) {

@@ -1018,7 +1018,6 @@ void Compiler::compileForInStatement(
         pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     uint32_t loop = code_->here();
-    for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
 
     // index < keys.length
     code_->load(kForIndex);
@@ -1056,6 +1055,8 @@ void Compiler::compileForInStatement(
 
     uint32_t skipPc = code_->here();
     code_->patchU32(toSkip + 2, skipPc);
+    // continue 跳到索引递增处（不是循环条件），否则会重复处理同一个键。
+    for (uint32_t push : pushes) code_->patchU32(push + 6, skipPc);
     code_->load(kForIndex);
     code_->push(2.0);
     code_->add();
@@ -1269,7 +1270,10 @@ void Compiler::compileSwitchStatement(
         code_->store(loopSlot);
     }
 
-    // CaseBlock 共享一个词法作用域：先为所有 clause 的 let/const/函数建槽。
+    // 判别式在旧的词法环境中求值（§14.12.3 步骤 1-2）。
+    compileExpression(*node.discriminant);
+
+    // CaseBlock 共享一个词法作用域：为所有 clause 的 let/const/函数建槽。
     code_->pushScope();
     code_->pushUndefined();
     code_->define(kSwitchDisc);
@@ -1279,8 +1283,6 @@ void Compiler::compileSwitchStatement(
             static_cast<const frontend::SwitchCase&>(*caseNode).consequent,
             false, true);
     }
-
-    compileExpression(*node.discriminant);
     code_->store(kSwitchDisc);
 
     std::vector<std::string> effective = labels;
@@ -1289,6 +1291,11 @@ void Compiler::compileSwitchStatement(
     for (const std::string& label : effective) {
         pushes.push_back(code_->pushLabel(label, 0, 0));
     }
+
+    // CaseBlockEvaluation 的 abrupt 完成需 UpdateEmpty(R, V)：用无 catch 的
+    // try/finally 包住 case 体，finally 内把 break/continue 的 EMPTY 换成 V。
+    uint32_t tryBeginPc = 0;
+    if (evalCompletion_) tryBeginPc = code_->tryBegin();
 
     // 先发射全部 case 测试（default 跳过），匹配后跳到对应 body。
     std::vector<uint32_t> matchJumps(node.cases.size(), 0);
@@ -1335,6 +1342,16 @@ void Compiler::compileSwitchStatement(
 
     for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
         code_->popLabel(*it);
+    }
+    if (evalCompletion_) {
+        code_->tryBodyEnd();
+        uint32_t finallyStart = code_->here();
+        code_->updatePendingCompletion(loopSlot);
+        code_->finallyEnd();
+        uint32_t tryEnd = code_->here();
+        code_->patchU32(tryBeginPc + 2, 0);
+        code_->patchU32(tryBeginPc + 6, finallyStart);
+        code_->patchU32(tryBeginPc + 10, tryEnd);
     }
     // break 已由 VM 回退到 switch 作用域，只需跳过 pop_label 清理作用域。
     uint32_t breakTarget = code_->here();
@@ -3885,6 +3902,8 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
     uint32_t paramCount = 0;
+    uint32_t lengthCount = 0;
+    bool lengthStopped = false;
     bool hasRest = false;
 
     if (constructor != nullptr && constructor->value &&
@@ -3895,8 +3914,16 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
             if (!param) continue;
             if (param->kind() == NodeKind::RestElement) {
                 hasRest = true;
+                lengthStopped = true;
             } else {
                 ++paramCount;
+                if (!lengthStopped) {
+                    if (param->kind() == NodeKind::AssignmentPattern) {
+                        lengthStopped = true;
+                    } else {
+                        ++lengthCount;
+                    }
+                }
             }
         }
         if (function.body) {
@@ -3933,6 +3960,7 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
     // class 构造器是严格代码：创建 arguments 但不建立形参映射。
     flags |= vm::kFunctionHasArguments;
     code_->pushClass(entryPc, paramCount, flags);
+    if (lengthCount != paramCount) code_->setFunctionLength(lengthCount);
     if (!name.empty()) code_->setFuncName(name);
     code_->setStrict();
 
@@ -4026,6 +4054,7 @@ void Compiler::compilePrivateRead(
         return;
     }
     compileExpression(*member.object);
+    if (member.optional) emitOptionalGuard();
     if (info->field) {
         code_->getPrivateField(name);
     } else if (info->method) {
@@ -4218,7 +4247,36 @@ void Compiler::compilePrivateCall(
 }
 
 void Compiler::compileClassElements(const frontend::ClassBody& body) {
-    for (const frontend::NodePtr& element : body.elements) {
+    // §15.7.14 step 28：所有计算属性名按声明顺序先求值，静态字段初始化器
+    // 与 static block 在其后（step 34）才执行。先把计算键存入临时绑定。
+    std::vector<std::string> keyTemps(body.elements.size());
+    for (size_t i = 0; i < body.elements.size(); ++i) {
+        const frontend::NodePtr& element = body.elements[i];
+        if (!element) continue;
+        const frontend::Node* key = nullptr;
+        bool computed = false;
+        if (element->kind() == NodeKind::MethodDefinition) {
+            const auto& method =
+                static_cast<const frontend::MethodDefinition&>(*element);
+            if (method.methodKind == frontend::MethodKind::Constructor) continue;
+            key = method.key.get();
+            computed = method.computed;
+        } else if (element->kind() == NodeKind::PropertyDefinition) {
+            const auto& field =
+                static_cast<const frontend::PropertyDefinition&>(*element);
+            key = field.key.get();
+            computed = field.computed;
+        }
+        if (key == nullptr || !computed) continue;
+        std::string temp = "*class-key*" + std::to_string(classKeyTempId_++);
+        compileClassKey(*key, true);
+        code_->define(temp, true, true, false);
+        keyTemps[i] = std::move(temp);
+    }
+
+    for (size_t elementIndex = 0; elementIndex < body.elements.size();
+         ++elementIndex) {
+        const frontend::NodePtr& element = body.elements[elementIndex];
         if (!element) continue;
         switch (element->kind()) {
             case NodeKind::MethodDefinition: {
@@ -4241,7 +4299,13 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                         static_cast<const frontend::PrivateIdentifier&>(
                             *method.key)
                             .name;
-                    compileMethodFunction(function, "#" + privateName);
+                    std::string privateFnName = "#" + privateName;
+                    if (method.methodKind == frontend::MethodKind::Get) {
+                        privateFnName = "get " + privateFnName;
+                    } else if (method.methodKind == frontend::MethodKind::Set) {
+                        privateFnName = "set " + privateFnName;
+                    }
+                    compileMethodFunction(function, privateFnName);
                     uint32_t privateKind = 0;
                     if (method.methodKind == frontend::MethodKind::Get) {
                         privateKind = 1;
@@ -4254,16 +4318,30 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                     code_->definePrivateMethod(privateName, flags);
                     break;
                 }
+                // 访问器函数名带 "get "/"set " 前缀（§15.7.14 / §10.2.9）。
+                std::string namePrefix;
+                if (method.methodKind == frontend::MethodKind::Get) {
+                    namePrefix = "get ";
+                } else if (method.methodKind == frontend::MethodKind::Set) {
+                    namePrefix = "set ";
+                }
                 std::string methodName;
                 if (!method.computed && method.key &&
                     method.key->kind() == NodeKind::Identifier) {
-                    methodName = static_cast<const frontend::Identifier&>(
+                    methodName = namePrefix +
+                                 static_cast<const frontend::Identifier&>(
                                      *method.key)
                                      .name;
                 }
-                compileClassKey(*method.key, method.computed);
+                if (method.computed) {
+                    code_->load(keyTemps[elementIndex]);
+                } else {
+                    compileClassKey(*method.key, false);
+                }
                 compileMethodFunction(function, methodName);
-                if (method.computed) code_->setFuncNameFromKey();
+                if (method.computed) {
+                    code_->setFuncNameFromKey(namePrefix);
+                }
                 uint32_t kind = 0;
                 if (method.methodKind == frontend::MethodKind::Get) kind = 1;
                 if (method.methodKind == frontend::MethodKind::Set) kind = 2;
@@ -4291,7 +4369,11 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                     break;
                 }
                 if (field.key) {
-                    compileClassKey(*field.key, field.computed);
+                    if (field.computed) {
+                        code_->load(keyTemps[elementIndex]);
+                    } else {
+                        compileClassKey(*field.key, false);
+                    }
                 } else {
                     error(*element, "compiler: class field missing key");
                     code_->pushUndefined();
@@ -4363,11 +4445,14 @@ void Compiler::compileFieldInitializer(const frontend::Node& value,
     uint32_t entryPc = code_->here();
     code_->storeThis();
     code_->pushScope();
+    const bool savedInFieldInitializer = inFieldInitializer_;
+    inFieldInitializer_ = true;
     compileNamedExpression(value, name);
+    inFieldInitializer_ = savedInFieldInitializer;
     code_->ret();
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
-    code_->pushFunction(entryPc, 0, 0);
+    code_->pushFunction(entryPc, 0, vm::kFunctionInFieldInitializer);
     code_->setStrict();
     if (const auto* captures =
             sema_.annotations.get<sema::FunctionCaptures>(owner)) {
@@ -4391,6 +4476,8 @@ void Compiler::compileMethodFunction(
 void Compiler::compileClassKey(const frontend::Node& key, bool computed) {
     if (computed) {
         compileExpression(key);
+        // 计算属性名按 ToPropertyKey 求值（§13.2.5.5 / §7.1.19）。
+        code_->toPropertyKey();
         return;
     }
     switch (key.kind()) {
@@ -4429,12 +4516,18 @@ void Compiler::compileFunctionObject(const Node& node,
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();
     uint32_t entryPc = code_->here();
+    // 普通函数是 arguments 与字段初始化器上下文的边界；箭头继承外层。
+    const bool savedInFieldInitializer = inFieldInitializer_;
+    if (!arrow) inFieldInitializer_ = false;
     compileFunctionBody(params, body, arrow || method, false, !arrow, strict,
                         generator);
+    inFieldInitializer_ = savedInFieldInitializer;
     uint32_t afterBody = code_->here();
     code_->patchU32(skip + 2, afterBody);
 
     uint32_t paramCount = 0;
+    uint32_t lengthCount = 0;
+    bool lengthStopped = false;
     bool hasRest = false;
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
@@ -4443,8 +4536,17 @@ void Compiler::compileFunctionObject(const Node& node,
             param->kind() == NodeKind::ObjectPattern ||
             param->kind() == NodeKind::AssignmentPattern) {
             ++paramCount;
+            // length：默认值之前的形参个数（§10.2.9）。
+            if (!lengthStopped) {
+                if (param->kind() == NodeKind::AssignmentPattern) {
+                    lengthStopped = true;
+                } else {
+                    ++lengthCount;
+                }
+            }
         } else if (param->kind() == NodeKind::RestElement) {
             hasRest = true;
+            lengthStopped = true;
         } else {
             error(*param, "compiler: unsupported parameter pattern");
         }
@@ -4466,6 +4568,7 @@ void Compiler::compileFunctionObject(const Node& node,
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
     if (!arrow) flags |= vm::kFunctionHasArguments;
+    if (arrow && inFieldInitializer_) flags |= vm::kFunctionInFieldInitializer;
     if (mapped) flags |= vm::kFunctionArgumentsMapped;
     if (method) {
         // class 方法/字段初始化器：不可构造；生成器方法仍有 prototype
@@ -4492,6 +4595,12 @@ void Compiler::compileFunctionObject(const Node& node,
         flags |= vm::kFunctionConstructible | vm::kFunctionHasPrototype;
     }
     code_->pushFunction(entryPc, paramCount, flags);
+    if (lengthCount != paramCount) code_->setFunctionLength(lengthCount);
+    // 非严格普通函数带自有 caller/arguments（Annex B.3.5）；严格函数、方法、
+    // 生成器/async、箭头不创建（§10.2.1.2）。
+    if (!strict && !arrow && !generator && !async && !method) {
+        code_->setFunctionSloppy();
+    }
     if (mapped) code_->setParamNames(paramNames);
     if (strict) code_->setStrict();
 
@@ -4537,21 +4646,22 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     hasArgumentsBinding_ = hasArguments;
     const bool savedStrict = strict_;
     strict_ = strict;
-    // 形参建槽（argument_scope）：push_undefined; define "p"
+    // 形参建槽（argument_scope）：先全部置 TDZ，再按从左到右的顺序初始化，
+    // 使默认值引用自身/后续形参时抛 ReferenceError（§10.2.1.2）。
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
-            code_->pushUndefined();
-            code_->define(id.name, true, true, true);
+            code_->pushUninitialized();
+            code_->define(id.name, true, false, true);
         } else if (param->kind() == NodeKind::RestElement) {
             const auto& rest = static_cast<const frontend::RestElement&>(*param);
             if (rest.argument) {
                 std::vector<std::string> names;
                 collectPatternNames(*rest.argument, names);
                 for (const std::string& name : names) {
-                    code_->pushUndefined();
-                    code_->define(name, true, true, true);
+                    code_->pushUninitialized();
+                    code_->define(name, true, false, true);
                 }
             }
         } else if (param->kind() == NodeKind::ArrayPattern ||
@@ -4560,8 +4670,8 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
             std::vector<std::string> names;
             collectPatternNames(*param, names);
             for (const std::string& name : names) {
-                code_->pushUndefined();
-                code_->define(name, true, true, true);
+                code_->pushUninitialized();
+                code_->define(name, true, false, true);
             }
         } else {
             error(*param, "compiler: unsupported parameter pattern");
@@ -4575,19 +4685,19 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         if (!param) continue;
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
-            code_->store(id.name);
+            code_->initialize(id.name);
         } else if (param->kind() == NodeKind::RestElement) {
             const auto& rest = static_cast<const frontend::RestElement&>(*param);
             code_->restArgs();
             if (rest.argument) {
-                compileBindingPattern(*rest.argument, false, 0);
+                compileBindingPattern(*rest.argument, true, 0);
             } else {
                 code_->pop();
             }
         } else if (param->kind() == NodeKind::ArrayPattern ||
                    param->kind() == NodeKind::ObjectPattern ||
                    param->kind() == NodeKind::AssignmentPattern) {
-            compileBindingPattern(*param, false, 0);
+            compileBindingPattern(*param, true, 0);
         }
     }
 
@@ -4803,7 +4913,8 @@ void Compiler::hoistFunctions(const frontend::NodeList& body, bool annexB) {
                               function.async);
         code_->store(name);
         // Annex B.3.3：块级函数在块入口同步写入外层 var 绑定。
-        if (annexB && !strict_) {
+        // 仅适用于普通 FunctionDeclaration（生成器/async 不在 Annex B 范围）。
+        if (annexB && !strict_ && !function.generator && !function.async) {
             code_->load(name);
             code_->storeVar(name);
         }
@@ -4990,7 +5101,8 @@ void Compiler::collectAnnexBFunctionNames(const frontend::Node& statement,
             if (topLevel) return;
             const auto& function =
                 static_cast<const frontend::FunctionDeclaration&>(statement);
-            if (function.id &&
+            // Annex B.3.3 只覆盖普通 FunctionDeclaration。
+            if (!function.generator && !function.async && function.id &&
                 function.id->kind() == NodeKind::Identifier) {
                 names.push_back(
                     static_cast<const frontend::Identifier&>(*function.id).name);

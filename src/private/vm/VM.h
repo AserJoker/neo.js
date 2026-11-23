@@ -161,6 +161,9 @@ private:
     neo::core::Value* opLoopEnd();
     neo::core::Value* opLabelledEnd();
     neo::core::Value* opLoadCompletionResult();
+    neo::core::Value* opUpdatePendingCompletion();
+    neo::core::Value* opSetFunctionLength();
+    neo::core::Value* opSetFunctionSloppy();
     neo::core::Value* opStore();
     neo::core::Value* opStoreVar();
     neo::core::Value* opResolveWithRef();

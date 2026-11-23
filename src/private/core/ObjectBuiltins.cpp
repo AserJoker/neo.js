@@ -32,6 +32,15 @@ namespace neo::core {
 
 namespace {
 
+// Function.prototype 的 caller/arguments 受限访问器（ES2024 §20.2.3.3/§20.2.3.4）：
+// 读写都抛 TypeError；严格函数在自身定义同名访问器（§10.2.1.2）。
+Value* restrictedFunctionProperty(IContext* ctx, Value*, size_t, Value*[]) {
+    return detail::typeError(
+        ctx,
+        "'caller', 'callee', and 'arguments' properties may not be accessed on "
+        "strict mode functions or the arguments objects for calls to them");
+}
+
 // —— Object.prototype 方法 ——
 
 // Object.prototype.toString()（ES2024 §20.1.3.6）：
@@ -144,6 +153,48 @@ Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
     bool exists = false;
     if (Value* err = self->type()->getOwnProperty(ctx, self, pk, exists, desc)) return err;
     return ctx->createBoolean(exists && desc.enumerable);
+}
+
+// Object.prototype.__lookupGetter__ / __lookupSetter__（Annex B.2.2.4/5）：
+// 沿原型链找第一个自有属性；是访问器则返回对应函数，否则 undefined。
+Value* objectProtoLookupAccessor(IContext* ctx, Value* self, size_t argc,
+                                 Value* argv[], bool getter) {
+    if (self == nullptr || self->type()->kind() == TypeKind::Undefined ||
+        self->type()->kind() == TypeKind::Null) {
+        return detail::typeError(ctx, "cannot convert null or undefined to object");
+    }
+    Value* obj = self;
+    if (!detail::isObjectKind(obj->type()->kind())) {
+        obj = ctx->createPrimitiveWrapper(obj);
+        if (detail::isErrorValue(obj)) return obj;
+    }
+    if (argc == 0) return ctx->createUndefined();
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    for (Value* cur = obj;
+         cur != nullptr && detail::isObjectKind(cur->type()->kind());
+         cur = ctx->getPrototype(cur)) {
+        Property desc;
+        bool exists = false;
+        if (Value* err = cur->type()->getOwnProperty(ctx, cur, pk, exists, desc)) {
+            return err;
+        }
+        if (!exists) continue;
+        if (desc.getter == nullptr && desc.setter == nullptr) {
+            return ctx->createUndefined();
+        }
+        Value* fn = getter ? desc.getter : desc.setter;
+        return fn != nullptr ? fn : ctx->createUndefined();
+    }
+    return ctx->createUndefined();
+}
+
+Value* objectProtoLookupGetter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return objectProtoLookupAccessor(ctx, self, argc, argv, true);
+}
+
+Value* objectProtoLookupSetter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return objectProtoLookupAccessor(ctx, self, argc, argv, false);
 }
 
 // Object.prototype.toLocaleString()（ES2024 §20.1.3.5）：
@@ -803,6 +854,10 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
         return false;
     if (!defineMethod(ctx, objectProto, "toLocaleString", objectProtoToLocaleString, 0))
         return false;
+    if (!defineMethod(ctx, objectProto, "__lookupGetter__", objectProtoLookupGetter, 0))
+        return false;
+    if (!defineMethod(ctx, objectProto, "__lookupSetter__", objectProtoLookupSetter, 0))
+        return false;
 
     // —— 6. Function.prototype 方法 ——
     if (!defineMethod(ctx, functionProto, "toString", functionProtoToString, 0)) return false;
@@ -819,6 +874,23 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
         if (ctx->defineProperty(functionProto,
                                 ctx->getWellKnownSymbol(WellKnownSymbol::HasInstance),
                                 hasInstance, false, false, false)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+    }
+
+    // Function.prototype.caller / arguments：受限访问器，读写均抛 TypeError。
+    {
+        Value* thrower = ctx->createNativeFunction(restrictedFunctionProperty, 0);
+        if (thrower == ctx->oomValue()) return false;
+        ctx->setFunctionName(thrower, "");
+        if (ctx->defineAccessor(functionProto, "caller", thrower, thrower, false,
+                                true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+        if (ctx->defineAccessor(functionProto, "arguments", thrower, thrower,
+                                false, true)
                 ->type()->kind() == TypeKind::Exception) {
             return false;
         }

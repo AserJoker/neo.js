@@ -237,6 +237,13 @@ enum class OpCode : uint16_t {
     LabelledEnd,            // u32 completionName
     // 最终结果：寄存器为 EMPTY 时压 undefined，否则压寄存器值。
     LoadCompletionResult,   // u32 completionName
+    // finally 内使用：若当前 try 帧的 abrupt 完成值仍为 EMPTY（break/continue），
+    // 用槽位值替换（CaseBlockEvaluation 的 UpdateEmpty(R, V)）。
+    UpdatePendingCompletion,  // u32 slotName
+    // 重定义栈顶函数的 length 属性（默认值/rest 之前的形参个数）。
+    SetFunctionLength,  // u32 length
+    // 非严格普通函数：定义自有 caller/arguments 数据属性（值 null）。
+    SetFunctionSloppy,
 
     // 作用域
     PushScope,
@@ -421,6 +428,9 @@ inline constexpr uint32_t kFunctionAsyncGenerator = 1u << 6;
 inline constexpr uint32_t kFunctionHasArguments = 1u << 7;
 // arguments 与形参绑定映射（非严格 + 简单形参列表）。
 inline constexpr uint32_t kFunctionArgumentsMapped = 1u << 8;
+// class 字段初始化器（或其中定义的箭头函数）：直接 eval 需应用
+// ContainsArguments 早期错误（§15.7.1 / §19.2.1.1）。
+inline constexpr uint32_t kFunctionInFieldInitializer = 1u << 9;
 // push_class：派生类（extends 非 null）。
 inline constexpr uint32_t kClassDerived = 1u << 5;
 

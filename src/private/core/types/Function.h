@@ -135,6 +135,9 @@ public:
     bool hasDirectEval = false;
     // class 构造器标记（ADR-047）：call 抛 TypeError，construct 走 class 分支。
     bool isClassConstructor = false;
+    // class 字段初始化器（或其中定义的箭头函数）：直接 eval 应用
+    // ContainsArguments 早期错误（§15.7.1 / §19.2.1.1）。
+    bool inFieldInitializer = false;
     // [[HomeObject]]（class 方法/构造器/字段初始化器）：super 属性查找基准。
     Value* homeObject = nullptr;  // GC 需遍历
     // 所属 class 构造器（方法/字段初始化器）：native 扩展库据此取回 class 元数据。

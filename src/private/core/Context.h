@@ -404,6 +404,8 @@ public:
     void setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) override;
     void setFunctionArguments(Value* fn, bool needsArguments,
                               bool mapped) override;
+    void setFunctionInFieldInitializer(Value* fn,
+                                       bool inFieldInitializer) override;
     void setFunctionParamNames(Value* fn,
                                const std::vector<std::string>& names) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,

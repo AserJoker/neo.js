@@ -2516,6 +2516,101 @@ TEST(CompilerTest, SwitchContinueTargetsEnclosingLoop) {
     EXPECT_DOUBLE_EQ(numberValue(value), 2.0);
 }
 
+TEST(CompilerTest, ForInContinueAdvancesToNextKey) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var o = { a: 1, b: 2, c: 3 };"
+        "var n = 0;"
+        "for (var k in o) { n = n + 1; continue; }"
+        "var result = n;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 3.0);
+}
+
+TEST(CompilerTest, FinallyThrowOverridesReturn) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "function f() {"
+        "  try { return 'try'; } catch (e) { return 'catch'; }"
+        "  finally { throw new Error('finally'); }"
+        "}"
+        "try { f(); } catch (e) { result = e.message; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "finally");
+}
+
+TEST(CompilerTest, SloppyPlainCallBindsGlobalThis) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "function f() { return this === globalThis; }"
+        "result = f() ? 'global' : 'other';");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "global");
+}
+
+TEST(CompilerTest, SwitchDiscriminantEvaluatedInOuterScope) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "let x = 'outside';"
+        "var probeExpr, probeSelector;"
+        "switch (probeExpr = function() { return x; }, null) {"
+        "  case probeSelector = function() { return x; }, null:"
+        "    let x = 'inside';"
+        "}"
+        "var result = probeExpr() + ':' + probeSelector();");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "outside:inside");
+}
+
+TEST(CompilerTest, SwitchGeneratorDeclarationIsBlockScoped) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "switch (0) { default: function* x() {} }"
+        "try { x; } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "ReferenceError");
+}
+
+TEST(CompilerTest, SwitchBreakKeepsPreviousCompletionValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = eval("
+        "  '6; switch (\"a\") { case \"a\": 7; case \"b\": break; default: }'"
+        ");");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 7.0);
+}
+
+TEST(CompilerTest, SwitchContinueKeepsPreviousCompletionValue) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = eval("
+        "  '13; do { switch (\"a\") { case \"a\": 14; case \"b\": continue;"
+        " default: } } while (false)'"
+        ");");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 14.0);
+}
+
 TEST(CompilerTest, NewConstructsObject) {
     Fixture f;
     Value* value = runScriptResult(
@@ -3008,6 +3103,66 @@ TEST(CompilerTest, DefaultParameter) {
     EXPECT_DOUBLE_EQ(numberValue(value), 5.0);
 }
 
+TEST(CompilerTest, FunctionCallerAndArgumentsAreRestricted) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = '';"
+        // 非严格普通函数：自有 caller/arguments = null（Annex B.3.5）。
+        "function f() {}"
+        "result += String(f.caller);"
+        "f.arguments = 1;"
+        "result += ':' + String(f.arguments);"
+        // 严格函数：读写均抛 TypeError，且无自有属性。
+        "function g() { 'use strict'; }"
+        "try { g.caller; } catch (e) { result += ':' + e.name; }"
+        "try { g.arguments = 1; } catch (e) { result += ':' + e.name; }"
+        "result += ':' + g.hasOwnProperty('caller');");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "null:null:TypeError:TypeError:false");
+}
+
+TEST(CompilerTest, FunctionLengthExcludesDefaultsAndRest) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "function f1(a, b = 1, c) {}"
+        "function f2(a, b, ...rest) {}"
+        "function f3(a = 1) {}"
+        "var result = f1.length * 100 + f2.length * 10 + f3.length;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::Number);
+    EXPECT_DOUBLE_EQ(numberValue(value), 120.0);
+}
+
+TEST(CompilerTest, DefaultParameterReferencingLaterParamThrows) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "function f(x = y, y) {}"
+        "try { f(); } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "ReferenceError");
+}
+
+TEST(CompilerTest, DefaultParameterReferencingSelfThrows) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "function f(x = x) {}"
+        "try { f(); } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "ReferenceError");
+}
+
 TEST(CompilerTest, PatternParameterDefault) {
     Fixture f;
     Value* value = runScriptResult(
@@ -3259,6 +3414,61 @@ TEST(CompilerTest, ClassSuperConstructor) {
     ASSERT_NE(value, nullptr);
     ASSERT_EQ(value->type()->kind(), TypeKind::Number);
     EXPECT_DOUBLE_EQ(numberValue(value), 9.0);
+}
+
+TEST(CompilerTest, ClassAccessorFunctionNames) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { get id() {} set id(v) {} }"
+        "var g = Object.getOwnPropertyDescriptor(A.prototype, 'id').get;"
+        "var s = Object.getOwnPropertyDescriptor(A.prototype, 'id').set;"
+        "var result = g.name + ':' + s.name;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "get id:set id");
+}
+
+TEST(CompilerTest, ClassConstructorKeyOrderIsLengthNamePrototype) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "class A { m() {} }"
+        "var keys = Object.getOwnPropertyNames(A);"
+        "var result = keys.slice(0, 3).join(',');");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "length,name,prototype");
+}
+
+TEST(CompilerTest, ClassExtendsNonConstructorThrows) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var result = 'none';"
+        "try { class C extends 42 {} } catch (e) { result = e.name; }");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value, "TypeError");
+}
+
+TEST(CompilerTest, SuperCalledTwiceConstructsBeforeThrowing) {
+    Fixture f;
+    Value* value = runScriptResult(
+        f,
+        "var baseCalled = 0;"
+        "class B { constructor() { baseCalled = baseCalled + 1; } }"
+        "class A extends B {"
+        "  constructor() { super(); baseCalled = 0;"
+        "    try { super(); } catch (e) { this.err = e.name; } }"
+        "}"
+        "var a = new A();"
+        "var result = baseCalled + ':' + a.err;");
+    ASSERT_NE(value, nullptr);
+    ASSERT_EQ(value->type()->kind(), TypeKind::String);
+    EXPECT_EQ(static_cast<StringData*>(value->data())->value,
+              "1:ReferenceError");
 }
 
 TEST(CompilerTest, ClassDefaultDerivedConstructor) {

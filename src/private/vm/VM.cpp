@@ -158,6 +158,9 @@ const char* opCodeName(OpCode op) {
         case OpCode::LoopEnd:       return "loop_end";
         case OpCode::LabelledEnd:   return "labelled_end";
         case OpCode::LoadCompletionResult: return "load_completion_result";
+        case OpCode::UpdatePendingCompletion: return "update_pending_completion";
+        case OpCode::SetFunctionLength: return "set_function_length";
+        case OpCode::SetFunctionSloppy: return "set_function_sloppy";
         case OpCode::PushScope:     return "push_scope";
         case OpCode::PushVarScope:  return "push_var_scope";
         case OpCode::PopScope:      return "pop_scope";
@@ -328,6 +331,9 @@ const VM::Handler* VM::handlers() {
         &VM::opLoopEnd,
         &VM::opLabelledEnd,
         &VM::opLoadCompletionResult,
+        &VM::opUpdatePendingCompletion,
+        &VM::opSetFunctionLength,
+        &VM::opSetFunctionSloppy,
         &VM::opPushScope,
         &VM::opPushVarScope,
         &VM::opPopScope,
@@ -451,6 +457,8 @@ Value* VM::unwindReturn(Value* value) {
         if (frame.finallyStart != 0) {
             uint32_t finallyPc = frame.finallyStart;
             frame.finallyStart = 0;
+            // 进入 finally 后不得再回到同一 try 的 catch。
+            frame.catchStart = 0;
             frame.res = value;
             trackRes(frame, value);
             restoreFrame(frame);
@@ -484,6 +492,8 @@ Value* VM::dispatchException(Value* exception) {
         if (frame.finallyStart != 0) {
             uint32_t finallyPc = frame.finallyStart;
             frame.finallyStart = 0;
+            // 进入 finally 后不得再回到同一 try 的 catch。
+            frame.catchStart = 0;
             frame.res = exception;
             trackRes(frame, exception);
             restoreFrame(frame);
@@ -518,6 +528,8 @@ Value* VM::handleTryBodyEnd() {
     if (frame.finallyStart != 0) {
         uint32_t finallyPc = frame.finallyStart;
         frame.finallyStart = 0;
+        // 进入 finally 后不得再回到同一 try 的 catch。
+        frame.catchStart = 0;
         restoreFrame(frame);
         pc_ = finallyPc;
         return nullptr;
@@ -1188,6 +1200,75 @@ Value* VM::opLoadCompletionResult() {
     Value* current = ctx_->load(*name);
     if (detail::isErrorValue(current)) return fail(current);
     push(isCompletionEmpty(current) ? ctx_->createUndefined() : current);
+    return nullptr;
+}
+
+// finally 内执行：当前 try 帧的 abrupt 完成（break/continue）若携带 EMPTY，
+// 用槽位值替换，实现 CaseBlockEvaluation 的 UpdateEmpty(R, V)。
+Value* VM::opUpdatePendingCompletion() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("update_pending_completion: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode(
+            "update_pending_completion: name index out of range");
+    }
+    if (tryStack_.empty()) return nullptr;
+    Value* res = tryStack_.back().res;
+    if (res == nullptr || !detail::isInterruptValue(res)) return nullptr;
+    auto* data = neo::core::asInterrupt(res);
+    if (data == nullptr ||
+        (data->kind != neo::core::InterruptKind::Break &&
+         data->kind != neo::core::InterruptKind::Continue)) {
+        return nullptr;
+    }
+    if (data->value == nullptr ||
+        data->value->type()->kind() != neo::core::TypeKind::Uninitialized) {
+        return nullptr;
+    }
+    Value* value = ctx_->load(*name);
+    if (detail::isErrorValue(value)) return fail(value);
+    data->value = value;
+    return nullptr;
+}
+
+Value* VM::opSetFunctionLength() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("set_function_length: truncated operand");
+    }
+    uint32_t length = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.empty()) {
+        return badBytecode("set_function_length: operand stack underflow");
+    }
+    Value* fn = top();
+    Value* value = ctx_->createNumber(static_cast<double>(length));
+    if (detail::isErrorValue(value)) return fail(value);
+    Value* result = ctx_->defineProperty(fn, "length", value, false, false, true);
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+// 非严格普通函数：Annex B.3.5 风格的自有 caller/arguments（值 null）。
+// 严格函数/方法/生成器/箭头不调用本指令，读写走 Function.prototype 受限访问器。
+Value* VM::opSetFunctionSloppy() {
+    if (stack_.empty()) {
+        return badBytecode("set_function_sloppy: operand stack underflow");
+    }
+    Value* fn = top();
+    Value* nullValue = ctx_->createNull();
+    if (detail::isErrorValue(nullValue)) return fail(nullValue);
+    for (const char* name : {"caller", "arguments"}) {
+        Value* result = ctx_->defineProperty(fn, name, nullValue, false, false,
+                                             false);
+        if (detail::isErrorValue(result)) return fail(result);
+    }
     return nullptr;
 }
 
@@ -2087,6 +2168,8 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
         if (frame.finallyStart != 0) {
             uint32_t finallyPc = frame.finallyStart;
             frame.finallyStart = 0;
+            // 进入 finally 后不得再回到同一 try 的 catch。
+            frame.catchStart = 0;
             frame.res = interrupt;
             trackRes(frame, interrupt);
             restoreFrame(frame);
@@ -2267,6 +2350,9 @@ Value* VM::opPushFunction() {
     if (fn == ctx_->oomValue()) return fn;
     ctx_->setFunctionArguments(fn, (flags & kFunctionHasArguments) != 0,
                                (flags & kFunctionArgumentsMapped) != 0);
+    if ((flags & kFunctionInFieldInitializer) != 0) {
+        ctx_->setFunctionInFieldInitializer(fn, true);
+    }
     if ((flags & kFunctionGenerator) != 0) {
         ctx_->setFunctionGenerator(fn, true);
     }
@@ -2930,6 +3016,8 @@ Value* VM::opPushClass() {
     if (stack_.empty()) return badBytecode("push_class: missing super constructor");
     Value* superCtor = pop();
     bool isDerived = (flags & kClassDerived) != 0;
+    // extends 校验（构造器/prototype）在 createScriptClassConstructor 内完成，
+    // 保证 Get(superclass, "prototype") 只求值一次。
     Value* ctor = ctx_->createScriptClassConstructor(
         code_, entryPc, paramCount, (flags & kFunctionHasRest) != 0, isDerived,
         superCtor, "");

@@ -305,11 +305,16 @@ private:
     int withDepth_ = 0;
     // 解构临时变量唯一编号：同一作用域内多个解构模式不能重名。
     uint32_t destTempId_ = 0;
+    // class 计算属性名临时绑定唯一编号（先求值、后定义元素）。
+    uint32_t classKeyTempId_ = 0;
     // delete 可选链：短路出口压 true，最外层成员改为 delete_prop。
     bool deleteChain_ = false;
     bool deleteChainTarget_ = false;
     // eval 完成值：表达式语句执行后写入 *eval-completion*（嵌套函数体关闭）。
     bool evalCompletion_ = false;
+    // 当前编译点处于 class 字段初始化器内（含其中箭头函数，不含普通函数）：
+    // 直接 eval 需应用 ContainsArguments 早期错误。
+    bool inFieldInitializer_ = false;
     // 当前函数有隐式 arguments 绑定：var arguments 是 no-op，不重复建槽。
     bool hasArgumentsBinding_ = false;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。

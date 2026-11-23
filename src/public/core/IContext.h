@@ -556,6 +556,11 @@ public:
     virtual void setFunctionArguments(Value* fn, bool needsArguments,
                                       bool mapped) = 0;
 
+    // setFunctionInFieldInitializer: 标记函数是 class 字段初始化器（或其中
+    // 定义的箭头函数）。直接 eval 在该函数内调用时应用 ContainsArguments
+    // 早期错误（§15.7.1 / §19.2.1.1）。仅对 Function 类型有效。
+    virtual void setFunctionInFieldInitializer(Value* fn, bool inFieldInitializer) = 0;
+
     // setFunctionParamNames: 记录形参名字（mapped arguments 的映射表来源）。
     virtual void setFunctionParamNames(
         Value* fn, const std::vector<std::string>& names) = 0;
