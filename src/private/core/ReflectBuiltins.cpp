@@ -219,10 +219,19 @@ Value* reflectSetPrototypeOf(IContext* ctx, Value* /*self*/, size_t argc, Value*
 
 // 定义命名空间方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (ctx->defineProperty(f, "length",
+                            ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }

@@ -21,8 +21,10 @@
 
 #include <cmath>
 #include <cstdint>
+#include <vector>
 #include <limits>
 #include <random>
+#include <utility>
 
 namespace neo::core {
 
@@ -123,8 +125,12 @@ Value* mathRound(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     if (detail::isErrorValue(n)) return n;
     double x = numberOrNaN(n);
     if (!std::isfinite(x) || x == 0.0) return ctx->createNumber(x);
-    if (x < 0.0 && x >= -0.5) return ctx->createNumber(-0.0);
-    return ctx->createNumber(std::floor(x + 0.5));
+    // 不用 floor(x + 0.5)：x 接近 0.5 时加法会舍入到 1（§21.3.2.28 的
+    // 「0.5 - 2^-54」边界）。按小数部分比较可避免该舍入。
+    const double f = std::floor(x);
+    double r = (x - f < 0.5) ? f : f + 1.0;
+    if (r == 0.0 && x < 0.0) r = -0.0;
+    return ctx->createNumber(r);
 }
 
 // Math.sign：保留 ±0 与 NaN。
@@ -185,45 +191,67 @@ Value* mathPow(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     if (detail::isErrorValue(base)) return base;
     Value* exponent = numberAt(ctx, argc, argv, 1);
     if (detail::isErrorValue(exponent)) return exponent;
-    return ctx->createNumber(std::pow(numberOrNaN(base), numberOrNaN(exponent)));
+    const double b = numberOrNaN(base);
+    const double e = numberOrNaN(exponent);
+    // std::pow 对 1^NaN / (-1)^±Infinity 返回 1，规范要求 NaN（§21.3.2.26）。
+    if (std::isnan(e) || ((b == 1.0 || b == -1.0) && std::isinf(e))) {
+        return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
+    }
+    return ctx->createNumber(std::pow(b, e));
 }
 
 Value* mathMax(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     double result = -std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < argc; ++i) {
-        Value* n = numberAt(ctx, argc, argv, i);
-        if (detail::isErrorValue(n)) return n;
-        double x = numberOrNaN(n);
-        if (std::isnan(x)) return ctx->createNumber(x);
-        if (x > result || (x == 0.0 && result == 0.0 && !std::signbit(x))) {
-            result = x;
-        }
-    }
-    return ctx->createNumber(result);
-}
-
-Value* mathMin(IContext* ctx, Value*, size_t argc, Value* argv[]) {
-    double result = std::numeric_limits<double>::infinity();
-    for (size_t i = 0; i < argc; ++i) {
-        Value* n = numberAt(ctx, argc, argv, i);
-        if (detail::isErrorValue(n)) return n;
-        double x = numberOrNaN(n);
-        if (std::isnan(x)) return ctx->createNumber(x);
-        if (x < result || (x == 0.0 && result == 0.0 && std::signbit(x))) {
-            result = x;
-        }
-    }
-    return ctx->createNumber(result);
-}
-
-// Math.hypot：逐项 hypot 避免中间平方溢出；NaN 传播，Infinity 优先。
-Value* mathHypot(IContext* ctx, Value*, size_t argc, Value* argv[]) {
-    double result = 0.0;
     bool hasNaN = false;
     for (size_t i = 0; i < argc; ++i) {
         Value* n = numberAt(ctx, argc, argv, i);
         if (detail::isErrorValue(n)) return n;
         double x = numberOrNaN(n);
+        // 所有实参都必须 ToNumber（可观察副作用），NaN 只影响结果。
+        if (std::isnan(x)) {
+            hasNaN = true;
+            continue;
+        }
+        if (x > result || (x == 0.0 && result == 0.0 && !std::signbit(x))) {
+            result = x;
+        }
+    }
+    if (hasNaN) return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
+    return ctx->createNumber(result);
+}
+
+Value* mathMin(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    double result = std::numeric_limits<double>::infinity();
+    bool hasNaN = false;
+    for (size_t i = 0; i < argc; ++i) {
+        Value* n = numberAt(ctx, argc, argv, i);
+        if (detail::isErrorValue(n)) return n;
+        double x = numberOrNaN(n);
+        if (std::isnan(x)) {
+            hasNaN = true;
+            continue;
+        }
+        if (x < result || (x == 0.0 && result == 0.0 && std::signbit(x))) {
+            result = x;
+        }
+    }
+    if (hasNaN) return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
+    return ctx->createNumber(result);
+}
+
+// Math.hypot：逐项 hypot 避免中间平方溢出；NaN 传播，Infinity 优先。
+Value* mathHypot(IContext* ctx, Value*, size_t argc, Value* argv[]) {
+    // 先完成全部 ToNumber（可观察副作用/首个 abrupt 立即返回），再计算结果。
+    std::vector<double> coerced;
+    coerced.reserve(argc);
+    for (size_t i = 0; i < argc; ++i) {
+        Value* n = numberAt(ctx, argc, argv, i);
+        if (detail::isErrorValue(n)) return n;
+        coerced.push_back(numberOrNaN(n));
+    }
+    double result = 0.0;
+    bool hasNaN = false;
+    for (double x : coerced) {
         if (std::isinf(x)) return ctx->createNumber(std::numeric_limits<double>::infinity());
         if (std::isnan(x)) {
             hasNaN = true;
@@ -233,6 +261,108 @@ Value* mathHypot(IContext* ctx, Value*, size_t argc, Value* argv[]) {
     }
     if (hasNaN) return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
     return ctx->createNumber(result);
+}
+
+// Math.sumPrecise（proposal）：Shewchuk 精确求和（同 CPython math.fsum）。
+Value* mathSumPrecise(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    Value* iterable = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* iterator = detail::getIterator(ctx, iterable);
+    if (detail::isErrorValue(iterator)) return iterator;
+
+    std::vector<double> partials;
+    bool hasNaN = false;
+    bool hasPosInf = false;
+    bool hasNegInf = false;
+
+    for (;;) {
+        Value* next = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(next)) return next;
+        Value* err = nullptr;
+        bool done = detail::iteratorComplete(ctx, next, err);
+        if (err != nullptr) return err;
+        if (done) break;
+        Value* item = detail::iteratorValue(ctx, next);
+        if (detail::isErrorValue(item)) {
+            return detail::iteratorClose(ctx, iterator, item);
+        }
+        if (item->type()->kind() != TypeKind::Number) {
+            Value* typeErr = detail::typeError(ctx, "Math.sumPrecise: non-number value");
+            return detail::iteratorClose(ctx, iterator, typeErr);
+        }
+        double x = static_cast<NumberData*>(item->data())->value;
+        if (std::isnan(x)) {
+            hasNaN = true;
+            continue;
+        }
+        if (std::isinf(x)) {
+            if (x > 0) hasPosInf = true; else hasNegInf = true;
+            continue;
+        }
+        // Shewchuk 部分和：把 x 加到部分和序列，保留所有舍入误差。
+        size_t i = 0;
+        bool ovf = false;
+        double ovfX = 0.0;
+        double ovfY = 0.0;
+        size_t ovfJ = 0;
+        for (size_t j = 0; j < partials.size(); ++j) {
+            double y = partials[j];
+            if (std::fabs(x) < std::fabs(y)) std::swap(x, y);
+            const double hi = x + y;
+            const double lo = y - (hi - x);
+            if (!std::isfinite(hi) && std::isfinite(x) && std::isfinite(y)) {
+                // 中间溢出：保留两个操作数，等待后续异号项抵消。
+                ovf = true;
+                ovfX = x;
+                ovfY = y;
+                ovfJ = j;
+                break;
+            }
+            if (lo != 0.0) partials[i++] = lo;
+            x = hi;
+        }
+        if (ovf) {
+            std::vector<double> merged;
+            merged.reserve(partials.size() + 2);
+            for (size_t k = 0; k < i; ++k) merged.push_back(partials[k]);
+            merged.push_back(ovfX);
+            merged.push_back(ovfY);
+            for (size_t k = ovfJ + 1; k < partials.size(); ++k) {
+                merged.push_back(partials[k]);
+            }
+            partials.swap(merged);
+            continue;
+        }
+        partials.resize(i);
+        partials.push_back(x);
+    }
+
+    if (hasNaN) return ctx->createNumber(std::nan(""));
+    if (hasPosInf && hasNegInf) return ctx->createNumber(std::nan(""));
+    if (hasPosInf) return ctx->createNumber(std::numeric_limits<double>::infinity());
+    if (hasNegInf) return ctx->createNumber(-std::numeric_limits<double>::infinity());
+    if (partials.empty()) return ctx->createNumber(-0.0);
+
+    // 从最高位部分和向低位累加，并在必要时做 round-half-to-even。
+    double hi = partials.back();
+    double lo = 0.0;
+    size_t i = partials.size() - 1;
+    while (i > 0) {
+        --i;
+        const double x = hi;
+        const double y = partials[i];
+        hi = x + y;
+        const double yr = hi - x;
+        lo = y - yr;
+        if (lo != 0.0) break;
+    }
+    if (i > 0 && ((lo < 0.0 && partials[i - 1] < 0.0) ||
+                  (lo > 0.0 && partials[i - 1] > 0.0))) {
+        const double y = lo * 2.0;
+        const double x = hi + y;
+        const double yr = x - hi;
+        if (y == yr) hi = x;
+    }
+    return ctx->createNumber(hi);
 }
 
 // Math.random：宿主无 RNG 注入时的进程内 fallback。
@@ -308,6 +438,7 @@ bool registerMathBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, math, "min", mathMin, 0, 2)) return false;
     if (!defineMethod(ctx, math, "hypot", mathHypot, 0, 2)) return false;
     if (!defineMethod(ctx, math, "random", mathRandom, 0)) return false;
+    if (!defineMethod(ctx, math, "sumPrecise", mathSumPrecise, 1)) return false;
 
     if (!defineConstant(ctx, math, "E", 2.7182818284590452354)) return false;
     if (!defineConstant(ctx, math, "LN10", 2.302585092994046)) return false;

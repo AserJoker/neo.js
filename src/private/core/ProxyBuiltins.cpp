@@ -45,11 +45,15 @@ Value* proxyRevocable(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]
     if (detail::isErrorValue(proxy)) return proxy;
 
     FunctionCreateOptions opts;
+    opts.constructible = false;
     opts.hasPrototypeProperty = false;
     opts.homeObject = proxy;  // revoke 闭包捕获（GC 由 FunctionData::enumerateChildren 遍历）
     Value* revoke = ctx->createNativeFunction(proxyRevoke, 0, {}, opts);
     if (revoke == ctx->oomValue()) return revoke;
     ctx->setFunctionName(revoke, "");
+    Value* lengthResult =
+        ctx->defineProperty(revoke, "length", ctx->createNumber(0.0), false, false, true);
+    if (detail::isErrorValue(lengthResult)) return lengthResult;
 
     Value* result = ctx->createObject();
     if (result == ctx->oomValue()) return result;
@@ -62,10 +66,18 @@ Value* proxyRevocable(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]
 }
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }

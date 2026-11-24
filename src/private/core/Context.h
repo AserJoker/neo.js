@@ -80,6 +80,7 @@ class Context : public IContext {
     // Function.prototype 是所有函数对象的原型（其自身原型是 Object.prototype）。
     // 由 bootstrapBuiltins 创建，挂 global 存活于 Context 生命周期。
     Value* objectPrototype_ = nullptr;
+    Value* weakRefPrototype_ = nullptr;
     Value* functionPrototype_ = nullptr;
     Value* arrayPrototype_ = nullptr;   // Array.prototype（自身是数组，ADR-018 §6）
     // 原始值包装对象的原型（ES2024 §20.3/§21.1.3/§21.1.3/§20.4.3）
@@ -465,6 +466,10 @@ public:
                                 IteratorHelperKind kind, Value* callback,
                                 double counter,
                                 std::string_view bindName = {}) override;
+    Value* createWeakRef(Value* target,
+                         std::string_view bindName = {}) override;
+    void setWeakRefPrototype(Value* proto) override { weakRefPrototype_ = proto; }
+
     Value* createCollection(CollectionKind kind,
                             std::string_view bindName = {}) override;
     Value* createCollectionIterator(Value* collection,

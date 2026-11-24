@@ -274,7 +274,8 @@ Value* PrimitiveWrapperType::deleteProperty(IContext* ctx, Value* self, Value* k
     bool matches = false;
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, stringPayload(self), key, k, matches, err)) {
-        if (matches) return readOnlyProperty(ctx, "delete");
+        // String exotic 的索引/length 不可删除：[[Delete]] 返回 false（不抛错）。
+        if (matches) return ctx->createBoolean(false);
     } else if (err != nullptr) {
         return err;
     }

@@ -572,16 +572,35 @@ TEST(PrimitiveWrapperTest, StringWrapperLengthAndIndexAreReadOnly) {
               TypeKind::Exception);
     EXPECT_EQ(ctx->setProperty(w, "0", ctx->createString("z"))->type()->kind(),
               TypeKind::Exception);
-    EXPECT_EQ(ctx->deleteProperty(w, "0")->type()->kind(), TypeKind::Exception);
-    EXPECT_EQ(ctx->deleteProperty(w, "length")->type()->kind(), TypeKind::Exception);
+
+    // String exotic 的 [[Delete]] 对索引/length 返回 false（不抛错）。
+    Value* delIndex = ctx->deleteProperty(w, "0");
+    ASSERT_EQ(delIndex->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(delIndex));
+    Value* delLength = ctx->deleteProperty(w, "length");
+    ASSERT_EQ(delLength->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(boolOf(delLength));
+
     EXPECT_EQ(ctx->defineProperty(w, "0", ctx->createString("z"))->type()->kind(),
               TypeKind::Exception);
     Value* getter = ctx->createNativeFunction(
         [](IContext* c, Value*, size_t, Value*[]) { return c->createUndefined(); }, 0);
     EXPECT_EQ(ctx->defineAccessor(w, "0", getter, nullptr)->type()->kind(),
               TypeKind::Exception);
-    // 原值不变
+
+    // delete 失败后原值不变
     EXPECT_EQ(strOf(ctx->getProperty(w, "0")), "a");
+    EXPECT_EQ(numOf(ctx->getProperty(w, "length")), 3.0);
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "0"));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "length"));
+
+    // 普通自有属性可正常删除
+    ctx->setProperty(w, "foo", ctx->createNumber(9));
+    EXPECT_TRUE(neo::test::hasProperty(ctx, w, "foo"));
+    Value* delFoo = ctx->deleteProperty(w, "foo");
+    ASSERT_EQ(delFoo->type()->kind(), TypeKind::Boolean);
+    EXPECT_TRUE(boolOf(delFoo));
+    EXPECT_FALSE(neo::test::hasProperty(ctx, w, "foo"));
 }
 
 TEST(PrimitiveWrapperTest, NonStringWrapperHasNoLength) {

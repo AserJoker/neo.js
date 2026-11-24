@@ -218,9 +218,14 @@ bool registerEvalBuiltin(IContext* ctx) {
     FunctionCreateOptions options;
     options.constructible = false;
     options.hasPrototypeProperty = false;
-    Value* fn = ctx->createNativeFunction(evalNative, 1, {}, options);
+    // 最小实参数为 0（eval() 合法），length 单独定义为 1。
+    Value* fn = ctx->createNativeFunction(evalNative, 0, {}, options);
     if (fn == ctx->oomValue()) return false;
     ctx->setFunctionName(fn, "eval");
+    if (ctx->defineProperty(fn, "length", ctx->createNumber(1.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     ctx->defineGlobal("eval", fn, true, false, true);
     ctx->setEvalFunction(fn);
     return true;

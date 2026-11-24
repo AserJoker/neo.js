@@ -21,6 +21,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/types/Array.h"
+#include "core/types/Error.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
@@ -51,12 +52,33 @@ bool messageArgument(IContext* ctx, size_t argc, Value* argv[], std::string& out
 // Error(message) / new Error(message)（ES2024 §20.5.1.1）：
 //   无参或 message 为 undefined → 不定义 message 属性；
 //   否则 ToString(message) 后定义。call 与 new 语义相同。
+// InstallErrorCause（ES2024 §20.5.8.1）：options 是对象且 HasProperty("cause")
+// 时，安装自有、不可枚举、可写、可配置的 cause 属性。
+Value* installErrorCause(IContext* ctx, Value* instance, Value* options) {
+    if (options == nullptr || !detail::isObjectKind(options->type()->kind())) {
+        return nullptr;
+    }
+    Value* has = ctx->hasProperty(options, ctx->createString("cause"));
+    if (detail::isErrorValue(has)) return has;
+    if (!detail::toBoolean(has)) return nullptr;
+    Value* cause = ctx->getProperty(options, ctx->createString("cause"));
+    if (detail::isErrorValue(cause)) return cause;
+    Value* r = ctx->defineProperty(instance, "cause", cause, true, false, true);
+    if (detail::isErrorValue(r)) return r;
+    return nullptr;
+}
+
 Value* errorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     std::string message;
     Value* err = nullptr;
     messageArgument(ctx, argc, argv, message, err);
     if (err != nullptr) return err;
-    return ctx->createError(message);
+    Value* instance = ctx->createError(message);
+    if (instance == ctx->oomValue()) return instance;
+    if (argc > 1) {
+        if (Value* e = installErrorCause(ctx, instance, argv[1])) return e;
+    }
+    return instance;
 }
 
 // 子类构造函数共用的实现（TypeError/RangeError/...）：
@@ -83,6 +105,9 @@ Value* nativeErrorCtor(IContext* ctx, const char* ctorName, const char* errorNam
     if (detail::isErrorValue(proto)) return proto;
     Value* r = ctx->setPrototype(instance, proto);
     if (detail::isErrorValue(r)) return r;
+    if (argc > 1) {
+        if (Value* e = installErrorCause(ctx, instance, argv[1])) return e;
+    }
     return instance;
 }
 
@@ -130,6 +155,9 @@ Value* aggregateErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* ar
     }
     r = ctx->defineProperty(instance, "errors", errors, true, false, true);
     if (detail::isErrorValue(r)) return r;
+    if (argc > 2) {
+        if (Value* e = installErrorCause(ctx, instance, argv[2])) return e;
+    }
     return instance;
 }
 
@@ -157,20 +185,82 @@ Value* evalErrorCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[])
 //   message 为空时只返回 name。
 Value* errorProtoToString(IContext* ctx, Value* self, size_t /*argc*/,
                           Value* /*argv*/[]) {
+    if (!detail::isObjectKind(self->type()->kind())) {
+        return detail::typeError(ctx, "Error.prototype.toString called on non-object");
+    }
     Value* nameValue = ctx->getProperty(self, "name");
     if (detail::isErrorValue(nameValue)) return nameValue;
     Value* messageValue = ctx->getProperty(self, "message");
     if (detail::isErrorValue(messageValue)) return messageValue;
 
-    std::string name = nameValue->type()->kind() == TypeKind::Undefined
-                           ? "Error"
-                           : detail::valueToString(nameValue);
-    std::string message = messageValue->type()->kind() == TypeKind::Undefined
-                              ? ""
-                              : detail::valueToString(messageValue);
+    std::string name = "Error";
+    if (nameValue->type()->kind() != TypeKind::Undefined) {
+        Value* s = detail::toStringValue(ctx, nameValue);
+        if (detail::isErrorValue(s)) return s;
+        name = static_cast<StringData*>(s->data())->value;
+    }
+    std::string message;
+    if (messageValue->type()->kind() != TypeKind::Undefined) {
+        Value* s = detail::toStringValue(ctx, messageValue);
+        if (detail::isErrorValue(s)) return s;
+        message = static_cast<StringData*>(s->data())->value;
+    }
     if (name.empty()) return ctx->createString(message);
     if (message.empty()) return ctx->createString(name);
     return ctx->createString(name + ": " + message);
+}
+
+// get Error.prototype.stack（error-stack-accessor 提案）：
+//   this 非对象 → TypeError；无 [[ErrorData]] → undefined；
+//   否则返回实现定义的栈字符串。
+Value* errorStackGetter(IContext* ctx, Value* self, size_t /*argc*/,
+                        Value* /*argv*/[]) {
+    if (!detail::isObjectKind(self->type()->kind())) {
+        return detail::typeError(ctx, "get Error.prototype.stack called on non-object");
+    }
+    if (self->type()->kind() != TypeKind::Error) return ctx->createUndefined();
+    return ctx->createString(static_cast<ErrorData*>(self->data())->stackText);
+}
+
+// set Error.prototype.stack：SetterThatIgnoresPrototypeProperties 语义。
+Value* errorStackSetter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    if (!detail::isObjectKind(self->type()->kind())) {
+        return detail::typeError(ctx, "set Error.prototype.stack called on non-object");
+    }
+    Value* v = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (v->type()->kind() != TypeKind::String) {
+        return detail::typeError(ctx, "stack must be a string");
+    }
+    Value* home = ctx->errorPrototype();
+    if (home != nullptr && self->data() == home->data()) {
+        return detail::typeError(ctx, "cannot set Error.prototype.stack");
+    }
+    PropertyKey key;
+    key.value = ctx->createString("stack");
+    key.name = "stack";
+    bool exists = false;
+    Property prop;
+    if (Value* err = self->type()->getOwnProperty(ctx, self, key, exists, prop)) {
+        return err;
+    }
+    if (!exists) {
+        Value* r = ctx->defineProperty(self, "stack", v, true, true, true);
+        if (detail::isErrorValue(r)) return r;
+        return ctx->createUndefined();
+    }
+    // 已有自有属性：[[Set]] with Throw=true。
+    Value* r = self->type()->setWithReceiver(ctx, self, key, v, self);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
+        return detail::typeError(ctx, "cannot assign to read only property 'stack'");
+    }
+    return ctx->createUndefined();
+}
+
+// Error.isError(value)（ES2026 §20.5.2.2）：[[ErrorData]] 存在即为 true。
+Value* errorIsError(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    Value* v = argc > 0 ? argv[0] : ctx->createUndefined();
+    return ctx->createBoolean(v->type()->kind() == TypeKind::Error);
 }
 
 // 把值定义为 global object 属性（全局环境记录的对象记录）。
@@ -185,7 +275,7 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 //   4. 子类原型自有 name（writable/不可枚举/可配置）
 //   5. 注册到 global
 bool registerNativeError(IContext* ctx, Value* errorProto, Value* errorFn,
-                         const char* name, NativeFn ctor) {
+                         const char* name, NativeFn ctor, size_t length = 1) {
     Value* proto = ctx->createObject();
     if (proto == ctx->oomValue()) return false;
     if (ctx->setPrototype(proto, errorProto)->type()->kind() == TypeKind::Exception) {
@@ -195,6 +285,11 @@ bool registerNativeError(IContext* ctx, Value* errorProto, Value* errorFn,
     Value* fn = ctx->createNativeFunction(ctor, 0);
     if (fn == ctx->oomValue()) return false;
     ctx->setFunctionName(fn, name);
+    if (ctx->defineProperty(fn, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // 子类构造函数的 [[Prototype]] 是 %Error%（ES2024 §20.5.6.1）。
     if (ctx->setPrototype(fn, errorFn)->type()->kind() == TypeKind::Exception) {
         return false;
@@ -220,10 +315,18 @@ bool registerNativeError(IContext* ctx, Value* errorProto, Value* errorFn,
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
@@ -248,6 +351,10 @@ bool registerErrorBuiltins(IContext* ctx) {
     Value* errorFn = ctx->createNativeFunction(errorCtor, 0);
     if (errorFn == ctx->oomValue()) return false;
     ctx->setFunctionName(errorFn, "Error");
+    if (ctx->defineProperty(errorFn, "length", ctx->createNumber(1.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // Error.prototype 属性指向 errorProto（不可写/不可枚举/不可配置，ES2024 §20.5.2.1）
     if (ctx->defineProperty(errorFn, "prototype", errorProto, false, false, false)
             ->type()->kind() == TypeKind::Exception) {
@@ -272,6 +379,34 @@ bool registerErrorBuiltins(IContext* ctx) {
         return false;
     }
     if (!defineMethod(ctx, errorProto, "toString", errorProtoToString, 0)) return false;
+    if (!defineMethod(ctx, errorFn, "isError", errorIsError, 1)) return false;
+
+    // stack 访问器（error-stack-accessor）：不可枚举、可配置。
+    {
+        FunctionCreateOptions opts;
+        opts.constructible = false;
+        opts.hasPrototypeProperty = false;
+        Value* getter = ctx->createNativeFunction(errorStackGetter, 0, {}, opts);
+        if (getter == ctx->oomValue()) return false;
+        ctx->setFunctionName(getter, "get stack");
+        if (ctx->defineProperty(getter, "length", ctx->createNumber(0.0), false, false,
+                                true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+        Value* setter = ctx->createNativeFunction(errorStackSetter, 0, {}, opts);
+        if (setter == ctx->oomValue()) return false;
+        ctx->setFunctionName(setter, "set stack");
+        if (ctx->defineProperty(setter, "length", ctx->createNumber(1.0), false, false,
+                                true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+        if (ctx->defineAccessor(errorProto, "stack", getter, setter, false, true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+    }
 
     // —— 4. 注册到 global ——
     bindGlobal(ctx, "Error", errorFn);
@@ -290,7 +425,8 @@ bool registerErrorBuiltins(IContext* ctx) {
 
     // —— 6. AggregateError（ES2024 §20.5.7）——
     // 与一般性错误子类同一注册路径（共用 TypeKind::Error，靠原型链区分）。
-    if (!registerNativeError(ctx, errorProto, errorFn, "AggregateError", aggregateErrorCtor))
+    if (!registerNativeError(ctx, errorProto, errorFn, "AggregateError", aggregateErrorCtor,
+                             2))
         return false;
     return true;
 }

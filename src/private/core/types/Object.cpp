@@ -830,8 +830,7 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     if (!detail::toBoolean(ext)) {
         Value* current = getPrototype(ctx, self);
         if (isErrorResult(current)) return current;
-        if (current != proto &&
-            (current == nullptr || proto == nullptr || current->data() != proto->data())) {
+        if (!detail::sameValue(current, proto)) {
             return ctx->createBoolean(false);
         }
     }

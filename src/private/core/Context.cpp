@@ -41,6 +41,7 @@
 #include "core/PrimitiveWrapperBuiltins.h"
 #include "core/RegExpBuiltins.h"
 #include "core/SymbolBuiltins.h"
+#include "core/WeakRefBuiltins.h"
 #include "core/TimerBuiltins.h"
 #include "core/WorkerBuiltins.h"
 #include "core/PortBuiltins.h"
@@ -49,6 +50,7 @@
 #include "core/types/AsyncGenerator.h"
 #include "core/types/BigInt.h"
 #include "core/types/Collection.h"
+#include "core/types/WeakRef.h"
 #include "core/types/Date.h"
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
@@ -178,6 +180,11 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 8. 注册 Symbol 包装类（构造函数 + prototype.toString + well-known 属性）。
     //    依赖 Object.prototype / Function.prototype 已就绪。
     if (!registerSymbolBuiltins(this)) {
+        std::abort();
+    }
+
+    // 8a. 注册 WeakRef（依赖 Object.prototype / Function.prototype）。
+    if (!registerWeakRefBuiltins(this)) {
         std::abort();
     }
     // global object 在 Object.prototype 就绪前创建（原型为 null），此处回填。
@@ -574,8 +581,10 @@ Value* Context::construct(Value* fn, Value* newTarget, size_t argc, Value* argv[
         auto* fd = static_cast<FunctionData*>(fn->data());
         if (!fd->isScript && fd->boundTarget == nullptr) {
             Value* proto = getProperty(newTarget_, "prototype");
-            if (!detail::isErrorValue(proto) &&
-                detail::isObjectKind(proto->type()->kind())) {
+            if (detail::isErrorValue(proto)) {
+                // GetPrototypeFromConstructor 的 abrupt 必须透传。
+                r = proto;
+            } else if (detail::isObjectKind(proto->type()->kind())) {
                 Value* set = setPrototype(r, proto);
                 if (detail::isErrorValue(set)) r = set;
             }
@@ -1983,7 +1992,6 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     }
     Value* nameValue = createString(name);
     if (nameValue == oomValue_) return nameValue;
-    defineProperty(fnValue, "name", nameValue, false, false, true);
     // 绑定函数的 length（ES2024 §10.4.1.3 step 5-8）：
     //   仅当 target 有自有 "length" 且值为 Number 时参与计算；
     //   NaN→0，±∞ 按规范，其余 ToIntegerOrInfinity 后减去已绑定实参数。
@@ -2019,7 +2027,9 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     }
     Value* lengthValue = createNumber(len);
     if (lengthValue == oomValue_) return lengthValue;
+    // 先 length 后 name：内建函数自有属性顺序为 length、name。
     defineProperty(fnValue, "length", lengthValue, false, false, true);
+    defineProperty(fnValue, "name", nameValue, false, false, true);
     // 绑定函数无 prototype 属性（不可 new）
     return fnValue;
 }
@@ -2444,6 +2454,18 @@ Value* Context::createIteratorHelper(Value* underlying, Value* nextMethod,
     return helper;
 }
 
+Value* Context::createWeakRef(Value* target, std::string_view bindName) {
+    auto* d = gc_->allocData<WeakRefData>();
+    if (d == nullptr) return oomValue_;
+    d->target = target;
+    Value* ref = createTracked(getWeakRefType(), d, bindName);
+    if (ref == oomValue_) return ref;
+    if (weakRefPrototype_ != nullptr) {
+        static_cast<ObjectData*>(ref->data())->prototype = weakRefPrototype_;
+    }
+    return ref;
+}
+
 Value* Context::createCollection(CollectionKind kind, std::string_view bindName) {
     auto* d = gc_->allocData<CollectionData>();
     if (d == nullptr) return oomValue_;
@@ -2854,15 +2876,10 @@ Value* Context::createError(std::string_view message, std::string_view name,
         }
     }
 
-    // stack：渲染调用栈快照（writable / 不可枚举 / 可配置）。
-    // 用 trace(position) 而非直接读 callStack_：栈顶帧的位置（出错点）只有调用方
-    // 知道，trace 会 clone 并用 position 补全栈顶帧，且不改动 Context 的栈。
-    Value* stack = createString(renderStack(trace(position), name, message));
-    if (stack == oomValue_) return stack;
-    if (defineProperty(err, "stack", stack, true, false, true)->type()->kind() ==
-        TypeKind::Exception) {
-        return oomValue_;
-    }
+    // stack：渲染调用栈快照存入 ErrorData 内部字段（Error.prototype.stack
+    // 访问器读取）。用 trace(position) 而非直接读 callStack_：栈顶帧的位置
+    // （出错点）只有调用方知道，trace 会 clone 并用 position 补全栈顶帧。
+    d->stackText = renderStack(trace(position), name, message);
     return err;
 }
 
@@ -3777,9 +3794,8 @@ void Context::setExceptionPosition(Value* exception,
         message = detail::valueToString(messageValue);
     }
 
-    Value* stack = createString(renderStack(trace(position), name, message));
-    if (stack == oomValue_) return;
-    defineProperty(err, "stack", stack, true, false, true);
+    static_cast<ErrorData*>(err->data())->stackText =
+        renderStack(trace(position), name, message);
 }
 
 // —— 事件循环（非阻塞调度）——

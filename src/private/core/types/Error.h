@@ -27,6 +27,8 @@
 #include "core/types/Object.h"  // ErrorData 继承 ObjectData
 #include "infra/IAllocator.h"
 
+#include <string>
+
 namespace neo::core {
 
 class Value;
@@ -64,9 +66,12 @@ public:
 };
 
 // Error 负载：继承 ObjectData 复用属性容器/原型链/GC 与私有槽。
-// [[ErrorData]] 是标记性内部槽，无自有字段——存在性即标记。
+// [[ErrorData]] 是标记性内部槽；stackText 是实现定义的调用栈快照，
+// 由 Error.prototype.stack 访问器读取（实例不建自有 stack 数据属性）。
 class ErrorData : public ObjectData {
 public:
+    std::string stackText;
+
     // clone：引用语义（ADR-019 §2）——ref++ 后返回 this
     IData* clone(neo::infra::IAllocator* alloc) const override;
 };

@@ -64,7 +64,16 @@ void civilFromDays(int64_t z, int64_t& y, int64_t& m, int64_t& d) {
 // TimeClip（§21.4.1.31）：非有限或越界 → NaN，否则截断到整数毫秒。
 double timeClip(double t) {
     if (!std::isfinite(t) || std::fabs(t) > kMaxTime) return std::nan("");
-    return std::trunc(t);
+    // +0.0 把 -0 归一为 +0（§21.4.1.31 步骤 3）。
+    return std::trunc(t) + 0.0;
+}
+
+// 年份偏移：0..99 视为 1900+year（§21.4.1.1 / §21.4.2.1）。
+double yearOffset(double y) {
+    if (!std::isfinite(y)) return y;
+    const double iy = std::trunc(y);
+    if (iy >= 0.0 && iy <= 99.0) return 1900.0 + iy;
+    return y;
 }
 
 int64_t floorDiv(int64_t a, int64_t b) {
@@ -167,15 +176,27 @@ bool parseIsoDate(std::string_view text, double& out) {
     std::string_view s = text.substr(begin, end - begin);
     size_t i = 0;
     int year = 0;
-    int month = 0;
-    int day = 0;
-    if (!readDigits(s, i, 4, year)) return false;
-    if (i >= s.size() || s[i] != '-') return false;
-    ++i;
-    if (!readDigits(s, i, 2, month)) return false;
-    if (i >= s.size() || s[i] != '-') return false;
-    ++i;
-    if (!readDigits(s, i, 2, day)) return false;
+    int month = 1;
+    int day = 1;
+    // 扩展年份：±YYYYYY；普通年份：YYYY。
+    if (i < s.size() && (s[i] == '+' || s[i] == '-')) {
+        const bool negative = s[i] == '-';
+        ++i;
+        int magnitude = 0;
+        if (!readDigits(s, i, 6, magnitude)) return false;
+        if (negative && magnitude == 0) return false;  // -000000 非法
+        year = negative ? -magnitude : magnitude;
+    } else {
+        if (!readDigits(s, i, 4, year)) return false;
+    }
+    if (i < s.size() && s[i] == '-') {
+        ++i;
+        if (!readDigits(s, i, 2, month)) return false;
+        if (i < s.size() && s[i] == '-') {
+            ++i;
+            if (!readDigits(s, i, 2, day)) return false;
+        }
+    }
     if (month < 1 || month > 12) return false;
     if (day < 1 || day > daysInMonth(year, month)) return false;
 
@@ -250,6 +271,73 @@ bool parseIsoDate(std::string_view text, double& out) {
     return true;
 }
 
+constexpr const char* kMonthNames[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+
+// 解析 Date.prototype.toString / toUTCString 产生的旧式格式（本地时区 = UTC）：
+//   "Thu Jan 01 1970 00:00:00 GMT+0000 (Coordinated Universal Time)"
+//   "Thu, 01 Jan 1970 00:00:00 GMT"
+bool parseLegacyDate(std::string_view s, double& out) {
+    size_t i = 0;
+    while (i < s.size() && s[i] != ' ') ++i;  // 星期几
+    if (i >= s.size()) return false;
+    while (i < s.size() && s[i] == ' ') ++i;
+    if (i < s.size() && s[i] == ',') {
+        ++i;
+        while (i < s.size() && s[i] == ' ') ++i;
+    }
+    int day = 0;
+    int month = 0;
+    const auto readMonth = [&]() {
+        for (int m = 0; m < 12; ++m) {
+            if (s.compare(i, 3, kMonthNames[m]) == 0) {
+                month = m + 1;
+                i += 3;
+                return true;
+            }
+        }
+        return false;
+    };
+    if (i < s.size() && s[i] >= 'A' && s[i] <= 'Z') {
+        // toString: "Www Mmm DD YYYY ..."
+        if (!readMonth()) return false;
+        if (i >= s.size() || s[i] != ' ') return false;
+        ++i;
+        if (!readDigits(s, i, 2, day)) return false;
+    } else {
+        // toUTCString: "Www, DD Mmm YYYY ..."
+        if (!readDigits(s, i, 2, day)) return false;
+        if (i >= s.size() || s[i] != ' ') return false;
+        ++i;
+        if (!readMonth()) return false;
+    }
+    if (i >= s.size() || s[i] != ' ') return false;
+    ++i;
+    int year = 0;
+    if (!readDigits(s, i, 4, year)) return false;
+    if (i >= s.size() || s[i] != ' ') return false;
+    ++i;
+    int hour = 0;
+    int minute = 0;
+    int second = 0;
+    if (!readDigits(s, i, 2, hour)) return false;
+    if (i >= s.size() || s[i] != ':') return false;
+    ++i;
+    if (!readDigits(s, i, 2, minute)) return false;
+    if (i >= s.size() || s[i] != ':') return false;
+    ++i;
+    if (!readDigits(s, i, 2, second)) return false;
+    if (i >= s.size() || s[i] != ' ') return false;
+    ++i;
+    if (s.compare(i, 3, "GMT") != 0) return false;
+    const int64_t days = daysFromCivil(year, month, day);
+    out = timeClip(static_cast<double>(days) * kMsPerDay +
+                   static_cast<double>(hour) * kMsPerHour +
+                   static_cast<double>(minute) * kMsPerMinute +
+                   static_cast<double>(second) * kMsPerSecond);
+    return true;
+}
+
 // —— 组件读取 ——
 
 double dateValueOf(Value* self) {
@@ -304,8 +392,9 @@ Value* dateConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[])
         Value* prim = detail::toPrimitive(ctx, v, detail::PreferredType::Default);
         if (detail::isErrorValue(prim)) return prim;
         if (prim->type()->kind() == TypeKind::String) {
+            const std::string& text = static_cast<StringData*>(prim->data())->value;
             double parsed = std::nan("");
-            parseIsoDate(static_cast<StringData*>(prim->data())->value, parsed);
+            if (!parseIsoDate(text, parsed)) parseLegacyDate(text, parsed);
             return ctx->createDate(parsed);
         }
         Value* nv = detail::toNumberValue(ctx, prim);
@@ -322,7 +411,9 @@ Value* dateConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[])
     double second = 0;
     double ms = 0;
     if (Value* err = toNumberArg(ctx, argc, argv, 0, year)) return err;
-    if (Value* err = toNumberArg(ctx, argc, argv, 1, month)) return err;
+    if (argc > 1) {
+        if (Value* err = toNumberArg(ctx, argc, argv, 1, month)) return err;
+    }
     if (argc > 2) {
         if (Value* err = toNumberArg(ctx, argc, argv, 2, day)) return err;
     }
@@ -338,7 +429,7 @@ Value* dateConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[])
     if (argc > 6) {
         if (Value* err = toNumberArg(ctx, argc, argv, 6, ms)) return err;
     }
-    const double dayNumber = makeDay(year, month, day);
+    const double dayNumber = makeDay(yearOffset(year), month, day);
     const double timeNumber = makeTime(hour, minute, second, ms);
     return ctx->createDate(timeClip(makeDate(dayNumber, timeNumber)));
 }
@@ -352,8 +443,9 @@ Value* dateNow(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[
 Value* dateParse(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     Value* s = detail::toStringValue(ctx, argOrUndefined(ctx, argc, argv, 0));
     if (detail::isErrorValue(s)) return s;
+    const std::string& text = static_cast<StringData*>(s->data())->value;
     double parsed = std::nan("");
-    parseIsoDate(static_cast<StringData*>(s->data())->value, parsed);
+    if (!parseIsoDate(text, parsed)) parseLegacyDate(text, parsed);
     return ctx->createNumber(parsed);
 }
 
@@ -366,7 +458,9 @@ Value* dateUtc(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     double second = 0;
     double ms = 0;
     if (Value* err = toNumberArg(ctx, argc, argv, 0, year)) return err;
-    if (Value* err = toNumberArg(ctx, argc, argv, 1, month)) return err;
+    if (argc > 1) {
+        if (Value* err = toNumberArg(ctx, argc, argv, 1, month)) return err;
+    }
     if (argc > 2) {
         if (Value* err = toNumberArg(ctx, argc, argv, 2, day)) return err;
     }
@@ -383,7 +477,7 @@ Value* dateUtc(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
         if (Value* err = toNumberArg(ctx, argc, argv, 6, ms)) return err;
     }
     return ctx->createNumber(
-        timeClip(makeDate(makeDay(year, month, day),
+        timeClip(makeDate(makeDay(yearOffset(year), month, day),
                           makeTime(hour, minute, second, ms))));
 }
 
@@ -401,6 +495,7 @@ Value* dateGetTimezoneOffset(IContext* ctx, Value* self, size_t /*argc*/,
     if (asDate(self) == nullptr) {
         return detail::typeError(ctx, "this is not a Date object");
     }
+    if (!std::isfinite(dateValueOf(self))) return ctx->createNumber(std::nan(""));
     return ctx->createNumber(0.0);
 }
 
@@ -469,17 +564,43 @@ struct SetterArgs {
     double values[7] = {0, 0, 0, 0, 0, 0, 0};
 };
 
+// DateField → fields[7] 槽位（Day 不是可写字段）。
+size_t fieldSlot(DateField field) {
+    switch (field) {
+        case DateField::FullYear: return 0;
+        case DateField::Month: return 1;
+        case DateField::Date: return 2;
+        case DateField::Hours: return 3;
+        case DateField::Minutes: return 4;
+        case DateField::Seconds: return 5;
+        case DateField::Milliseconds: return 6;
+        case DateField::Day: break;
+    }
+    return 0;
+}
+
 Value* dateSetFields(IContext* ctx, Value* self, size_t argc, Value* argv[],
                      const SetterArgs& spec) {
     if (asDate(self) == nullptr) {
         return detail::typeError(ctx, "this is not a Date object");
     }
+    // 先读 [[DateValue]]，再按顺序 ToNumber 全部提供的实参（可观察顺序），
+    // 最后才做 NaN 判定（§21.4.4.x）。
     double t = dateValueOf(self);
-    bool reset = !std::isfinite(t);
-    if (reset && spec.first != DateField::FullYear) {
-        return ctx->createNumber(std::nan(""));
+    double provided[7] = {0, 0, 0, 0, 0, 0, 0};
+    bool has[7] = {false, false, false, false, false, false, false};
+    for (size_t i = 0; i < spec.count; ++i) {
+        // 第一个实参是必填（缺失按 undefined → NaN）；其余为可选。
+        if (i != 0 && i >= argc) continue;
+        double value = 0;
+        if (Value* err = toNumberArg(ctx, argc, argv, i, value)) return err;
+        provided[i] = value;
+        has[i] = true;
     }
-    if (reset) t = 0.0;
+    if (!std::isfinite(t)) {
+        if (spec.first != DateField::FullYear) return ctx->createNumber(std::nan(""));
+        t = 0.0;
+    }
     Components c;
     componentsOf(t, c);
 
@@ -487,12 +608,10 @@ Value* dateSetFields(IContext* ctx, Value* self, size_t argc, Value* argv[],
                         static_cast<double>(c.day),  static_cast<double>(c.hour),
                         static_cast<double>(c.minute), static_cast<double>(c.second),
                         static_cast<double>(c.ms)};
-    const size_t firstIndex = static_cast<size_t>(spec.first);
+    const size_t firstIndex = fieldSlot(spec.first);
     // 缺省参数保留当前组件值（§21.4.4.x 的可选参数语义）。
-    for (size_t i = 0; i < spec.count && i < argc; ++i) {
-        double value = 0;
-        if (Value* err = toNumberArg(ctx, argc, argv, i, value)) return err;
-        fields[firstIndex + i] = value;
+    for (size_t i = 0; i < spec.count; ++i) {
+        if (has[i]) fields[firstIndex + i] = provided[i];
     }
     const double dayNumber = makeDay(fields[0], fields[1], fields[2]);
     const double timeNumber = makeTime(fields[3], fields[4], fields[5], fields[6]);
@@ -526,6 +645,12 @@ std::string pad(int64_t value, size_t width) {
     return s;
 }
 
+// ToDateString 的年份：负号 + 至少 4 位（§21.4.4.41.4）。
+std::string formatYear(int64_t year) {
+    if (year < 0) return "-" + pad(-year, 4);
+    return pad(year, 4);
+}
+
 std::string formatIso(double t) {
     Components c;
     if (!componentsOf(t, c)) return "";
@@ -554,7 +679,7 @@ Value* dateToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/
     }
     const std::string text =
         std::string(kWeekdays[c.weekday]) + " " + kMonths[c.month - 1] + " " +
-        pad(c.day, 2) + " " + pad(c.year, 4) + " " + pad(c.hour, 2) + ":" +
+        pad(c.day, 2) + " " + formatYear(c.year) + " " + pad(c.hour, 2) + ":" +
         pad(c.minute, 2) + ":" + pad(c.second, 2) +
         " GMT+0000 (Coordinated Universal Time)";
     return ctx->createString(text);
@@ -635,13 +760,23 @@ Value* dateToIsoString(IContext* ctx, Value* self, size_t /*argc*/,
     return ctx->createString(formatIso(t));
 }
 
+// Date.prototype.toJSON（§21.4.4.37）：泛型，不要求 this 是 Date。
 Value* dateToJson(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    if (asDate(self) == nullptr) {
-        return detail::typeError(ctx, "this is not a Date object");
+    TypeKind k = self->type()->kind();
+    if (k == TypeKind::Undefined || k == TypeKind::Null) {
+        return detail::typeError(ctx, "Date.prototype.toJSON called on null or undefined");
     }
-    const double t = dateValueOf(self);
-    if (!std::isfinite(t)) return ctx->createNull();
-    return ctx->createString(formatIso(t));
+    Value* obj = detail::isObjectKind(k) ? self : ctx->createPrimitiveWrapper(self);
+    if (detail::isErrorValue(obj)) return obj;
+    Value* tv = detail::toPrimitive(ctx, obj, detail::PreferredType::Number);
+    if (detail::isErrorValue(tv)) return tv;
+    if (tv->type()->kind() == TypeKind::Number &&
+        !std::isfinite(static_cast<NumberData*>(tv->data())->value)) {
+        return ctx->createNull();
+    }
+    Value* fn = ctx->getProperty(obj, "toISOString");
+    if (detail::isErrorValue(fn)) return fn;
+    return ctx->call(fn, obj, 0, nullptr);
 }
 
 Value* dateToUtcString(IContext* ctx, Value* self, size_t /*argc*/,
@@ -655,7 +790,7 @@ Value* dateToUtcString(IContext* ctx, Value* self, size_t /*argc*/,
     }
     const std::string text =
         std::string(kWeekdays[c.weekday]) + ", " + pad(c.day, 2) + " " +
-        kMonths[c.month - 1] + " " + pad(c.year, 4) + " " + pad(c.hour, 2) + ":" +
+        kMonths[c.month - 1] + " " + formatYear(c.year) + " " + pad(c.hour, 2) + ":" +
         pad(c.minute, 2) + ":" + pad(c.second, 2) + " GMT";
     return ctx->createString(text);
 }
@@ -671,7 +806,7 @@ Value* dateToDateString(IContext* ctx, Value* self, size_t /*argc*/,
     }
     return ctx->createString(std::string(kWeekdays[c.weekday]) + " " +
                              kMonths[c.month - 1] + " " + pad(c.day, 2) + " " +
-                             pad(c.year, 4));
+                             formatYear(c.year));
 }
 
 Value* dateToTimeString(IContext* ctx, Value* self, size_t /*argc*/,
@@ -690,37 +825,71 @@ Value* dateToTimeString(IContext* ctx, Value* self, size_t /*argc*/,
 
 // Date.prototype[@@toPrimitive]（§21.4.4.9）
 Value* dateToPrimitive(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (asDate(self) == nullptr) {
-        return detail::typeError(ctx, "this is not a Date object");
+    if (!detail::isObjectKind(self->type()->kind())) {
+        return detail::typeError(ctx, "Date.prototype[@@toPrimitive] called on non-object");
     }
     Value* hint = argOrUndefined(ctx, argc, argv, 0);
-    std::string hintText = hint->type()->kind() == TypeKind::String
-                               ? static_cast<StringData*>(hint->data())->value
-                               : "default";
-    const char* method = hintText == "number" ? "valueOf" : "toString";
-    Value* fn = ctx->getProperty(self, method);
-    if (detail::isErrorValue(fn)) return fn;
-    return ctx->call(fn, self, 0, nullptr);
+    if (hint->type()->kind() != TypeKind::String) {
+        return detail::typeError(ctx, "invalid hint");
+    }
+    const std::string& hintText = static_cast<StringData*>(hint->data())->value;
+    bool stringFirst;
+    if (hintText == "default" || hintText == "string") {
+        stringFirst = true;
+    } else if (hintText == "number") {
+        stringFirst = false;
+    } else {
+        return detail::typeError(ctx, "invalid hint");
+    }
+    const char* names[2] = {stringFirst ? "toString" : "valueOf",
+                            stringFirst ? "valueOf" : "toString"};
+    for (const char* name : names) {
+        Value* fn = ctx->getProperty(self, name);
+        if (detail::isErrorValue(fn)) return fn;
+        if (!detail::isCallable(fn)) continue;
+        Value* r = ctx->call(fn, self, 0, nullptr);
+        if (detail::isErrorValue(r)) return r;
+        if (!detail::isObjectKind(r->type()->kind())) return r;
+    }
+    return detail::typeError(ctx, "cannot convert object to primitive value");
 }
 
 // —— 注册辅助 ——
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    // 最小实参数为 0（Date 方法均允许缺参），length 单独定义。
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
 
 bool defineSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
-                        const char* name, NativeFn fn, size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                        const char* name, NativeFn fn, size_t length,
+                        bool writable = true) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
-    return ctx->defineProperty(target, ctx->getWellKnownSymbol(which), f, true, false,
-                               true)
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    return ctx->defineProperty(target, ctx->getWellKnownSymbol(which), f, writable,
+                               false, true)
                ->type()->kind() != TypeKind::Exception;
 }
 
@@ -740,6 +909,10 @@ bool registerDateBuiltins(IContext* ctx) {
     Value* dateFn = ctx->createNativeFunction(dateCall, 0);
     if (dateFn == ctx->oomValue()) return false;
     ctx->setFunctionName(dateFn, "Date");
+    if (ctx->defineProperty(dateFn, "length", ctx->createNumber(7.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     ctx->setFunctionConstructor(dateFn, dateConstruct);
     if (ctx->defineProperty(dateFn, "prototype", proto, false, false, false)
             ->type()->kind() == TypeKind::Exception) {
@@ -752,8 +925,8 @@ bool registerDateBuiltins(IContext* ctx) {
 
     // —— 3. 静态方法 ——
     if (!defineMethod(ctx, dateFn, "now", dateNow, 0)) return false;
-    if (!defineMethod(ctx, dateFn, "parse", dateParse, 0)) return false;
-    if (!defineMethod(ctx, dateFn, "UTC", dateUtc, 0)) return false;
+    if (!defineMethod(ctx, dateFn, "parse", dateParse, 1)) return false;
+    if (!defineMethod(ctx, dateFn, "UTC", dateUtc, 7)) return false;
 
     // —— 4. 原型读取方法（本地时间与 UTC 相同）——
     if (!defineMethod(ctx, proto, "getTime", dateGetTime, 0)) return false;
@@ -779,28 +952,29 @@ bool registerDateBuiltins(IContext* ctx) {
     }
 
     // —— 5. 原型写入方法 ——
-    if (!defineMethod(ctx, proto, "setTime", dateSetTime, 0)) return false;
+    if (!defineMethod(ctx, proto, "setTime", dateSetTime, 1)) return false;
     const struct {
         const char* name;
         NativeFn fn;
+        size_t length;
     } setters[] = {
-        {"setFullYear", dateSetFullYear},   {"setUTCFullYear", dateSetFullYear},
-        {"setMonth", dateSetMonth},         {"setUTCMonth", dateSetMonth},
-        {"setDate", dateSetDate},           {"setUTCDate", dateSetDate},
-        {"setHours", dateSetHours},         {"setUTCHours", dateSetHours},
-        {"setMinutes", dateSetMinutes},     {"setUTCMinutes", dateSetMinutes},
-        {"setSeconds", dateSetSeconds},     {"setUTCSeconds", dateSetSeconds},
-        {"setMilliseconds", dateSetMilliseconds},
-        {"setUTCMilliseconds", dateSetMilliseconds},
+        {"setFullYear", dateSetFullYear, 3},   {"setUTCFullYear", dateSetFullYear, 3},
+        {"setMonth", dateSetMonth, 2},         {"setUTCMonth", dateSetMonth, 2},
+        {"setDate", dateSetDate, 1},           {"setUTCDate", dateSetDate, 1},
+        {"setHours", dateSetHours, 4},         {"setUTCHours", dateSetHours, 4},
+        {"setMinutes", dateSetMinutes, 3},     {"setUTCMinutes", dateSetMinutes, 3},
+        {"setSeconds", dateSetSeconds, 2},     {"setUTCSeconds", dateSetSeconds, 2},
+        {"setMilliseconds", dateSetMilliseconds, 1},
+        {"setUTCMilliseconds", dateSetMilliseconds, 1},
     };
     for (const auto& s : setters) {
-        if (!defineMethod(ctx, proto, s.name, s.fn, 0)) return false;
+        if (!defineMethod(ctx, proto, s.name, s.fn, s.length)) return false;
     }
 
     // —— 6. 格式化 ——
     if (!defineMethod(ctx, proto, "toString", dateToString, 0)) return false;
     if (!defineMethod(ctx, proto, "toISOString", dateToIsoString, 0)) return false;
-    if (!defineMethod(ctx, proto, "toJSON", dateToJson, 0)) return false;
+    if (!defineMethod(ctx, proto, "toJSON", dateToJson, 1)) return false;
     if (!defineMethod(ctx, proto, "toUTCString", dateToUtcString, 0)) return false;
     if (!defineMethod(ctx, proto, "toGMTString", dateToUtcString, 0)) return false;
     if (!defineMethod(ctx, proto, "toDateString", dateToDateString, 0)) return false;
@@ -812,7 +986,7 @@ bool registerDateBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, proto, "toLocaleTimeString", dateToLocaleTimeString, 0))
         return false;
     if (!defineSymbolMethod(ctx, proto, WellKnownSymbol::ToPrimitive,
-                            "[Symbol.toPrimitive]", dateToPrimitive, 0)) {
+                            "[Symbol.toPrimitive]", dateToPrimitive, 1, false)) {
         return false;
     }
     // 注：%Date.prototype% 规范上**没有** @@toStringTag，

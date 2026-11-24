@@ -3,7 +3,10 @@
 // 验证（ADR-038）：
 // - Error 是 [[ErrorData]] 对象：TypeKind::Error、具备对象布局、原型 = %Error.prototype%
 // - Error(message) / new Error(message)：message 为 undefined 时不建属性
-// - message / stack 是 writable / 不可枚举 / 可配置的自有属性
+// - message 是 writable / 不可枚举 / 可配置的自有属性
+// - stack 是 %Error.prototype% 上的访问器（error-stack-accessor 提案）：
+//   实例无自有 stack，快照存于 ErrorData::stackText，getter 返回该字符串，
+//   setter 按 SetterThatIgnoresPrototypeProperties 安装自有数据属性
 // - stack 由调用栈快照渲染（首行 "Name: message"，随后 "at name (position)"）
 // - Error.prototype.toString：name/message 缺省规则
 // - Object.prototype.toString tag = "[object Error]"
@@ -61,6 +64,17 @@ std::string str(Value* v) {
 // 取自有属性的描述符标志（通过 getOwnPropertyNames 判断不可枚举）
 bool isEnumerable(IContext* ctx, Value* obj, const char* key) {
     Value* keys = ctx->ownEnumerableStringKeys(obj);
+    auto* d = static_cast<neo::core::ArrayData*>(keys->data());
+    for (uint32_t i = 0; i < d->length(); ++i) {
+        Value* k = d->elementAt(i);
+        if (k != nullptr && str(k) == key) return true;
+    }
+    return false;
+}
+
+// 判断是否含自有属性（ownPropertyKeys，不沿原型链）。
+bool hasOwnProperty(IContext* ctx, Value* obj, const char* key) {
+    Value* keys = ctx->ownPropertyKeys(obj, false, false);
     auto* d = static_cast<neo::core::ArrayData*>(keys->data());
     for (uint32_t i = 0; i < d->length(); ++i) {
         Value* k = d->elementAt(i);
@@ -190,14 +204,46 @@ TEST(ErrorTest, StackUsesGivenName) {
     EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "TypeError: bad");
 }
 
-TEST(ErrorTest, StackIsWritableNonEnumerableConfigurable) {
+// stack 是 %Error.prototype% 上的访问器（error-stack-accessor 提案）。
+// 1) 新建实例无自有 stack，读取走原型 getter 返回栈字符串；
+// 2) setter 安装自有 writable/enumerable/configurable 数据属性；
+// 3) delete 移除自有属性后回落到原型 getter，返回字符串而非 undefined。
+TEST(ErrorTest, StackIsPrototypeAccessor) {
     Fixture f;
     Value* err = f.ctx->createError("boom");
+
+    // 1) 无自有 stack，且不可枚举
+    EXPECT_FALSE(hasOwnProperty(f.ctx.get(), err, "stack"));
     EXPECT_FALSE(isEnumerable(f.ctx.get(), err, "stack"));
+    Value* initial = f.ctx->getProperty(err, "stack");
+    ASSERT_EQ(initial->type()->kind(), TypeKind::String);
+    EXPECT_EQ(str(initial), "Error: boom");
+
+    // 2) setter 安装自有可写/可枚举/可配置数据属性
     f.ctx->setProperty(err, "stack", f.ctx->createString("custom"));
+    EXPECT_TRUE(hasOwnProperty(f.ctx.get(), err, "stack"));
+    EXPECT_TRUE(isEnumerable(f.ctx.get(), err, "stack"));
     EXPECT_EQ(str(f.ctx->getProperty(err, "stack")), "custom");
-    f.ctx->deleteProperty(err, "stack");
-    EXPECT_EQ(f.ctx->getProperty(err, "stack")->type()->kind(), TypeKind::Undefined);
+
+    // 3) delete 自有属性后回落到原型访问器
+    EXPECT_EQ(f.ctx->deleteProperty(err, "stack")->type()->kind(), TypeKind::Boolean);
+    EXPECT_FALSE(hasOwnProperty(f.ctx.get(), err, "stack"));
+    Value* after = f.ctx->getProperty(err, "stack");
+    ASSERT_EQ(after->type()->kind(), TypeKind::String);
+    EXPECT_NE(str(after), "custom");
+    EXPECT_EQ(str(after), "Error: boom");
+}
+
+// 给 %Error.prototype% 的 stack 赋值触发 setter 的 TypeError
+// （SetterThatIgnoresPrototypeProperties 禁止改写原型上的访问器）。
+TEST(ErrorTest, AssignStackOnErrorPrototypeThrowsTypeError) {
+    Fixture f;
+    Value* r = f.ctx->setProperty(f.ctx->errorPrototype(), "stack",
+                                  f.ctx->createString("x"));
+    ASSERT_EQ(r->type()->kind(), TypeKind::Exception);
+    Value* err = static_cast<neo::core::ExceptionData*>(r->data())->child;
+    ASSERT_EQ(err->type()->kind(), TypeKind::Error);
+    EXPECT_EQ(str(f.ctx->getProperty(err, "name")), "TypeError");
 }
 
 // ===== 构造函数 =====

@@ -252,7 +252,13 @@ Value* ProxyType::construct(IContext* ctx, Value* self, size_t argc, Value* argv
     Value* args = makeArgArray(ctx, argc, argv);
     if (detail::isErrorValue(args)) return args;
     Value* callArgs[3] = {d->target, args, newTarget};
-    return ctx->call(trap, d->handler, 3, callArgs);
+    Value* r = ctx->call(trap, d->handler, 3, callArgs);
+    if (detail::isErrorValue(r)) return r;
+    // construct trap 必须返回对象（§10.5.13 步骤 12）。
+    if (!detail::isObjectKind(r->type()->kind())) {
+        return detail::typeError(ctx, "proxy construct trap returned non-object");
+    }
+    return r;
 }
 
 // —— 属性内部方法 ——
@@ -313,6 +319,11 @@ Value* ProxyType::getOwnProperty(IContext* ctx, Value* self, const PropertyKey& 
         if (!out.configurable && targetDesc.configurable) {
             return detail::typeError(
                 ctx, "proxy getOwnPropertyDescriptor trap cannot report a non-configurable property as configurable");
+        }
+        if (!out.configurable && !isAccessorDescriptor(out) && !out.writable &&
+            !isAccessorDescriptor(targetDesc) && targetDesc.writable) {
+            return detail::typeError(
+                ctx, "proxy getOwnPropertyDescriptor trap cannot report a non-configurable, non-writable property when the target is writable");
         }
         if (!isCompatiblePropertyDescriptor(targetDesc, out)) {
             return detail::typeError(
@@ -403,7 +414,8 @@ Value* ProxyType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey&
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "get", present, err);
     if (err != nullptr) return err;
-    if (!present) return ordinaryGet(ctx, d->target, key, receiver);
+    // 无 get trap：转发 target 的 [[Get]]（target 自身可能是 Proxy）。
+    if (!present) return d->target->type()->getWithReceiver(ctx, d->target, key, receiver);
     Value* argv[3] = {d->target, key.value, receiver};
     Value* r = ctx->call(trap, d->handler, 3, argv);
     if (detail::isErrorValue(r)) return r;
@@ -421,6 +433,11 @@ Value* ProxyType::getWithReceiver(IContext* ctx, Value* self, const PropertyKey&
                 ctx, "proxy get trap returned a different value for a non-writable, non-configurable property");
         }
     }
+    if (targetHas && isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
+        targetDesc.getter == nullptr && r->type()->kind() != TypeKind::Undefined) {
+        return detail::typeError(
+            ctx, "proxy get trap must return undefined for a non-configurable accessor without a getter");
+    }
     return r;
 }
 
@@ -431,7 +448,9 @@ Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey&
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "set", present, err);
     if (err != nullptr) return err;
-    if (!present) return ordinarySet(ctx, d->target, key, value, receiver);
+    if (!present) {
+        return d->target->type()->setWithReceiver(ctx, d->target, key, value, receiver);
+    }
     Value* argv[4] = {d->target, key.value, value, receiver};
     Value* r = ctx->call(trap, d->handler, 4, argv);
     if (detail::isErrorValue(r)) return r;
@@ -444,6 +463,11 @@ Value* ProxyType::setWithReceiver(IContext* ctx, Value* self, const PropertyKey&
         bool targetHas = false;
         if (Value* e = targetOwnDescriptor(ctx, d->target, key, targetHas, targetDesc)) {
             return e;
+        }
+        if (targetHas && isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
+            targetDesc.setter == nullptr) {
+            return detail::typeError(
+                ctx, "proxy set trap cannot report success for a non-configurable accessor without a setter");
         }
         if (targetHas && !isAccessorDescriptor(targetDesc) && !targetDesc.configurable &&
             !targetDesc.writable) {
@@ -484,7 +508,7 @@ Value* ProxyType::hasProperty(IContext* ctx, Value* self, Value* key) {
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "has", present, err);
     if (err != nullptr) return err;
-    if (!present) return ordinaryHas(ctx, d->target, pk);
+    if (!present) return d->target->type()->hasProperty(ctx, d->target, pk.value);
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
@@ -495,17 +519,17 @@ Value* ProxyType::hasProperty(IContext* ctx, Value* self, Value* key) {
         Property targetDesc;
         bool targetHas = false;
         if (Value* e = targetOwnDescriptor(ctx, d->target, pk, targetHas, targetDesc)) return e;
-        if (!targetHas) {
-            Value* ext = targetExtensible(ctx, d->target);
-            if (detail::isErrorValue(ext)) return ext;
-            if (!detail::toBoolean(ext)) {
-                return detail::typeError(
-                    ctx,
-                    "proxy has trap cannot report a missing property on a non-extensible target");
-            }
-        } else if (!targetDesc.configurable) {
+        if (targetHas && !targetDesc.configurable) {
             return detail::typeError(
                 ctx, "proxy has trap cannot hide a non-configurable property");
+        }
+        // 无论 target 是否有该属性，非可扩展 target 都不能报告缺失。
+        Value* ext = targetExtensible(ctx, d->target);
+        if (detail::isErrorValue(ext)) return ext;
+        if (!detail::toBoolean(ext)) {
+            return detail::typeError(
+                ctx,
+                "proxy has trap cannot report a missing property on a non-extensible target");
         }
     }
     return ctx->createBoolean(result);
@@ -519,7 +543,7 @@ Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     Value* err = nullptr;
     Value* trap = lookupTrap(ctx, d, "deleteProperty", present, err);
     if (err != nullptr) return err;
-    if (!present) return ordinaryDelete(ctx, d->target, pk);
+    if (!present) return d->target->type()->deleteProperty(ctx, d->target, pk.value);
     Value* argv[2] = {d->target, pk.value};
     Value* r = ctx->call(trap, d->handler, 2, argv);
     if (detail::isErrorValue(r)) return r;
@@ -533,6 +557,15 @@ Value* ProxyType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     if (targetHas && !targetDesc.configurable) {
         return detail::typeError(
             ctx, "proxy deleteProperty trap cannot delete a non-configurable property");
+    }
+    // 仅当 target 上确实存在该属性时才检查可扩展性（§10.5.10 步骤 12-14）。
+    if (targetHas) {
+        Value* ext = targetExtensible(ctx, d->target);
+        if (detail::isErrorValue(ext)) return ext;
+        if (!detail::toBoolean(ext)) {
+            return detail::typeError(
+                ctx, "proxy deleteProperty trap cannot delete a property of a non-extensible target");
+        }
     }
     return ctx->createBoolean(true);
 }

@@ -665,6 +665,13 @@ public:
     virtual Value* createCollection(CollectionKind kind,
                                     std::string_view bindName = {}) = 0;
 
+    // createWeakRef: 创建 WeakRef 对象（ES2024 §26.1.1.1），原型为
+    // %WeakRef.prototype%（bootstrap 期间为 null，稍后回填）。
+    virtual Value* createWeakRef(Value* target,
+                                 std::string_view bindName = {}) = 0;
+    // setWeakRefPrototype: bootstrap 专用。
+    virtual void setWeakRefPrototype(Value* proto) = 0;
+
     // createCollectionIterator: 创建集合迭代器（§24.1.5.1 / §24.2.5.1）。
     // 按 collection 的 CollectionKind 自动挂 %MapIteratorPrototype% 或
     // %SetIteratorPrototype%。

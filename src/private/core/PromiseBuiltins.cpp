@@ -171,14 +171,24 @@ Value* createResolvingFunctions(IContext* ctx, Value* promise, Value*& resolveOu
     Value* undefined = ctx->createUndefined();
     Value* boundArgs[2] = {promise, cell};
 
-    Value* resolveTarget = ctx->createNativeFunction(resolveFunction, 1);
+    // target length 3，绑定 2 个实参后 bound length = 1（规范 length）。
+    FunctionCreateOptions fnOpts;
+    fnOpts.constructible = false;
+    fnOpts.hasPrototypeProperty = false;
+    Value* resolveTarget = ctx->createNativeFunction(resolveFunction, 0, {}, fnOpts);
     if (resolveTarget == ctx->oomValue()) return resolveTarget;
+    Value* rlen = ctx->defineProperty(resolveTarget, "length", ctx->createNumber(3.0),
+                                      false, false, true);
+    if (detail::isErrorValue(rlen)) return rlen;
     Value* resolve = ctx->createBoundFunction(resolveTarget, undefined, 2, boundArgs);
     if (resolve == ctx->oomValue()) return resolve;
     ctx->setFunctionName(resolve, "");
 
-    Value* rejectTarget = ctx->createNativeFunction(rejectFunction, 1);
+    Value* rejectTarget = ctx->createNativeFunction(rejectFunction, 0, {}, fnOpts);
     if (rejectTarget == ctx->oomValue()) return rejectTarget;
+    Value* jlen = ctx->defineProperty(rejectTarget, "length", ctx->createNumber(3.0),
+                                      false, false, true);
+    if (detail::isErrorValue(jlen)) return jlen;
     Value* reject = ctx->createBoundFunction(rejectTarget, undefined, 2, boundArgs);
     if (reject == ctx->oomValue()) return reject;
     ctx->setFunctionName(reject, "");
@@ -281,6 +291,15 @@ Value* capabilityExecutor(IContext* ctx, Value* /*self*/, size_t argc, Value* ar
     Value* cell = captured(ctx, "__cell");
     if (cell == nullptr) return ctx->createUndefined();
     auto* d = static_cast<ArrayData*>(cell->data());
+    // GetCapabilitiesExecutor：resolve/reject 已被设置过则抛 TypeError。
+    Value* existingResolve = d->elementAt(0);
+    Value* existingReject = d->elementAt(1);
+    if ((existingResolve != nullptr &&
+         existingResolve->type()->kind() != TypeKind::Undefined) ||
+        (existingReject != nullptr &&
+         existingReject->type()->kind() != TypeKind::Undefined)) {
+        return detail::typeError(ctx, "Promise capability executor already called");
+    }
     d->setElement(0, argc > 0 ? argv[0] : ctx->createUndefined());
     d->setElement(1, argc > 1 ? argv[1] : ctx->createUndefined());
     return ctx->createUndefined();
@@ -294,10 +313,21 @@ Value* newPromiseCapability(IContext* ctx, Value* ctor, PromiseCapability& out) 
     }
     Value* cell = makeCell(ctx);
     if (cell == ctx->oomValue()) return cell;
+    // capability cell：resolve/reject 初始均为 undefined（makeCell 的 false 是
+    // 给“已调用”标记用的，这里必须重置）。
+    static_cast<ArrayData*>(cell->data())->setElement(0, ctx->createUndefined());
     static_cast<ArrayData*>(cell->data())->setElement(1, ctx->createUndefined());
 
-    Value* executor = ctx->createNativeFunction(capabilityExecutor, 2);
+    FunctionCreateOptions execOpts;
+    execOpts.constructible = false;
+    execOpts.hasPrototypeProperty = false;
+    Value* executor = ctx->createNativeFunction(capabilityExecutor, 0, {}, execOpts);
     if (executor == ctx->oomValue()) return executor;
+    if (ctx->defineProperty(executor, "length", ctx->createNumber(2.0), false, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return detail::typeError(ctx, "internal: cannot define capability executor length");
+    }
     ctx->captureValue(executor, "__cell", cell);
 
     Value* args[] = {executor};
@@ -521,7 +551,7 @@ Value* finallyCatchHandler(IContext* ctx, Value* /*self*/, size_t argc, Value* a
 
 // finally(onFinally)（§27.2.5.3）
 Value* promiseFinally(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    if (asPromise(self) == nullptr) {
+    if (!detail::isObjectKind(self->type()->kind())) {
         return detail::typeError(
             ctx, "Method Promise.prototype.finally called on incompatible receiver");
     }
@@ -538,13 +568,28 @@ Value* promiseFinally(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* ctor = speciesConstructor(ctx, self, ctx->global()->lookup("Promise"));
     if (detail::isErrorValue(ctor)) return ctor;
 
-    Value* thenFinally = ctx->createNativeFunction(finallyThenHandler, 1);
+    FunctionCreateOptions handlerOpts;
+    handlerOpts.constructible = false;
+    handlerOpts.hasPrototypeProperty = false;
+    Value* thenFinally =
+        ctx->createNativeFunction(finallyThenHandler, 0, {}, handlerOpts);
     if (thenFinally == ctx->oomValue()) return thenFinally;
+    if (ctx->defineProperty(thenFinally, "length", ctx->createNumber(1.0), false, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return detail::typeError(ctx, "internal: cannot define finally handler length");
+    }
     ctx->captureValue(thenFinally, "__onFinally", onFinally);
     ctx->captureValue(thenFinally, "__ctor", ctor);
 
-    Value* catchFinally = ctx->createNativeFunction(finallyCatchHandler, 1);
+    Value* catchFinally =
+        ctx->createNativeFunction(finallyCatchHandler, 0, {}, handlerOpts);
     if (catchFinally == ctx->oomValue()) return catchFinally;
+    if (ctx->defineProperty(catchFinally, "length", ctx->createNumber(1.0), false, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return detail::typeError(ctx, "internal: cannot define finally handler length");
+    }
     ctx->captureValue(catchFinally, "__onFinally", onFinally);
     ctx->captureValue(catchFinally, "__ctor", ctor);
 
@@ -612,10 +657,21 @@ bool decrementRemaining(IContext* ctx, Value* cell, double& remainingOut) {
 // 元素函数：bound args 前置 [index, cell, calledCell]，实际实参为 value。
 Value* makeElementFunction(IContext* ctx, NativeFn fn, uint32_t index, Value* cell,
                            Value* calledCell) {
-    Value* target = ctx->createNativeFunction(fn, 0);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* target = ctx->createNativeFunction(fn, 0, {}, opts);
     if (target == ctx->oomValue()) return target;
+    // target length 4，绑定 3 个实参后 bound length = 1（规范 length）。
+    if (ctx->defineProperty(target, "length", ctx->createNumber(4.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return detail::typeError(ctx, "internal: cannot define element function length");
+    }
     Value* bound[3] = {ctx->createNumber(static_cast<double>(index)), cell, calledCell};
-    return ctx->createBoundFunction(target, ctx->createUndefined(), 3, bound);
+    Value* result = ctx->createBoundFunction(target, ctx->createUndefined(), 3, bound);
+    if (detail::isErrorValue(result)) return result;
+    ctx->setFunctionName(result, "");
+    return result;
 }
 
 // 从元素函数的 bound args 取出 index / cell / calledCell；重复调用返回 false。
@@ -757,19 +813,16 @@ Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
 
     uint32_t index = 0;
     for (;;) {
+        // 迭代器自身 abrupt 时 IteratorRecord.[[Done]]=true，不再 IteratorClose。
         Value* next = detail::iteratorNext(ctx, iterator);
-        if (detail::isErrorValue(next)) {
-            return detail::iteratorClose(ctx, iterator, next);
-        }
+        if (detail::isErrorValue(next)) return next;
         Value* err = nullptr;
         bool done = detail::iteratorComplete(ctx, next, err);
-        if (err != nullptr) return detail::iteratorClose(ctx, iterator, err);
+        if (err != nullptr) return err;
         if (done) break;
 
         Value* nextValue = detail::iteratorValue(ctx, next);
-        if (detail::isErrorValue(nextValue)) {
-            return detail::iteratorClose(ctx, iterator, nextValue);
-        }
+        if (detail::isErrorValue(nextValue)) return nextValue;
         // values.append(undefined)
         static_cast<ArrayData*>(values->data())->setElement(index, ctx->createUndefined());
 
@@ -805,6 +858,10 @@ Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
         if (detail::isErrorValue(onFulfilled)) return onFulfilled;
         if (detail::isErrorValue(onRejected)) return onRejected;
 
+        // 先自增 remaining，再调用 then：同步回调可能在 then 返回前就 settle。
+        double n = static_cast<NumberData*>(cd->elementAt(0)->data())->value + 1.0;
+        cd->setElement(0, ctx->createNumber(n));
+
         Value* thenFn = ctx->getProperty(nextPromise, "then");
         if (detail::isErrorValue(thenFn)) {
             return detail::iteratorClose(ctx, iterator, thenFn);
@@ -814,8 +871,6 @@ Value* performCombinator(IContext* ctx, Value* iterable, Value* ctor,
         if (detail::isErrorValue(r)) return detail::iteratorClose(ctx, iterator, r);
 
         ++index;
-        double n = static_cast<NumberData*>(cd->elementAt(0)->data())->value + 1.0;
-        cd->setElement(0, ctx->createNumber(n));
     }
 
     double remaining = 0;
@@ -896,8 +951,8 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     for (;;) {
         Value* next = detail::iteratorNext(ctx, iterator);
         if (detail::isErrorValue(next)) {
-            Value* closed = detail::iteratorClose(ctx, iterator, next);
-            Value* reason = exceptionReason(closed);
+            // 迭代器自身 abrupt：不 IteratorClose。
+            Value* reason = exceptionReason(next);
             Value* args[1] = {reason};
             Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
             if (detail::isErrorValue(r)) return r;
@@ -926,7 +981,8 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         Value* resolveArgs[1] = {nextValue};
         Value* nextPromise = ctx->call(promiseResolve, self, 1, resolveArgs);
         if (detail::isErrorValue(nextPromise)) {
-            Value* reason = exceptionReason(nextPromise);
+            Value* closed = detail::iteratorClose(ctx, iterator, nextPromise);
+            Value* reason = exceptionReason(closed);
             Value* args[1] = {reason};
             Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
             if (detail::isErrorValue(r)) return r;
@@ -934,7 +990,8 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         }
         Value* thenFn = ctx->getProperty(nextPromise, "then");
         if (detail::isErrorValue(thenFn)) {
-            Value* reason = exceptionReason(thenFn);
+            Value* closed = detail::iteratorClose(ctx, iterator, thenFn);
+            Value* reason = exceptionReason(closed);
             Value* args[1] = {reason};
             Value* r = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
             if (detail::isErrorValue(r)) return r;
@@ -943,7 +1000,8 @@ Value* promiseRace(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         Value* thenArgs[2] = {cap.resolve, cap.reject};
         Value* r = ctx->call(thenFn, nextPromise, 2, thenArgs);
         if (detail::isErrorValue(r)) {
-            Value* reason = exceptionReason(r);
+            Value* closed = detail::iteratorClose(ctx, iterator, r);
+            Value* reason = exceptionReason(closed);
             Value* args[1] = {reason};
             Value* rr = ctx->call(cap.reject, ctx->createUndefined(), 1, args);
             if (detail::isErrorValue(rr)) return rr;
@@ -1001,19 +1059,19 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 }
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）。
-// lengthOverride 非负时覆盖 "length" 属性（规范 length ≠ 实参校验下限的情形）。
+// 内建方法不可构造、无自有 prototype；length 与最小实参数分离。
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc, int lengthOverride = -1) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t length) {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
-    if (lengthOverride >= 0) {
-        Value* len = ctx->createNumber(static_cast<double>(lengthOverride));
-        if (len == ctx->oomValue()) return false;
-        if (ctx->defineProperty(f, "length", len, false, false, true)->type()->kind() ==
-            TypeKind::Exception) {
-            return false;
-        }
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
     }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
@@ -1063,9 +1121,9 @@ bool registerPromiseBuiltins(IContext* ctx) {
     // —— 3. Promise.prototype 方法 ——
     // minArgc = 0：handler 可省略（§27.2.5.4：undefined 即透传）。
     // 但规范的 length 属性都是 1，故显式覆盖（minArgc 同时用于实参校验，不能直接设为 1）。
-    if (!defineMethod(ctx, promiseProto, "then", promiseThen, 0, 1)) return false;
-    if (!defineMethod(ctx, promiseProto, "catch", promiseCatch, 0, 1)) return false;
-    if (!defineMethod(ctx, promiseProto, "finally", promiseFinally, 0, 1)) return false;
+    if (!defineMethod(ctx, promiseProto, "then", promiseThen, 2)) return false;
+    if (!defineMethod(ctx, promiseProto, "catch", promiseCatch, 1)) return false;
+    if (!defineMethod(ctx, promiseProto, "finally", promiseFinally, 1)) return false;
 
     // —— 4. @@toStringTag = "Promise"（§27.2.5.5）——
     if (ctx->defineProperty(promiseProto,
@@ -1088,8 +1146,8 @@ bool registerPromiseBuiltins(IContext* ctx) {
 
     // —— 6. 静态方法 ——
     // resolve/reject 的参数可省略（缺省 undefined），不设最小实参数。
-    if (!defineMethod(ctx, promiseFn, "resolve", promiseResolveStatic, 0, 1)) return false;
-    if (!defineMethod(ctx, promiseFn, "reject", promiseRejectStatic, 0, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "resolve", promiseResolveStatic, 1)) return false;
+    if (!defineMethod(ctx, promiseFn, "reject", promiseRejectStatic, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "all", promiseAll, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "race", promiseRace, 1)) return false;
     if (!defineMethod(ctx, promiseFn, "allSettled", promiseAllSettled, 1)) return false;

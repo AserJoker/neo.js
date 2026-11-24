@@ -465,14 +465,17 @@ TEST(PromiseStaticTest, WithResolversOnNonConstructorIsTypeError) {
 
 // ===== 方法 length 属性（§27.2.5.1/.3/.4）=====
 
-TEST(PromiseStaticTest, ThenCatchFinallyLengthIsOne) {
+TEST(PromiseStaticTest, ThenCatchFinallyLengths) {
     Fixture f;
     Value* proto = f.ctx->promisePrototype();
-    for (const char* name : {"then", "catch", "finally"}) {
-        Value* fn = f.ctx->getProperty(proto, name);
+    // §27.2.5.3 then length = 2；§27.2.5.1 catch / §27.2.5.4 finally length = 1
+    struct Expect { const char* name; double len; };
+    const Expect expects[] = {{"then", 2}, {"catch", 1}, {"finally", 1}};
+    for (const auto& e : expects) {
+        Value* fn = f.ctx->getProperty(proto, e.name);
         Value* len = f.ctx->getProperty(fn, "length");
-        ASSERT_EQ(len->type()->kind(), TypeKind::Number) << name;
-        EXPECT_DOUBLE_EQ(num(len), 1.0) << name;
+        ASSERT_EQ(len->type()->kind(), TypeKind::Number) << e.name;
+        EXPECT_DOUBLE_EQ(num(len), e.len) << e.name;
     }
 }
 

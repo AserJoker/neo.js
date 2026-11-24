@@ -140,6 +140,7 @@ add_library(neojs STATIC
     src/private/core/RegExpBuiltins.cpp
     src/private/core/BigIntBuiltins.cpp
     src/private/core/SymbolBuiltins.cpp
+    src/private/core/WeakRefBuiltins.cpp
     src/private/core/Types.cpp
     src/private/core/types/Undefined.cpp
     src/private/core/types/Null.cpp

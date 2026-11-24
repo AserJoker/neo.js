@@ -13,6 +13,7 @@
 #include "core/types/BigInt.h"
 #include "core/types/Boolean.h"
 #include "core/types/Collection.h"
+#include "core/types/WeakRef.h"
 #include "core/types/Date.h"
 #include "core/types/ArrayBuffer.h"
 #include "core/types/DataView.h"
@@ -143,6 +144,11 @@ IType* getIteratorHelperType() {
 
 IType* getCollectionType() {
     static CollectionType inst;
+    return &inst;
+}
+
+IType* getWeakRefType() {
+    static WeakRefType inst;
     return &inst;
 }
 
@@ -304,6 +310,7 @@ IType* getTypeByKind(TypeKind k) {
         case TypeKind::IteratorWrapper:  return getIteratorWrapperType();
         case TypeKind::IteratorHelper:   return getIteratorHelperType();
         case TypeKind::Collection:       return getCollectionType();
+        case TypeKind::WeakRef:          return getWeakRefType();
         case TypeKind::CollectionIterator: return getCollectionIteratorType();
         case TypeKind::Date:             return getDateType();
         case TypeKind::ArrayBuffer:      return getArrayBufferType();

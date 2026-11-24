@@ -497,11 +497,14 @@ private:
             if (detail::isErrorValue(v)) return v;
             TypeKind k = v->type()->kind();
             if (k == TypeKind::PrimitiveWrapper) {
+                // [[StringData]]/[[NumberData]] 走 ToString（可观察用户 toString）。
                 Value* prim = wrapperPrimitiveValue(v);
-                if (prim != nullptr) {
-                    v = prim;
-                    k = prim->type()->kind();
-                }
+                TypeKind pk = prim != nullptr ? prim->type()->kind() : TypeKind::Undefined;
+                if (pk != TypeKind::String && pk != TypeKind::Number) continue;
+                Value* s = detail::toStringValue(ctx_, v);
+                if (detail::isErrorValue(s)) return s;
+                v = s;
+                k = TypeKind::String;
             }
             if (k != TypeKind::String && k != TypeKind::Number) continue;
             std::string name = detail::valueToString(v);
@@ -524,9 +527,20 @@ private:
         TypeKind k = v->type()->kind();
         if (k == TypeKind::PrimitiveWrapper) {
             Value* prim = wrapperPrimitiveValue(v);
-            if (prim != nullptr) {
-                v = prim;
-                k = prim->type()->kind();
+            TypeKind pk = prim != nullptr ? prim->type()->kind() : TypeKind::Undefined;
+            if (pk == TypeKind::Number) {
+                // [[NumberData]] → ToNumber（可观察 valueOf）。
+                Value* nv = detail::toNumberValue(ctx_, v);
+                if (detail::isErrorValue(nv)) return nv;
+                v = nv;
+                k = TypeKind::Number;
+            } else if (pk == TypeKind::String) {
+                Value* sv = detail::toStringValue(ctx_, v);
+                if (detail::isErrorValue(sv)) return sv;
+                v = sv;
+                k = TypeKind::String;
+            } else {
+                return nullptr;
             }
         }
         if (k == TypeKind::Number) {
@@ -554,8 +568,20 @@ private:
         Value* value = ctx_->getProperty(holder, key);
         if (detail::isErrorValue(value)) return value;
 
-        if (detail::isObjectKind(value->type()->kind())) {
-            Value* toJSON = ctx_->getProperty(value, "toJSON");
+        TypeKind valueKind = value->type()->kind();
+        if (detail::isObjectKind(valueKind) || valueKind == TypeKind::BigInt) {
+            Value* toJSON;
+            if (valueKind == TypeKind::BigInt) {
+                // GetV：装箱查找但 receiver 仍是原始 BigInt（getter 的 this）。
+                Value* wrapper = ctx_->createPrimitiveWrapper(value);
+                if (detail::isErrorValue(wrapper)) return wrapper;
+                PropertyKey pk;
+                pk.value = ctx_->createString("toJSON");
+                pk.name = "toJSON";
+                toJSON = wrapper->type()->getWithReceiver(ctx_, wrapper, pk, value);
+            } else {
+                toJSON = ctx_->getProperty(value, "toJSON");
+            }
             if (detail::isErrorValue(toJSON)) return toJSON;
             if (detail::isCallable(toJSON)) {
                 Value* args[1] = {key};
@@ -572,7 +598,19 @@ private:
 
         if (value->type()->kind() == TypeKind::PrimitiveWrapper) {
             Value* prim = wrapperPrimitiveValue(value);
-            if (prim != nullptr) value = prim;
+            TypeKind pk = prim != nullptr ? prim->type()->kind() : TypeKind::Undefined;
+            if (pk == TypeKind::Number) {
+                // [[NumberData]] → ToNumber（可观察 valueOf）。
+                value = detail::toNumberValue(ctx_, value);
+                if (detail::isErrorValue(value)) return value;
+            } else if (pk == TypeKind::String) {
+                // [[StringData]] → ToString（可观察 toString）。
+                value = detail::toStringValue(ctx_, value);
+                if (detail::isErrorValue(value)) return value;
+            } else if (prim != nullptr) {
+                // [[BooleanData]]/[[BigIntData]]/[[SymbolData]] 取内部值。
+                value = prim;
+            }
         }
 
         TypeKind k = value->type()->kind();
@@ -769,7 +807,10 @@ Value* jsonStringify(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[])
 // JSON.parse/stringify 允许 0 参调用（由算法自己处理），故用 0 创建后单独设 length。
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t length) {
-    Value* f = ctx->createNativeFunction(fn, 0);
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     Value* lengthValue = ctx->createNumber(static_cast<double>(length));

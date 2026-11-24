@@ -172,6 +172,9 @@ enum class TypeKind : uint8_t {
     // SharedArrayBuffer（ES2024 §25.1）：跨 isolate 共享的字节块，不可分离。
     // 追加在末尾，避免扰动既有 TypeKind 的数值。
     SharedArrayBuffer,
+    // WeakRef（ES2024 §26.1）：普通对象 + [[Target]] 内部槽。
+    // 当前以强引用保存 target（未接入弱引用 GC），仅实现可观察的 JS 语义。
+    WeakRef,
 };
 
 // Value 的 meta：抽象接口，每种 JS 类型一个实现类（单例）。
@@ -348,6 +351,7 @@ IType* getStringIteratorType();
 IType* getIteratorWrapperType();
 IType* getIteratorHelperType();
 IType* getCollectionType();
+IType* getWeakRefType();
 IType* getCollectionIteratorType();
 IType* getDateType();
 IType* getArrayBufferType();
