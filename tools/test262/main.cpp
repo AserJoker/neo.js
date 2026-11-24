@@ -175,6 +175,7 @@ std::vector<std::string> defaultSkipFeatures() {
         "set-methods",
         "upsert",
         "promise-try",
+        "joint-iteration",
         "regexp-duplicate-named-groups",
         "well-formed-unicode-strings",
         "cross-realm",

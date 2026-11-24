@@ -155,9 +155,13 @@ public:
     IteratorHelperKind kind = IteratorHelperKind::Map;
     double counter = 0.0;         // take: 剩余；drop: 待丢弃
     bool done = false;
+    bool running = false;         // 重入保护（GeneratorValidate executing）
+    bool allowPartial = false;    // windows: undersized = "allow-partial"
     // flatMap 的当前内层迭代器
     Value* innerIterator = nullptr;
     Value* innerNext = nullptr;
+    // windows 的滑动窗口缓冲；concat 的 [iterable, method] 对数组
+    Value* buffer = nullptr;
 
     void enumerateChildren(IGCVisitor* visitor) override;
     IData* clone(neo::infra::IAllocator* alloc) const override;

@@ -159,6 +159,7 @@ void IteratorHelperData::enumerateChildren(IGCVisitor* visitor) {
     if (callback != nullptr) visitor->visit(callback);
     if (innerIterator != nullptr) visitor->visit(innerIterator);
     if (innerNext != nullptr) visitor->visit(innerNext);
+    if (buffer != nullptr) visitor->visit(buffer);
 }
 
 IData* IteratorHelperData::clone(neo::infra::IAllocator* /*alloc*/) const {

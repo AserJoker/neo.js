@@ -26,6 +26,9 @@ enum class IteratorHelperKind : uint8_t {
     Take,
     Drop,
     FlatMap,
+    Chunks,
+    Windows,
+    Concat,
 };
 
 // 集合种类（Map/Set/WeakMap/WeakSet 共用一套对象布局与类型）。
