@@ -221,6 +221,8 @@ private:
     // 当前函数体的上下文关键字状态（await / yield）。
     bool inAsync_ = false;
     bool inGenerator_ = false;
+    // 正在解析形参列表的嵌套层数：其中不允许 YieldExpression / AwaitExpression。
+    int formalParameterDepth_ = 0;
     std::vector<ParseError> errors_;
 };
 

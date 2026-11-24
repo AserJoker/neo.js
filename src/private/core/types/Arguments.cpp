@@ -5,8 +5,10 @@
 #include "core/IGCEngine.h"
 #include "core/Scope.h"
 #include "core/types/Array.h"  // parseArrayIndex
+#include "core/types/Number.h"
 #include "core/types/TypeBehavior.h"
 
+#include <cmath>
 #include <string>
 
 namespace neo::core {
@@ -18,7 +20,7 @@ bool mappedIndex(ArgumentsData* d, Value* key, uint32_t& index) {
     if (key == nullptr || key->type()->kind() == TypeKind::Symbol) return false;
     std::string name = detail::keyToString(key);
     if (!parseArrayIndex(name, index)) return false;
-    return index < d->mappedNames.size();
+    return index < d->mappedNames.size() && !d->mappedNames[index].empty();
 }
 
 }  // namespace
@@ -43,10 +45,32 @@ Value* ArgumentsType::indexedElement(IContext* ctx, Value* self,
     return ctx->createUndefined();
 }
 
+bool ArgumentsType::indexedWritable(Value* /*self*/) const { return true; }
+bool ArgumentsType::indexedConfigurable(Value* /*self*/) const { return true; }
+bool ArgumentsType::indexedLengthWritable(Value* self) const {
+    return static_cast<ArgumentsData*>(self->data())->lengthWritable;
+}
+
 Value* ArgumentsType::defineProperty(IContext* ctx, Value* self, Value* key,
                                      Value* value, bool writable,
                                      bool enumerable, bool configurable) {
     auto* d = static_cast<ArgumentsData*>(self->data());
+    // arguments.length 是普通可写数据属性（enumerable=false, configurable=true）。
+    if (key != nullptr && key->type()->kind() != TypeKind::Symbol &&
+        detail::keyToString(key) == "length") {
+        if (enumerable) return ctx->createBoolean(false);
+        Value* nv = detail::toNumberValue(ctx, value);
+        if (detail::isErrorValue(nv)) return nv;
+        double num = static_cast<NumberData*>(nv->data())->value;
+        if (num >= 0 && num <= 4294967295.0 && num == std::trunc(num)) {
+            if (!d->lengthWritable && static_cast<uint32_t>(num) != d->length) {
+                return ctx->createBoolean(false);
+            }
+            d->length = static_cast<uint32_t>(num);
+        }
+        d->lengthWritable = writable;
+        return ctx->createBoolean(true);
+    }
     uint32_t index = 0;
     if (mappedIndex(d, key, index)) {
         // 保持完整可写特性的普通数据更新：只写回形参绑定，属性视图由
@@ -57,7 +81,13 @@ Value* ArgumentsType::defineProperty(IContext* ctx, Value* self, Value* key,
             if (detail::isErrorValue(stored)) return stored;
             return ctx->createBoolean(true);
         }
-        d->mappedNames[index].clear();
+        // 映射参数：先写回形参绑定（§10.4.4.2 步骤 2.b），
+        // writable=false 时解除映射，再走普通自有属性定义。
+        if (value != nullptr) {
+            Value* stored = ctx->storeBinding(d->scope, d->mappedNames[index], value);
+            if (detail::isErrorValue(stored)) return stored;
+        }
+        if (!writable) d->mappedNames[index].clear();
     }
     return ObjectType::defineProperty(ctx, self, key, value, writable,
                                       enumerable, configurable);

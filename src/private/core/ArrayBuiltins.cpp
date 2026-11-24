@@ -188,6 +188,99 @@ Value* arrayPop(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) 
     return value;
 }
 
+// shift()：移除并返回首元素（ES2024 §23.1.3.29）。
+Value* arrayShift(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    Value* obj = toObject(ctx, self, "shift");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    if (len == 0) {
+        Value* r = ctx->setProperty(obj, "length", ctx->createNumber(0));
+        return detail::isErrorValue(r) ? r : ctx->createUndefined();
+    }
+    Value* first = ctx->getProperty(obj, indexKey(ctx, 0));
+    if (detail::isErrorValue(first)) return first;
+    for (uint32_t k = 1; k < len; ++k) {
+        Value* fromKey = indexKey(ctx, k);
+        Value* toKey = indexKey(ctx, k - 1);
+        Value* has = ctx->hasProperty(obj, fromKey);
+        if (detail::isErrorValue(has)) return has;
+        if (detail::toBoolean(has)) {
+            Value* v = ctx->getProperty(obj, fromKey);
+            if (detail::isErrorValue(v)) return v;
+            Value* r = ctx->setProperty(obj, toKey, v);
+            if (detail::isErrorValue(r)) return r;
+        } else {
+            if (Value* err = deletePropertyOrThrow(ctx, obj, toKey)) return err;
+        }
+    }
+    if (Value* err = deletePropertyOrThrow(ctx, obj, indexKey(ctx, len - 1))) return err;
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1));
+    if (detail::isErrorValue(r)) return r;
+    return first;
+}
+
+// unshift(...items)：前插并返回新长度（ES2024 §23.1.3.34）。
+Value* arrayUnshift(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    Value* obj = toObject(ctx, self, "unshift");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    uint32_t argCount = static_cast<uint32_t>(argc);
+    if (argCount > 0) {
+        for (uint32_t k = len; k > 0; --k) {
+            Value* fromKey = indexKey(ctx, k - 1);
+            Value* toKey = indexKey(ctx, k + argCount - 1);
+            Value* has = ctx->hasProperty(obj, fromKey);
+            if (detail::isErrorValue(has)) return has;
+            if (detail::toBoolean(has)) {
+                Value* v = ctx->getProperty(obj, fromKey);
+                if (detail::isErrorValue(v)) return v;
+                Value* r = ctx->setProperty(obj, toKey, v);
+                if (detail::isErrorValue(r)) return r;
+            } else {
+                if (Value* err = deletePropertyOrThrow(ctx, obj, toKey)) return err;
+            }
+        }
+        for (uint32_t j = 0; j < argCount; ++j) {
+            Value* r = ctx->setProperty(obj, indexKey(ctx, j), argv[j]);
+            if (detail::isErrorValue(r)) return r;
+        }
+    }
+    double newLen = static_cast<double>(len) + static_cast<double>(argCount);
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(newLen));
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createNumber(newLen);
+}
+
+// toLocaleString()：逐元素调用其 toLocaleString 后以 "," 连接（§23.1.3.32）。
+Value* arrayToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
+                           Value* /*argv*/[]) {
+    Value* obj = toObject(ctx, self, "toLocaleString");
+    if (detail::isErrorValue(obj)) return obj;
+    uint32_t len = 0;
+    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    std::string out;
+    for (uint32_t i = 0; i < len; ++i) {
+        if (i > 0) out += ",";
+        Value* v = ctx->getProperty(obj, indexKey(ctx, i));
+        if (detail::isErrorValue(v)) return v;
+        TypeKind k = v->type()->kind();
+        if (k == TypeKind::Undefined || k == TypeKind::Null) continue;
+        Value* fn = ctx->getProperty(v, "toLocaleString");
+        if (detail::isErrorValue(fn)) return fn;
+        if (!detail::isCallable(fn)) {
+            return detail::typeError(ctx, "toLocaleString is not a function");
+        }
+        Value* s = ctx->call(fn, v, 0, nullptr);
+        if (detail::isErrorValue(s)) return s;
+        Value* str = ctx->toString(s);
+        if (detail::isErrorValue(str)) return str;
+        out += static_cast<StringData*>(str->data())->value;
+    }
+    return ctx->createString(out);
+}
+
 // join(separator)：默认 ","；空洞/null/undefined 元素按空串。
 // 分隔符与元素都走 ToString（ES2024 §23.1.3.15），可触发用户 toString。
 Value* arrayJoin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
@@ -1261,6 +1354,12 @@ bool registerArrayBuiltins(IContext* ctx) {
     // —— 4. Array.prototype 方法 ——
     if (!defineMethod(ctx, arrayProto, "push", arrayPush, 0, /*strict=*/true)) return false;
     if (!defineMethod(ctx, arrayProto, "pop", arrayPop, 0, /*strict=*/true)) return false;
+    if (!defineMethod(ctx, arrayProto, "shift", arrayShift, 0, /*strict=*/true))
+        return false;
+    if (!defineMethod(ctx, arrayProto, "unshift", arrayUnshift, 0, /*strict=*/true))
+        return false;
+    if (!defineMethod(ctx, arrayProto, "toLocaleString", arrayToLocaleString, 0))
+        return false;
     if (!defineMethod(ctx, arrayProto, "join", arrayJoin, 0)) return false;
     if (!defineMethod(ctx, arrayProto, "toString", arrayToStringFn, 0)) return false;
     if (!defineMethod(ctx, arrayProto, "slice", arraySlice, 0, /*strict=*/true)) return false;

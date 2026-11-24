@@ -2809,7 +2809,34 @@ void Compiler::compileObjectExpression(
         code_->dup();
         compilePropertyKey(prop);
         if (prop.value) {
-            if (prop.computed) {
+            if (prop.method &&
+                prop.value->kind() == NodeKind::FunctionExpression) {
+                // 简洁方法/访问器：函数不可构造，普通方法无 prototype 属性。
+                const auto& function =
+                    static_cast<const frontend::FunctionExpression&>(
+                        *prop.value);
+                std::string prefix;
+                if (prop.propertyKind == frontend::PropertyKind::Get) {
+                    prefix = "get ";
+                } else if (prop.propertyKind == frontend::PropertyKind::Set) {
+                    prefix = "set ";
+                }
+                if (!function.body) {
+                    error(*prop.value, "compiler: method missing body");
+                    code_->pushUndefined();
+                } else if (prop.computed) {
+                    compileFunctionObject(function, function.params,
+                                          *function.body, false, {},
+                                          function.generator, function.async,
+                                          true);
+                    code_->setFuncNameFromKey(prefix);
+                } else {
+                    compileFunctionObject(
+                        function, function.params, *function.body, false,
+                        prefix + staticKeyName(prop.key.get()),
+                        function.generator, function.async, true);
+                }
+            } else if (prop.computed) {
                 compileNamedExpressionForKey(*prop.value);
             } else {
                 compileNamedExpression(*prop.value,
@@ -4505,7 +4532,8 @@ void Compiler::compileMethodFunction(
         return;
     }
     compileFunctionObject(function, function.params, *function.body, false,
-                          name, function.generator, function.async, true);
+                          name, function.generator, function.async, true,
+                          false, true);
 }
 
 void Compiler::compileClassKey(const frontend::Node& key, bool computed) {
@@ -4542,11 +4570,11 @@ void Compiler::compileFunctionObject(const Node& node,
                                      const Node& body, bool arrow,
                                      std::string_view name, bool generator,
                                      bool async, bool method,
-                                     bool namedExpression) {
-    // 函数严格性：class 方法恒严格，其余取 Sema 标注。
+                                     bool namedExpression, bool classMethod) {
+    // 函数严格性：class 方法恒严格；对象字面量方法按 Sema 标注（可非严格）。
     const sema::FunctionInfo* info =
         sema_.annotations.get<sema::FunctionInfo>(node.id());
-    const bool strict = method || (info != nullptr && info->isStrict);
+    const bool strict = classMethod || (info != nullptr && info->isStrict);
 
     // 函数体内联在当前位置，执行路径先跳过它。
     uint32_t skip = code_->jmp();

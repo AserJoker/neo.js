@@ -34,6 +34,8 @@ struct Property {
     bool configurable = true;
     Value* getter = nullptr;  // 访问器属性 getter
     Value* setter = nullptr;  // 访问器属性 setter
+    // 访问器种类标记：get/set 均为空时仍需区分访问器与数据属性。
+    bool accessor = false;
 };
 
 // 规范属性键（ES2024 §6.1.7）：String 或 Symbol。

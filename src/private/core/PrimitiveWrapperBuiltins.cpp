@@ -230,7 +230,7 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 // proto 是已建好的包装原型对象；constructFn 是 new 路径（返回包装对象）。
 bool registerWrapperCtor(IContext* ctx, const char* name, NativeFn ctor, NativeFn constructFn,
                          Value* proto, NativeFn valueOf, NativeFn toString,
-                         const char* typeTag, Value** outFn = nullptr) {
+                         Value** outFn = nullptr) {
     Value* fn = ctx->createNativeFunction(ctor, 0);
     if (fn == ctx->oomValue()) return false;
     if (outFn != nullptr) *outFn = fn;
@@ -255,12 +255,8 @@ bool registerWrapperCtor(IContext* ctx, const char* name, NativeFn ctor, NativeF
     }
     if (!defineMethod(ctx, proto, "valueOf", valueOf, 0)) return false;
     if (!defineMethod(ctx, proto, "toString", toString, 0)) return false;
-    // proto[Symbol.toStringTag] = typeTag（不可写/不可枚举/可配置）
-    if (ctx->defineProperty(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
-                            ctx->createString(typeTag), false, false, true)
-            ->type()->kind() == TypeKind::Exception) {
-        return false;
-    }
+    // 注：Boolean/Number/String.prototype 规范上**没有** @@toStringTag，
+    // 内建 tag 由 Object.prototype.toString 按内部槽给出。
     bindGlobal(ctx, name, fn);
     return true;
 }
@@ -308,19 +304,18 @@ bool registerPrimitiveWrapperBuiltins(IContext* ctx) {
 
     // —— 4-6. 三个包装构造函数 ——
     if (!registerWrapperCtor(ctx, "Boolean", booleanCtor, booleanConstruct, booleanProto,
-                             booleanValueOf, booleanToString, "Boolean")) {
+                             booleanValueOf, booleanToString)) {
         return false;
     }
     Value* numberFn = nullptr;
     if (!registerWrapperCtor(ctx, "Number", numberCtor, numberConstruct, numberProto,
-                             numberValueOf, numberToStringFn, "Number", &numberFn)) {
+                             numberValueOf, numberToStringFn, &numberFn)) {
         return false;
     }
     if (!registerNumberBuiltins(ctx, numberFn, numberProto)) return false;
     Value* stringFn = nullptr;
     if (!registerWrapperCtor(ctx, "String", stringCtor, stringConstruct,
-                             stringProto, stringValueOf, stringToStringFn,
-                             "String", &stringFn)) {
+                             stringProto, stringValueOf, stringToStringFn, &stringFn)) {
         return false;
     }
     // String.prototype 常用方法（ES2024 §22.1.3）。

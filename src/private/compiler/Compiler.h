@@ -202,7 +202,8 @@ private:
                                const frontend::Node& body, bool arrow,
                                std::string_view name, bool generator = false,
                                bool async = false, bool method = false,
-                               bool namedExpression = false);
+                               bool namedExpression = false,
+                               bool classMethod = false);
     // 函数序言 + 函数体 + 隐式 return undefined。
     // initInstanceElements：class 基类构造器在序言后初始化实例字段。
     void compileFunctionBody(const frontend::NodeList& params,

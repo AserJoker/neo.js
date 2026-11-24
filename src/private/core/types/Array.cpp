@@ -281,11 +281,8 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         if (k == "length") {
             if (enumerable || configurable) return ctx->createBoolean(false);
-            if (!writable && d->lengthWritable) {
-                d->lengthWritable = false;
-            } else if (writable && !d->lengthWritable) {
-                return ctx->createBoolean(false);
-            }
+            const bool wasWritable = d->lengthWritable;
+            if (writable && !wasWritable) return ctx->createBoolean(false);
             Value* nv = detail::toNumberValue(ctx, value);
             if (detail::isErrorValue(nv)) return nv;
             double num = static_cast<NumberData*>(nv->data())->value;
@@ -296,7 +293,7 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                 newLen = static_cast<uint32_t>(mod);
             }
             if (static_cast<double>(newLen) != num) return invalidLength(ctx);
-            if (!d->lengthWritable && newLen != d->length_) {
+            if (!wasWritable && newLen != d->length_) {
                 return ctx->createBoolean(false);
             }
             if (newLen < d->length_) {
@@ -320,10 +317,12 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                 }
                 if (hasBlocked) {
                     d->length_ = blocked + 1;
+                    d->lengthWritable = writable;
                     return ctx->createBoolean(false);
                 }
             }
             d->length_ = newLen;
+            d->lengthWritable = writable;
             return ctx->createBoolean(true);
         }
         uint32_t index = 0;
@@ -342,6 +341,10 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                 it->second = desc;
             } else {
                 if (!d->extensible) return ctx->createBoolean(false);
+                // 超出当前长度且 length 不可写：无法隐式扩展长度（§10.4.2.1）。
+                if (index >= d->length_ && !d->lengthWritable) {
+                    return ctx->createBoolean(false);
+                }
                 d->elements.emplace(index, desc);
             }
             if (index + 1 > d->length_) d->length_ = index + 1;
@@ -370,7 +373,7 @@ Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
             Value* s = setter != nullptr ? ctx->copyForStorage(setter) : nullptr;
             if (s == ctx->oomValue()) return s;
             pinSetter.reset(s);
-            Property desc{nullptr, false, enumerable, configurable, g, s};
+            Property desc{nullptr, false, enumerable, configurable, g, s, true};
             auto it = d->elements.find(index);
             if (it != d->elements.end()) {
                 if (!isCompatiblePropertyDescriptor(it->second, desc)) {
@@ -379,6 +382,9 @@ Value* ArrayType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
                 it->second = desc;
             } else {
                 if (!d->extensible) return ctx->createBoolean(false);
+                if (index >= d->length_ && !d->lengthWritable) {
+                    return ctx->createBoolean(false);
+                }
                 d->elements.emplace(index, desc);
             }
             if (index + 1 > d->length_) d->length_ = index + 1;

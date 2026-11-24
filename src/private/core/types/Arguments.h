@@ -40,6 +40,9 @@ public:
     bool hasIndexedElements() const override { return true; }
     uint32_t indexedLength(Value* self) const override;
     Value* indexedElement(IContext* ctx, Value* self, uint32_t index) const override;
+    bool indexedWritable(Value* self) const override;
+    bool indexedConfigurable(Value* self) const override;
+    bool indexedLengthWritable(Value* self) const override;
 
     Value* defineProperty(IContext* ctx, Value* self, Value* key, Value* value,
                           bool writable, bool enumerable,
@@ -56,6 +59,7 @@ public:
     Value* callee = nullptr;              // mapped callee（GC 遍历）
     std::vector<std::string> mappedNames; // index → 形参名；空 = unmapped
     uint32_t length = 0;                  // 实际实参个数
+    bool lengthWritable = true;           // length 属性的 writable
 
     ~ArgumentsData() override;
 

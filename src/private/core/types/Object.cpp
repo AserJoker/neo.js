@@ -75,10 +75,6 @@ namespace {
 // 注：不直接用 IType::hasObjectLayout()——成员函数会在 ObjectType 成员里遮蔽同名自由函数。
 
 // 键是否 symbol（symbol 走 symbols 容器）
-inline bool isSymbolKey(Value* key) {
-    return key->type()->kind() == TypeKind::Symbol;
-}
-
 // 暂时钉住 data-owned 副本：创建后到挂入 data 字段前若发生 GC，
 // 未登记的副本会被回收（ADR-065 §4 跨域复制的分配窗口）。
 struct PinGuard {
@@ -95,13 +91,6 @@ struct PinGuard {
     PinGuard(const PinGuard&) = delete;
     PinGuard& operator=(const PinGuard&) = delete;
 };
-
-// 键转字符串（非 symbol 键）。走 ToPropertyKey（ES2024 §7.1.19）：
-// 对象键先 ToPrimitive(STRING)，故可触发用户 valueOf/toString/@@toPrimitive。
-// 成功返回 nullptr 并写入 out；失败返回 Exception/Fatal。
-inline Value* keyString(IContext* ctx, Value* key, std::string& out) {
-    return detail::propertyKeyString(ctx, key, out);
-}
 
 // symbol 键 → symbols 容器的哈希键（SymbolData* 身份）
 inline const void* symbolIdentity(Value* key) {
@@ -137,20 +126,20 @@ Value* readProperty(IContext* ctx, Property* p, Value* receiver) {
 
 // —— ToPropertyKey（ES2024 §7.1.19）——
 Value* toPropertyKey(IContext* ctx, Value* key, PropertyKey& out) {
-    if (isSymbolKey(key)) {
-        out.value = key;
+    // 先 ToPrimitive(STRING) 再判 symbol：对象键可能经 @@toPrimitive 产出 symbol。
+    Value* k = detail::toPropertyKeyValue(ctx, key);
+    if (isErrorResult(k)) return k;
+    if (k->type()->kind() == TypeKind::Symbol) {
+        out.value = k;
         out.isSymbol = true;
-        out.symbol = symbolIdentity(key);
+        out.symbol = symbolIdentity(k);
         out.name.clear();
         return nullptr;
     }
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
-    out.value = ctx->createString(k);
-    if (out.value == ctx->oomValue()) return out.value;
+    out.value = k;
     out.isSymbol = false;
     out.symbol = nullptr;
-    out.name = std::move(k);
+    out.name = static_cast<StringData*>(k->data())->value;
     return nullptr;
 }
 
@@ -229,6 +218,7 @@ void completePropertyDescriptor(const PropertyDescriptor& desc, bool exists,
         out.writable = false;
         out.getter = desc.hasGetter ? desc.getter : (currentAccessor ? current.getter : nullptr);
         out.setter = desc.hasSetter ? desc.setter : (currentAccessor ? current.setter : nullptr);
+        out.accessor = true;
     } else if (isData) {
         out.value = desc.hasValue ? desc.value
                                   : (exists && !currentAccessor ? current.value
@@ -238,6 +228,7 @@ void completePropertyDescriptor(const PropertyDescriptor& desc, bool exists,
                                                                       : false);
         out.getter = nullptr;
         out.setter = nullptr;
+        out.accessor = false;
     } else {
         // 泛型描述符（只含 enumerable/configurable）：保持当前属性的种类不变。
         if (exists) {
@@ -245,11 +236,13 @@ void completePropertyDescriptor(const PropertyDescriptor& desc, bool exists,
             out.writable = current.writable;
             out.getter = current.getter;
             out.setter = current.setter;
+            out.accessor = current.accessor;
         } else {
             out.value = nullptr;
             out.writable = false;
             out.getter = nullptr;
             out.setter = nullptr;
+            out.accessor = false;
         }
     }
     out.enumerable = desc.hasEnumerable ? desc.enumerable : (exists ? current.enumerable : false);
@@ -358,7 +351,15 @@ bool isCompatiblePropertyDescriptor(const Property& current, const Property& des
         if (desc.configurable) return false;
         if (desc.enumerable != current.enumerable) return false;
         if (currentAccessor) {
-            if (desc.getter != current.getter || desc.setter != current.setter) return false;
+            // 访问器值按 data 身份比较（存储副本共享 data，指针可能不同）。
+            auto sameFn = [](Value* a, Value* b) {
+                if (a == b) return true;
+                return a != nullptr && b != nullptr && a->data() == b->data();
+            };
+            if (!sameFn(desc.getter, current.getter) ||
+                !sameFn(desc.setter, current.setter)) {
+                return false;
+            }
         } else {
             if (desc.writable && !current.writable) return false;
             if (!current.writable &&
@@ -649,10 +650,12 @@ Value* ObjectType::hasProperty(IContext* ctx, Value* self, Value* key) {
 
 Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     auto* d = static_cast<ObjectData*>(self->data());
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
 
     // —— symbol 键 ——
-    if (isSymbolKey(key)) {
-        const void* ident = symbolIdentity(key);
+    if (pk.isSymbol) {
+        const void* ident = pk.symbol;
         auto it = d->symbols.find(ident);
         if (it == d->symbols.end()) return ctx->createBoolean(true);
         if (!it->second.prop.configurable) return ctx->createBoolean(false);
@@ -667,8 +670,7 @@ Value* ObjectType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     }
 
     // —— 字符串键 ——
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
+    const std::string& k = pk.name;
     auto it = d->properties.find(k);
     if (it == d->properties.end()) {
         // 不存在：delete 视为成功（JS 语义）
@@ -690,15 +692,17 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
                                   Value* value, bool writable, bool enumerable,
                                   bool configurable) {
     auto* d = static_cast<ObjectData*>(self->data());
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
     // scope→data 跨域：属性值必须是 data-owned 副本（ADR-065 §4）。
     Value* storedValue = value != nullptr ? ctx->copyForStorage(value) : nullptr;
     if (storedValue == ctx->oomValue()) return storedValue;
-    PinGuard pinValue(storedValue);  // keyString/键复制可能触发 GC
+    PinGuard pinValue(storedValue);  // 键复制可能触发 GC
     Property desc{storedValue, writable, enumerable, configurable, nullptr, nullptr};
 
     // —— symbol 键 ——
-    if (isSymbolKey(key)) {
-        const void* ident = symbolIdentity(key);
+    if (pk.isSymbol) {
+        const void* ident = pk.symbol;
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
             if (!isCompatiblePropertyDescriptor(it->second.prop, desc)) {
@@ -708,7 +712,7 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
             return ctx->createBoolean(true);
         }
         if (!d->extensible) return ctx->createBoolean(false);
-        Value* storedKey = ctx->copyForStorage(key);
+        Value* storedKey = ctx->copyForStorage(pk.value);
         if (storedKey == ctx->oomValue()) return storedKey;
         d->symbols.emplace(ident, SymbolProperty{storedKey, desc});
         d->symbolOrder.push_back(ident);
@@ -716,8 +720,7 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
     }
 
     // —— 字符串键 ——
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
+    const std::string& k = pk.name;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         if (!isCompatiblePropertyDescriptor(it->second, desc)) {
@@ -734,6 +737,8 @@ Value* ObjectType::defineProperty(IContext* ctx, Value* self, Value* key,
 
 Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* getter,
                                   Value* setter, bool enumerable, bool configurable) {
+    PropertyKey pk;
+    if (Value* err = toPropertyKey(ctx, key, pk)) return err;
     // getter/setter 须为 Function 或 null（ES2024 §10.1.6.3 ValidateAndApplyPropertyDescriptor）
     auto validAccessor = [](Value* v) {
         return v == nullptr || v->type()->kind() == TypeKind::Null ||
@@ -762,11 +767,11 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
 
     auto* d = static_cast<ObjectData*>(self->data());
     // 访问器描述符：value 为空、writable 无意义（数据属性字段置 false）
-    Property acc{nullptr, false, enumerable, configurable, g, s};
+    Property acc{nullptr, false, enumerable, configurable, g, s, true};
 
     // —— symbol 键 ——
-    if (isSymbolKey(key)) {
-        const void* ident = symbolIdentity(key);
+    if (pk.isSymbol) {
+        const void* ident = pk.symbol;
         auto it = d->symbols.find(ident);
         if (it != d->symbols.end()) {
             if (!isCompatiblePropertyDescriptor(it->second.prop, acc)) {
@@ -776,7 +781,7 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
             return ctx->createBoolean(true);
         }
         if (!d->extensible) return ctx->createBoolean(false);
-        Value* storedKey = ctx->copyForStorage(key);
+        Value* storedKey = ctx->copyForStorage(pk.value);
         if (storedKey == ctx->oomValue()) return storedKey;
         d->symbols.emplace(ident, SymbolProperty{storedKey, acc});
         d->symbolOrder.push_back(ident);
@@ -784,8 +789,7 @@ Value* ObjectType::defineAccessor(IContext* ctx, Value* self, Value* key, Value*
     }
 
     // —— 字符串键 ——
-    std::string k;
-    if (Value* err = keyString(ctx, key, k)) return err;
+    const std::string& k = pk.name;
     auto it = d->properties.find(k);
     if (it != d->properties.end()) {
         if (!isCompatiblePropertyDescriptor(it->second, acc)) {
@@ -813,11 +817,31 @@ Value* ObjectType::setPrototype(IContext* ctx, Value* self, Value* proto) {
     if (!kindHasObjectLayout(pk) && pk != TypeKind::Null) {
         return ctx->createBoolean(false);
     }
+    // %Object.prototype% 是 immutable-prototype exotic（§10.4.7.1）：
+    // 仅允许把原型设为 null（其当前值），其他值一律返回 false。
+    Value* objectProto = ctx->objectPrototype();
+    if (objectProto != nullptr && self->data() == objectProto->data() &&
+        pk != TypeKind::Null) {
+        return ctx->createBoolean(false);
+    }
+    // 不可扩展对象只能保持当前原型（§10.1.2.1 步骤 5）。
+    Value* ext = isExtensible(ctx, self);
+    if (isErrorResult(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        Value* current = getPrototype(ctx, self);
+        if (isErrorResult(current)) return current;
+        if (current != proto &&
+            (current == nullptr || proto == nullptr || current->data() != proto->data())) {
+            return ctx->createBoolean(false);
+        }
+    }
     // 环检测：从 proto 沿原型链走到头，若遇到 self 则成环。
     // 经内部方法遍历，原型链上的 Proxy 也能正确参与（trap 抛错则透传）。
     std::unordered_set<IData*> seen;
     for (Value* cur = proto; cur != nullptr && kindHasObjectLayout(cur->type()->kind());) {
         if (cur->data() == self->data()) return ctx->createBoolean(false);
+        // 非普通 [[GetPrototypeOf]]（Proxy）终止环检测（ES2024 §10.1.2.1 步骤 8.c.i）。
+        if (cur->type()->kind() == TypeKind::Proxy) break;
         if (!seen.insert(cur->data()).second) break;  // 已有环（内部契约被破坏），终止遍历
         Value* next = cur->type()->getPrototype(ctx, cur);
         if (isErrorResult(next)) return next;

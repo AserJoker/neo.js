@@ -38,7 +38,12 @@ Value* toIndex(IContext* ctx, Value* v, size_t& out) {
     Value* nv = detail::toNumberValue(ctx, v);
     if (detail::isErrorValue(nv)) return nv;
     const double n = static_cast<NumberData*>(nv->data())->value;
-    if (std::isnan(n) || n < 0.0 || n > kMaxIndex) {
+    // ToIndex：先 ToIntegerOrInfinity（NaN → 0），再检查 0..2^53-1。
+    if (std::isnan(n)) {
+        out = 0;
+        return nullptr;
+    }
+    if (n < 0.0 || n > kMaxIndex) {
         return detail::rangeError(ctx, "Invalid array buffer length");
     }
     out = static_cast<size_t>(std::trunc(n));

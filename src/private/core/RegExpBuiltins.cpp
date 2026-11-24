@@ -1849,10 +1849,8 @@ bool registerRegExpBuiltins(IContext* ctx) {
                             regexpSymbolSplit, 0))
         return false;
 
-    if (isError(ctx->defineProperty(
-            proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
-            ctx->createString("RegExp"), false, false, true)))
-        return false;
+    // 注：%RegExp.prototype% 规范上**没有** @@toStringTag，
+    // "RegExp" 内建 tag 由 Object.prototype.toString 按 [[RegExpMatcher]] 给出。
 
     Value* species = ctx->createNativeFunction(regexpSpeciesGetter, 0);
     if (species == ctx->oomValue()) return false;

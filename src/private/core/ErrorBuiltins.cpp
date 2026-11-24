@@ -184,8 +184,8 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 //   3. 双向 constructor
 //   4. 子类原型自有 name（writable/不可枚举/可配置）
 //   5. 注册到 global
-bool registerNativeError(IContext* ctx, Value* errorProto, const char* name,
-                         NativeFn ctor) {
+bool registerNativeError(IContext* ctx, Value* errorProto, Value* errorFn,
+                         const char* name, NativeFn ctor) {
     Value* proto = ctx->createObject();
     if (proto == ctx->oomValue()) return false;
     if (ctx->setPrototype(proto, errorProto)->type()->kind() == TypeKind::Exception) {
@@ -195,6 +195,10 @@ bool registerNativeError(IContext* ctx, Value* errorProto, const char* name,
     Value* fn = ctx->createNativeFunction(ctor, 0);
     if (fn == ctx->oomValue()) return false;
     ctx->setFunctionName(fn, name);
+    // 子类构造函数的 [[Prototype]] 是 %Error%（ES2024 §20.5.6.1）。
+    if (ctx->setPrototype(fn, errorFn)->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // fn.prototype → proto（不可写/不可枚举/不可配置）
     if (ctx->defineProperty(fn, "prototype", proto, false, false, false)
             ->type()->kind() == TypeKind::Exception) {
@@ -276,17 +280,17 @@ bool registerErrorBuiltins(IContext* ctx) {
     // AggregateError / SuppressedError 不在本阶段范围。
     // 每个子类：原型是**普通对象**（无 [[ErrorData]]），原型链指向 %Error.prototype%，
     // 自有 name（writable/不可枚举/可配置）与 constructor。
-    if (!registerNativeError(ctx, errorProto, "EvalError", evalErrorCtor)) return false;
-    if (!registerNativeError(ctx, errorProto, "TypeError", typeErrorCtor)) return false;
-    if (!registerNativeError(ctx, errorProto, "RangeError", rangeErrorCtor)) return false;
-    if (!registerNativeError(ctx, errorProto, "ReferenceError", referenceErrorCtor))
+    if (!registerNativeError(ctx, errorProto, errorFn, "EvalError", evalErrorCtor)) return false;
+    if (!registerNativeError(ctx, errorProto, errorFn, "TypeError", typeErrorCtor)) return false;
+    if (!registerNativeError(ctx, errorProto, errorFn, "RangeError", rangeErrorCtor)) return false;
+    if (!registerNativeError(ctx, errorProto, errorFn, "ReferenceError", referenceErrorCtor))
         return false;
-    if (!registerNativeError(ctx, errorProto, "SyntaxError", syntaxErrorCtor)) return false;
-    if (!registerNativeError(ctx, errorProto, "URIError", uriErrorCtor)) return false;
+    if (!registerNativeError(ctx, errorProto, errorFn, "SyntaxError", syntaxErrorCtor)) return false;
+    if (!registerNativeError(ctx, errorProto, errorFn, "URIError", uriErrorCtor)) return false;
 
     // —— 6. AggregateError（ES2024 §20.5.7）——
     // 与一般性错误子类同一注册路径（共用 TypeKind::Error，靠原型链区分）。
-    if (!registerNativeError(ctx, errorProto, "AggregateError", aggregateErrorCtor))
+    if (!registerNativeError(ctx, errorProto, errorFn, "AggregateError", aggregateErrorCtor))
         return false;
     return true;
 }

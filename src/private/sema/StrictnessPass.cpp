@@ -518,6 +518,7 @@ private:
         Node* id = nullptr;
         NodeList* params = nullptr;
         Node* body = nullptr;
+        bool uniqueParams = false;
 
         switch (node.kind()) {
             case NodeKind::FunctionDeclaration: {
@@ -532,6 +533,8 @@ private:
                 id = function.id.get();
                 params = &function.params;
                 body = function.body.get();
+                // 方法定义使用 UniqueFormalParameters，即使非严格也禁止重名。
+                uniqueParams = function.isMethod;
                 break;
             }
             case NodeKind::ArrowFunctionExpression: {
@@ -572,7 +575,7 @@ private:
         std::unordered_set<std::string> seen;
         for (const BindingName& binding : names) {
             if (!seen.insert(binding.name).second &&
-                (functionStrict || nonSimple)) {
+                (functionStrict || nonSimple || uniqueParams)) {
                 context.error(binding.range.start,
                               "Duplicate parameter name '" + binding.name +
                                   "'");

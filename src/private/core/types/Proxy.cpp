@@ -576,7 +576,7 @@ Value* ProxyType::defineAccessor(IContext* ctx, Value* self, Value* key, Value* 
     }
     Value* g = (getter != nullptr && detail::isCallable(getter)) ? getter : nullptr;
     Value* s = (setter != nullptr && detail::isCallable(setter)) ? setter : nullptr;
-    Property desc{nullptr, false, enumerable, configurable, g, s};
+    Property desc{nullptr, false, enumerable, configurable, g, s, true};
     Value* descObj = propertyDescriptorToValue(ctx, desc);
     if (detail::isErrorValue(descObj)) return descObj;
     Value* argv[3] = {d->target, pk.value, descObj};

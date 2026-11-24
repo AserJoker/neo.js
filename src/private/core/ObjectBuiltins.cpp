@@ -32,6 +32,8 @@ namespace neo::core {
 
 namespace {
 
+Value* toObjectOrThrow(IContext* ctx, Value* v);
+
 // Function.prototype 的 caller/arguments 受限访问器（ES2024 §20.2.3.3/§20.2.3.4）：
 // 读写都抛 TypeError；严格函数在自身定义同名访问器（§10.2.1.2）。
 Value* restrictedFunctionProperty(IContext* ctx, Value*, size_t, Value*[]) {
@@ -44,96 +46,117 @@ Value* restrictedFunctionProperty(IContext* ctx, Value*, size_t, Value*[]) {
 // —— Object.prototype 方法 ——
 
 // Object.prototype.toString()（ES2024 §20.1.3.6）：
-//   1. 对象先查 @@toStringTag，非 undefined 则用其 ToString 值；
-//   2. 否则按类型给出内建 tag。
+//   1. 对象先查 @@toStringTag，仅当值为原始字符串时采用；
+//   2. 否则按内部槽给出内建 tag。
 Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     if (self == nullptr) return ctx->createString("[object Undefined]");
-    // @@toStringTag 优先（仅对对象；原始值无自有属性，跳过）
-    if (detail::isObjectKind(self->type()->kind())) {
-        Value* tagValue = ctx->getProperty(
-            self, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag));
-        if (detail::isErrorValue(tagValue)) return tagValue;
-        if (tagValue->type()->kind() != TypeKind::Undefined) {
-            Value* tagStr = detail::toStringValue(ctx, tagValue);
-            if (detail::isErrorValue(tagStr)) return tagStr;
-            return ctx->createString(
-                "[object " + static_cast<StringData*>(tagStr->data())->value + "]");
-        }
-    }
+    // 内建 tag 先于 @@toStringTag 求值（ES2024 §20.1.3.6 步骤 4-14）：
+    // 若 Get 期间撤销 Proxy，IsArray 已按撤销前状态定值。
     const char* tag = "Object";
     switch (self->type()->kind()) {
         case TypeKind::Undefined: tag = "Undefined"; break;
         case TypeKind::Null:      tag = "Null"; break;
         case TypeKind::Boolean:   tag = "Boolean"; break;
         case TypeKind::Number:    tag = "Number"; break;
-        case TypeKind::BigInt:    tag = "BigInt"; break;
         case TypeKind::String:    tag = "String"; break;
-        case TypeKind::Symbol:    tag = "Symbol"; break;
+        // BigInt/Symbol 不在内建 tag 列表中，其 "BigInt"/"Symbol" 由原型
+        // 上的 @@toStringTag 提供（§20.1.3.6 步骤 13-14）。
         case TypeKind::Function:  tag = "Function"; break;
         case TypeKind::Object:    tag = "Object"; break;
         case TypeKind::Array:     tag = "Array"; break;
         case TypeKind::Arguments: tag = "Arguments"; break;
         case TypeKind::Error:     tag = "Error"; break;
+        case TypeKind::Date:      tag = "Date"; break;
+        case TypeKind::RegExp:    tag = "RegExp"; break;
         // 包装对象按 [[PrimitiveValue]] 的类型给出 tag（ES2024 §20.1.3.6）。
-        // 包装对象的 primitive 恒为 Boolean/Number/BigInt/String/Symbol 之一
-        // （createPrimitiveWrapper 保证）。
+        // 仅 Boolean/Number/String 有内建 tag；BigInt/Symbol 落 "Object"。
         case TypeKind::PrimitiveWrapper: {
             switch (wrapperPrimitiveValue(self)->type()->kind()) {
                 case TypeKind::Boolean: tag = "Boolean"; break;
                 case TypeKind::Number:  tag = "Number"; break;
-                case TypeKind::BigInt:  tag = "BigInt"; break;
                 case TypeKind::String:  tag = "String"; break;
-                default:                tag = "Symbol"; break;
+                default:                tag = "Object"; break;
             }
             break;
         }
         default:                  tag = "Object"; break;
     }
-    // 可调用 Proxy 的内建 tag 是 "Function"（IsCallable 判定，ES2024 §20.1.3.6）。
-    if (self->type()->kind() == TypeKind::Proxy && detail::isCallable(self)) {
-        tag = "Function";
+    // Proxy 的内建 tag 按 target 的内部槽判定：IsArray 递归解包（§7.2.2，
+    // 已撤销的 Proxy 抛 TypeError），可调用 Proxy 为 "Function"。
+    if (self->type()->kind() == TypeKind::Proxy) {
+        Value* target = self;
+        bool isArray = false;
+        while (target != nullptr && target->type()->kind() == TypeKind::Proxy) {
+            if (proxyHandler(target) == nullptr) {
+                return detail::typeError(ctx, "Cannot perform IsArray on a revoked proxy");
+            }
+            target = proxyTarget(target);
+        }
+        isArray = target != nullptr && target->type()->kind() == TypeKind::Array;
+        if (isArray) {
+            tag = "Array";
+        } else if (detail::isCallable(self)) {
+            tag = "Function";
+        }
+    }
+    // @@toStringTag 覆盖内建 tag，但仅当值为原始字符串（步骤 15-16）。
+    // 原始值按 ToObject 语义在其包装对象上查找（原型链）。
+    Value* tagHolder = self;
+    TypeKind sk = self->type()->kind();
+    bool primitive = !detail::isObjectKind(sk) && sk != TypeKind::Undefined &&
+                     sk != TypeKind::Null;
+    if (primitive) {
+        tagHolder = ctx->createPrimitiveWrapper(self);
+        if (tagHolder == ctx->oomValue()) return tagHolder;
+    }
+    if (detail::isObjectKind(tagHolder->type()->kind())) {
+        Value* tagValue = ctx->getProperty(
+            tagHolder, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag));
+        if (detail::isErrorValue(tagValue)) return tagValue;
+        if (tagValue->type()->kind() == TypeKind::String) {
+            return ctx->createString(
+                "[object " + static_cast<StringData*>(tagValue->data())->value + "]");
+        }
     }
     return ctx->createString(std::string("[object ") + tag + "]");
 }
 
-// Object.prototype.valueOf()：返回 this 自身
+// Object.prototype.valueOf()（ES2024 §20.1.3.7）：返回 ToObject(this)。
 Value* objectProtoValueOf(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    return self != nullptr ? self : ctx->createUndefined();
+    return toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
 }
 
 // Object.prototype.hasOwnProperty(key)：只查自有属性（不含原型链）
 Value* objectProtoHasOwnProperty(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
-    if (self == nullptr || !detail::isObjectKind(sk)) {
-        return detail::typeError(
-            ctx, "Object.prototype.hasOwnProperty called on non-object");
+    // 步骤：先 ToPropertyKey(参数)，再 ToObject(this)（§20.1.3.2）。
+    PropertyKey pk;
+    if (argc != 0) {
+        if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
     }
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
     if (argc == 0) return ctx->createBoolean(false);
     // 经内部方法 [[GetOwnProperty]]：Proxy 触发 getOwnPropertyDescriptor trap，
     // 索引型 exotic（Array / String 包装）由默认实现覆盖。
-    PropertyKey pk;
-    if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
     Property desc;
     bool exists = false;
-    if (Value* err = self->type()->getOwnProperty(ctx, self, pk, exists, desc)) return err;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, pk, exists, desc)) return err;
     return ctx->createBoolean(exists);
 }
 
 // Object.prototype.isPrototypeOf(v)（ES2024 §20.1.3.3）：
 // 沿 v 的原型链查找，命中 this 则 true。
 Value* objectProtoIsPrototypeOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
-    TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
-    if (self == nullptr || !detail::isObjectKind(sk)) {
-        return detail::typeError(
-            ctx, "Object.prototype.isPrototypeOf called on non-object");
-    }
+    // 步骤 1：V 非对象直接返回 false（先于 ToObject(this)，§20.1.3.3）。
     if (argc == 0 || !detail::isObjectKind(argv[0]->type()->kind())) {
         return ctx->createBoolean(false);
     }
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
     for (Value* cur = ctx->getPrototype(argv[0]);
          cur != nullptr && detail::isObjectKind(cur->type()->kind());
          cur = ctx->getPrototype(cur)) {
-        if (cur->data() == self->data()) return ctx->createBoolean(true);
+        if (cur->data() == obj->data()) return ctx->createBoolean(true);
     }
     return ctx->createBoolean(false);
 }
@@ -142,17 +165,17 @@ Value* objectProtoIsPrototypeOf(IContext* ctx, Value* self, size_t argc, Value* 
 // 自有属性且 enumerable 才为 true。
 Value* objectProtoPropertyIsEnumerable(IContext* ctx, Value* self, size_t argc,
                                        Value* argv[]) {
-    TypeKind sk = self != nullptr ? self->type()->kind() : TypeKind::Undefined;
-    if (self == nullptr || !detail::isObjectKind(sk)) {
-        return detail::typeError(
-            ctx, "Object.prototype.propertyIsEnumerable called on non-object");
-    }
-    if (argc == 0) return ctx->createBoolean(false);
+    // 步骤：先 ToPropertyKey(参数)，再 ToObject(this)（§20.1.3.4）。
     PropertyKey pk;
-    if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    if (argc != 0) {
+        if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    }
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
+    if (argc == 0) return ctx->createBoolean(false);
     Property desc;
     bool exists = false;
-    if (Value* err = self->type()->getOwnProperty(ctx, self, pk, exists, desc)) return err;
+    if (Value* err = obj->type()->getOwnProperty(ctx, obj, pk, exists, desc)) return err;
     return ctx->createBoolean(exists && desc.enumerable);
 }
 
@@ -173,19 +196,22 @@ Value* objectProtoLookupAccessor(IContext* ctx, Value* self, size_t argc,
     PropertyKey pk;
     if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
     for (Value* cur = obj;
-         cur != nullptr && detail::isObjectKind(cur->type()->kind());
-         cur = ctx->getPrototype(cur)) {
+         cur != nullptr && detail::isObjectKind(cur->type()->kind());) {
         Property desc;
         bool exists = false;
         if (Value* err = cur->type()->getOwnProperty(ctx, cur, pk, exists, desc)) {
             return err;
         }
-        if (!exists) continue;
-        if (desc.getter == nullptr && desc.setter == nullptr) {
-            return ctx->createUndefined();
+        if (exists) {
+            if (desc.getter == nullptr && desc.setter == nullptr) {
+                return ctx->createUndefined();
+            }
+            Value* fn = getter ? desc.getter : desc.setter;
+            return fn != nullptr ? fn : ctx->createUndefined();
         }
-        Value* fn = getter ? desc.getter : desc.setter;
-        return fn != nullptr ? fn : ctx->createUndefined();
+        Value* next = ctx->getPrototype(cur);
+        if (detail::isErrorValue(next)) return next;
+        cur = next;
     }
     return ctx->createUndefined();
 }
@@ -198,20 +224,97 @@ Value* objectProtoLookupSetter(IContext* ctx, Value* self, size_t argc, Value* a
     return objectProtoLookupAccessor(ctx, self, argc, argv, false);
 }
 
+// Object.prototype.__defineGetter__ / __defineSetter__（Annex B.2.2.2/3）：
+// 把 callable 定义为自有访问器的一侧，保留已有另一侧。
+Value* objectProtoDefineAccessor(IContext* ctx, Value* self, size_t argc,
+                                 Value* argv[], bool getter) {
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
+    // 步骤 2：先校验 callable，再 ToPropertyKey（Annex B.2.2.2/3）。
+    Value* fn = argc >= 2 ? argv[1] : ctx->createUndefined();
+    if (!detail::isCallable(fn)) {
+        return detail::typeError(ctx, getter ? "getter is not callable"
+                                             : "setter is not callable");
+    }
+    PropertyKey pk;
+    if (argc >= 1) {
+        if (Value* err = toPropertyKey(ctx, argv[0], pk)) return err;
+    }
+    Value* r = getter
+                   ? ctx->defineAccessorPartial(obj, pk.value, fn, true, nullptr, false,
+                                                true, true)
+                   : ctx->defineAccessorPartial(obj, pk.value, nullptr, false, fn, true,
+                                                true, true);
+    if (detail::isErrorValue(r)) return r;
+    return ctx->createUndefined();
+}
+
+Value* objectProtoDefineGetter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return objectProtoDefineAccessor(ctx, self, argc, argv, true);
+}
+
+Value* objectProtoDefineSetter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    return objectProtoDefineAccessor(ctx, self, argc, argv, false);
+}
+
+// Object.prototype.__proto__ 访问器（Annex B.2.2.1）。
+Value* objectProtoGetProto(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
+    return ctx->getPrototype(obj);
+}
+
+Value* objectProtoSetProto(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
+    Value* obj = toObjectOrThrow(ctx, self != nullptr ? self : ctx->createUndefined());
+    if (detail::isErrorValue(obj)) return obj;
+    Value* proto = argc >= 1 ? argv[0] : ctx->createUndefined();
+    TypeKind pk = proto->type()->kind();
+    // 非对象且非 null：静默忽略（B.2.2.1.2 步骤 4）。
+    if (!detail::isObjectKind(pk) && pk != TypeKind::Null) {
+        return ctx->createUndefined();
+    }
+    // 步骤 4：与当前原型相同则直接成功（即使不可扩展）。
+    Value* current = ctx->getPrototype(obj);
+    if (detail::isErrorValue(current)) return current;
+    if (current == proto ||
+        (current != nullptr && proto != nullptr && current->data() == proto->data())) {
+        return ctx->createUndefined();
+    }
+    Value* ext = obj->type()->isExtensible(ctx, obj);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        return detail::typeError(ctx, "Cannot set prototype of non-extensible object");
+    }
+    Value* r = ctx->setPrototype(obj, proto);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
+        return detail::typeError(ctx, "Cyclic __proto__ value");
+    }
+    return ctx->createUndefined();
+}
+
 // Object.prototype.toLocaleString()（ES2024 §20.1.3.5）：
 // 调 this.toString()（toString 不可调用则 TypeError）。
 Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
                                  Value* /*argv*/[]) {
-    if (self == nullptr) {
-        return detail::typeError(
-            ctx, "Object.prototype.toLocaleString called on null");
+    // 注：规范不做 ToObject，直接以 this 原值调用其 toString（§20.1.3.5）。
+    // 属性查找经 ToObject，但 getter/方法的 this 仍是原值（GetV 语义）。
+    Value* obj = self != nullptr ? self : ctx->createUndefined();
+    TypeKind sk = obj->type()->kind();
+    if (sk == TypeKind::Undefined || sk == TypeKind::Null) {
+        return detail::typeError(ctx, "Cannot convert undefined or null to object");
     }
-    Value* fn = ctx->getProperty(self, "toString");
+    Value* base = obj;
+    if (!detail::isObjectKind(sk)) {
+        base = ctx->createPrimitiveWrapper(obj);
+        if (detail::isErrorValue(base)) return base;
+    }
+    Value* fn = getPropertyWithReceiver(ctx, base, ctx->createString("toString"), obj);
     if (detail::isErrorValue(fn)) return fn;
     if (!detail::isCallable(fn)) {
         return detail::typeError(ctx, "toString is not a function");
     }
-    return ctx->call(fn, self, 0, nullptr);
+    return ctx->call(fn, obj, 0, nullptr);
 }
 
 // —— Function.prototype 方法 ——
@@ -305,6 +408,15 @@ Value* functionProtoBind(IContext* ctx, Value* self, size_t argc, Value* argv[])
 //   已是对象（含迭代器）→ 原样返回；
 //   原始值（Boolean/Number/BigInt/String/Symbol）→ 包装对象。
 Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    // 子类化（newTarget 不是当前活动函数）时忽略参数，返回新普通对象
+    // （ES2024 §20.1.1.1 步骤 1-2）。
+    Value* nt = ctx->newTarget();
+    if (nt != nullptr && nt->type()->kind() != TypeKind::Undefined) {
+        Value* active = ctx->currentFunction();
+        if (active == nullptr || nt->data() != active->data()) {
+            return ctx->createObject();
+        }
+    }
     if (argc == 0) return ctx->createObject();
     Value* v = argv[0];
     TypeKind k = v->type()->kind();
@@ -379,14 +491,24 @@ Value* objectValues(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
     std::vector<Value*> keys;
-    if (Value* err = neo::core::ownPropertyKeys(ctx, target, true, false, keys)) return err;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, false, keys)) return err;
     Value* arr = ctx->createArray();
     if (arr == ctx->oomValue()) return arr;
     auto* d = static_cast<ArrayData*>(arr->data());
-    for (size_t i = 0; i < keys.size(); ++i) {
-        Value* v = ctx->getProperty(target, keys[i]);
+    uint32_t outIndex = 0;
+    for (Value* key : keys) {
+        // EnumerableOwnProperties：逐键 gopd 后立即取值（可观察顺序）。
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property desc;
+        if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, desc)) {
+            return err;
+        }
+        if (!exists || !desc.enumerable) continue;
+        Value* v = ctx->getProperty(target, key);
         if (detail::isErrorValue(v)) return v;
-        d->setElement(static_cast<uint32_t>(i), v);
+        d->setElement(outIndex++, v);
     }
     return arr;
 }
@@ -396,19 +518,28 @@ Value* objectEntries(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* arg
     Value* target = toObjectOrThrow(ctx, argv[0]);
     if (detail::isErrorValue(target)) return target;
     std::vector<Value*> keys;
-    if (Value* err = neo::core::ownPropertyKeys(ctx, target, true, false, keys)) return err;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, target, false, false, keys)) return err;
     Value* arr = ctx->createArray();
     if (arr == ctx->oomValue()) return arr;
     auto* d = static_cast<ArrayData*>(arr->data());
-    for (size_t i = 0; i < keys.size(); ++i) {
-        Value* v = ctx->getProperty(target, keys[i]);
+    uint32_t outIndex = 0;
+    for (Value* key : keys) {
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, key, pk)) return err;
+        bool exists = false;
+        Property desc;
+        if (Value* err = target->type()->getOwnProperty(ctx, target, pk, exists, desc)) {
+            return err;
+        }
+        if (!exists || !desc.enumerable) continue;
+        Value* v = ctx->getProperty(target, key);
         if (detail::isErrorValue(v)) return v;
         Value* pair = ctx->createArray();
         if (pair == ctx->oomValue()) return pair;
         auto* pd = static_cast<ArrayData*>(pair->data());
-        pd->setElement(0, keys[i]);
+        pd->setElement(0, key);
         pd->setElement(1, v);
-        d->setElement(static_cast<uint32_t>(i), pair);
+        d->setElement(outIndex++, pair);
     }
     return arr;
 }
@@ -441,8 +572,9 @@ Value* objectAssign(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
 Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
     Value* from = toObjectOrThrow(ctx, props);
     if (detail::isErrorValue(from)) return from;
+    // §20.1.2.3.1 step 5.b：只处理 [[Enumerable]] 为 true 的自有键。
     std::vector<Value*> keys;
-    if (Value* err = neo::core::ownPropertyKeys(ctx, from, false, true, keys)) return err;
+    if (Value* err = neo::core::ownPropertyKeys(ctx, from, true, true, keys)) return err;
 
     struct Pending {
         PropertyKey key;
@@ -478,8 +610,10 @@ Value* definePropertiesFromObject(IContext* ctx, Value* target, Value* props) {
 // Object.defineProperties(obj, props)：ES2024 §20.1.2.3
 Value* objectDefineProperties(IContext* ctx, Value* /*self*/, size_t /*argc*/,
                               Value* argv[]) {
-    Value* target = toObjectOrThrow(ctx, argv[0]);
-    if (detail::isErrorValue(target)) return target;
+    if (!detail::isObjectKind(argv[0]->type()->kind())) {
+        return detail::typeError(ctx, "Object.defineProperties called on non-object");
+    }
+    Value* target = argv[0];
     if (Value* err = definePropertiesFromObject(ctx, target, argv[1])) return err;
     return target;
 }
@@ -513,22 +647,36 @@ Value* objectGetPrototypeOf(IContext* ctx, Value* /*self*/, size_t /*argc*/, Val
 
 // Object.setPrototypeOf(obj, proto)：ES2024 §20.1.2.22
 Value* objectSetPrototypeOf(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
-    Value* target = toObjectOrThrow(ctx, argv[0]);
-    if (detail::isErrorValue(target)) return target;
+    // Type(O) 非 Object 时直接返回 O（§20.1.2.22 步骤 1）。
+    if (!detail::isObjectKind(argv[0]->type()->kind())) return argv[0];
+    Value* target = argv[0];
     Value* proto = argv[1];
     TypeKind pk = proto->type()->kind();
     if (pk != TypeKind::Null && !detail::isObjectKind(pk)) {
         return detail::typeError(ctx, "Object prototype may only be an Object or null");
     }
+    // %Object.prototype% 是 immutable-prototype exotic：仅允许设为 null。
+    Value* objectProto = ctx->objectPrototype();
+    if (objectProto != nullptr && target->data() == objectProto->data() &&
+        pk != TypeKind::Null) {
+        return detail::typeError(ctx, "Immutable prototype object");
+    }
     Value* r = ctx->setPrototype(target, proto);
-    return detail::isErrorValue(r) ? r : target;
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
+        return detail::typeError(ctx, "Cannot set prototype");
+    }
+    return target;
 }
 
 // Object.defineProperty(obj, key, descriptor)：ES2024 §20.1.2.4
 // 描述符对象支持 value/writable/enumerable/configurable/get/set。
 Value* objectDefineProperty(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
-    Value* target = toObjectOrThrow(ctx, argv[0]);
-    if (detail::isErrorValue(target)) return target;
+    // 规范要求 O 已是对象（不对原始值做 ToObject，§20.1.2.4 步骤 1）。
+    if (!detail::isObjectKind(argv[0]->type()->kind())) {
+        return detail::typeError(ctx, "Object.defineProperty called on non-object");
+    }
+    Value* target = argv[0];
     PropertyKey key;
     if (Value* err = toPropertyKey(ctx, argv[1], key)) return err;
     Value* desc = argv[2];
@@ -598,17 +746,11 @@ Value* objectPreventExtensions(IContext* ctx, Value* /*self*/, size_t /*argc*/,
     Value* target = argv[0];
     if (!detail::isObjectKind(target->type()->kind())) return target;
     Value* r = target->type()->preventExtensions(ctx, target);
-    return detail::isErrorValue(r) ? r : target;
-}
-
-// 按描述符调用 [[DefineOwnProperty]]（内部方法返回 Boolean 或 Exception）。
-Value* applyPropertyDescriptor(IContext* ctx, Value* target, Value* keyValue,
-                               const Property& p) {
-    return isAccessorDescriptor(p)
-               ? target->type()->defineAccessor(ctx, target, keyValue, p.getter, p.setter,
-                                                p.enumerable, p.configurable)
-               : target->type()->defineProperty(ctx, target, keyValue, p.value, p.writable,
-                                                p.enumerable, p.configurable);
+    if (detail::isErrorValue(r)) return r;
+    if (!detail::toBoolean(r)) {
+        return detail::typeError(ctx, "Cannot prevent extensions");
+    }
+    return target;
 }
 
 // SetIntegrityLevel（ES2024 §7.3.15）：sealed 收紧 configurable，
@@ -629,10 +771,16 @@ Value* setIntegrityLevel(IContext* ctx, Value* target, bool frozen) {
             return err;
         }
         if (!exists) continue;
-        Property desc = cur;
-        desc.configurable = false;
-        if (frozen && !isAccessorDescriptor(cur)) desc.writable = false;
-        Value* r = applyPropertyDescriptor(ctx, target, key, desc);
+        // 规范只传部分描述符 { [[Configurable]]: false }（frozen 数据属性再加
+        // [[Writable]]: false），Proxy trap 必须看到未出现的字段缺失。
+        PropertyDescriptor pd;
+        pd.hasConfigurable = true;
+        pd.configurable = false;
+        if (frozen && !isAccessorDescriptor(cur)) {
+            pd.hasWritable = true;
+            pd.writable = false;
+        }
+        Value* r = target->type()->definePropertyFromDescriptor(ctx, target, pk, pd);
         if (detail::isErrorValue(r)) return r;
         if (!detail::toBoolean(r)) return ctx->createBoolean(false);
     }
@@ -709,8 +857,10 @@ Value* objectGetOwnPropertyNames(IContext* ctx, Value* /*self*/, size_t /*argc*/
 }
 
 // Object.is(a, b)：SameValue（ES2024 §20.1.2.12）
-Value* objectIs(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
-    return ctx->createBoolean(detail::sameValue(argv[0], argv[1]));
+Value* objectIs(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    Value* x = argc >= 1 ? argv[0] : ctx->createUndefined();
+    Value* y = argc >= 2 ? argv[1] : ctx->createUndefined();
+    return ctx->createBoolean(detail::sameValue(x, y));
 }
 
 // Object.hasOwn(O, P)：ToObject 后查自有属性（ES2024 §20.1.2.13.1）
@@ -741,25 +891,89 @@ Value* objectGetOwnPropertySymbols(IContext* ctx, Value* /*self*/, size_t /*argc
     return keysToArray(ctx, symbols);
 }
 
+// Object.groupBy(items, callbackfn)：ES2024 §20.1.2.14
+Value* objectGroupBy(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    if (argc < 2 || !detail::isCallable(argv[1])) {
+        return detail::typeError(ctx, "Object.groupBy callback must be callable");
+    }
+    TypeKind k = argv[0]->type()->kind();
+    if (k == TypeKind::Undefined || k == TypeKind::Null) {
+        return detail::typeError(ctx, "Object.groupBy requires an iterable");
+    }
+    std::vector<Value*> items;
+    if (Value* err = detail::iterableToList(ctx, argv[0], items)) return err;
+    // 结果对象原型为 null（§20.1.2.14 步骤 3）。
+    Value* groups = ctx->createObject();
+    if (groups == ctx->oomValue()) return groups;
+    if (Value* err = ctx->setPrototype(groups, ctx->createNull());
+        detail::isErrorValue(err)) {
+        return err;
+    }
+    for (size_t i = 0; i < items.size(); ++i) {
+        Value* args[2] = {items[i], ctx->createNumber(static_cast<double>(i))};
+        Value* keyValue = ctx->call(argv[1], ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(keyValue)) return keyValue;
+        PropertyKey pk;
+        if (Value* err = toPropertyKey(ctx, keyValue, pk)) return err;
+        Value* group = ctx->getProperty(groups, pk.value);
+        if (detail::isErrorValue(group)) return group;
+        if (group->type()->kind() == TypeKind::Undefined) {
+            group = ctx->createArray();
+            if (group == ctx->oomValue()) return group;
+            Value* r = ctx->defineProperty(groups, pk.value, group, true, true, true);
+            if (detail::isErrorValue(r)) return r;
+        }
+        Value* lenV = ctx->getProperty(group, ctx->createString("length"));
+        if (detail::isErrorValue(lenV)) return lenV;
+        double lenD = static_cast<NumberData*>(lenV->data())->value;
+        Value* r = ctx->defineProperty(
+            group, ctx->createString(std::to_string(static_cast<uint32_t>(lenD))),
+            items[i], true, true, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+    return groups;
+}
+
 // Object.fromEntries(iterable)：ES2024 §20.1.2.7
 Value* objectFromEntries(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* argv[]) {
     TypeKind k = argv[0]->type()->kind();
     if (k == TypeKind::Undefined || k == TypeKind::Null) {
         return detail::typeError(ctx, "Object.fromEntries requires an iterable");
     }
-    std::vector<Value*> entries;
-    if (Value* err = detail::iterableToList(ctx, argv[0], entries)) return err;
+    // 流式迭代：条目非法/取值失败时须 IteratorClose（§20.1.2.7 / §7.4.6）。
+    Value* iterator = detail::getIterator(ctx, argv[0]);
+    if (detail::isErrorValue(iterator)) return iterator;
     Value* result = ctx->createObject();
     if (result == ctx->oomValue()) return result;
-    for (Value* entry : entries) {
-        Value* pair = toObjectOrThrow(ctx, entry);
-        if (detail::isErrorValue(pair)) return pair;
-        Value* key = ctx->getProperty(pair, "0");
-        if (detail::isErrorValue(key)) return key;
-        Value* value = ctx->getProperty(pair, "1");
-        if (detail::isErrorValue(value)) return value;
-        if (Value* err = ctx->defineProperty(result, key, value, true, true, true))
-            if (detail::isErrorValue(err)) return err;
+    for (;;) {
+        Value* next = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(next)) {
+            return detail::iteratorClose(ctx, iterator, next);
+        }
+        Value* err = nullptr;
+        bool done = detail::iteratorComplete(ctx, next, err);
+        if (err != nullptr) return detail::iteratorClose(ctx, iterator, err);
+        if (done) break;
+        Value* entry = detail::iteratorValue(ctx, next);
+        if (detail::isErrorValue(entry)) {
+            return detail::iteratorClose(ctx, iterator, entry);
+        }
+        if (!detail::isObjectKind(entry->type()->kind())) {
+            Value* typeErr = detail::typeError(ctx, "Iterator value is not an entry object");
+            return detail::iteratorClose(ctx, iterator, typeErr);
+        }
+        Value* key = ctx->getProperty(entry, "0");
+        if (detail::isErrorValue(key)) return detail::iteratorClose(ctx, iterator, key);
+        Value* value = ctx->getProperty(entry, "1");
+        if (detail::isErrorValue(value)) {
+            return detail::iteratorClose(ctx, iterator, value);
+        }
+        PropertyKey pk;
+        if (Value* kerr = toPropertyKey(ctx, key, pk)) {
+            return detail::iteratorClose(ctx, iterator, kerr);
+        }
+        Value* r = ctx->defineProperty(result, pk.value, value, true, true, true);
+        if (detail::isErrorValue(r)) return detail::iteratorClose(ctx, iterator, r);
     }
     return result;
 }
@@ -771,10 +985,21 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
-                  size_t minArgc, bool strict = false) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+                  size_t minArgc, bool strict = false, int length = -1) {
+    // 内建原型/静态方法不可构造且无自有 prototype 属性（§20.1.3）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    // length 与最小实参数分离：规范 length 可大于允许的最少实参。
+    if (length >= 0 &&
+        ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(length)),
+                            false, false, true)
+                ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // 内部算法需要 Throw=true 的 Set 语义时，标在函数 closureScope 上，
     // 使其不受调用方 sloppy 影响（见 setFunctionStrict）。
     if (strict) ctx->setFunctionStrict(f);
@@ -784,8 +1009,8 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 
 // 定义构造函数静态方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineStatic(IContext* ctx, Value* ctor, const char* name, NativeFn fn,
-                  size_t minArgc, bool strict = false) {
-    return defineMethod(ctx, ctor, name, fn, minArgc, strict);
+                  size_t minArgc, bool strict = false, int length = -1) {
+    return defineMethod(ctx, ctor, name, fn, minArgc, strict, length);
 }
 
 }  // namespace
@@ -816,6 +1041,11 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     Value* objectFn = ctx->createNativeFunction(objectCtor, 0);
     if (objectFn == ctx->oomValue()) return false;
     ctx->setFunctionName(objectFn, "Object");
+    // Object.length = 1（§20.1.2.1），允许零实参调用。
+    if (ctx->defineProperty(objectFn, "length", ctx->createNumber(1.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // Object.prototype 属性指向 objectProto（不可写/不可枚举/不可配置，ES2024 §20.1.2.4）
     if (ctx->defineProperty(objectFn, "prototype", objectProto, false, false, false)
             ->type()->kind() == TypeKind::Exception) {
@@ -845,20 +1075,51 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     // —— 5. Object.prototype 方法 ——
     if (!defineMethod(ctx, objectProto, "toString", objectProtoToString, 0)) return false;
     if (!defineMethod(ctx, objectProto, "valueOf", objectProtoValueOf, 0)) return false;
-    // 三个方法缺参时按 undefined 键/值处理并返回 false（ES2024 §20.1.3），不校验最少参数
-    if (!defineMethod(ctx, objectProto, "hasOwnProperty", objectProtoHasOwnProperty, 0))
+    // 缺参时按 undefined 键/值处理并返回 false（ES2024 §20.1.3），不校验最少参数；
+    // length 按规范单独给出。
+    if (!defineMethod(ctx, objectProto, "hasOwnProperty", objectProtoHasOwnProperty, 0,
+                      false, 1))
         return false;
-    if (!defineMethod(ctx, objectProto, "isPrototypeOf", objectProtoIsPrototypeOf, 0))
+    if (!defineMethod(ctx, objectProto, "isPrototypeOf", objectProtoIsPrototypeOf, 0,
+                      false, 1))
         return false;
     if (!defineMethod(ctx, objectProto, "propertyIsEnumerable",
-                      objectProtoPropertyIsEnumerable, 0))
+                      objectProtoPropertyIsEnumerable, 0, false, 1))
         return false;
     if (!defineMethod(ctx, objectProto, "toLocaleString", objectProtoToLocaleString, 0))
         return false;
-    if (!defineMethod(ctx, objectProto, "__lookupGetter__", objectProtoLookupGetter, 0))
+    if (!defineMethod(ctx, objectProto, "__lookupGetter__", objectProtoLookupGetter, 0,
+                      false, 1))
         return false;
-    if (!defineMethod(ctx, objectProto, "__lookupSetter__", objectProtoLookupSetter, 0))
+    if (!defineMethod(ctx, objectProto, "__lookupSetter__", objectProtoLookupSetter, 0,
+                      false, 1))
         return false;
+    if (!defineMethod(ctx, objectProto, "__defineGetter__", objectProtoDefineGetter, 0,
+                      false, 2))
+        return false;
+    if (!defineMethod(ctx, objectProto, "__defineSetter__", objectProtoDefineSetter, 0,
+                      false, 2))
+        return false;
+    // Object.prototype.__proto__ 访问器（Annex B.2.2.1）
+    {
+        FunctionCreateOptions opts;
+        opts.constructible = false;
+        opts.hasPrototypeProperty = false;
+        Value* getFn = ctx->createNativeFunction(objectProtoGetProto, 0, {}, opts);
+        if (getFn == ctx->oomValue()) return false;
+        ctx->setFunctionName(getFn, "get __proto__");
+        Value* setFn = ctx->createNativeFunction(objectProtoSetProto, 0, {}, opts);
+        if (setFn == ctx->oomValue()) return false;
+        ctx->setFunctionName(setFn, "set __proto__");
+        if (ctx->defineProperty(setFn, "length", ctx->createNumber(1.0), false, false, true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+        if (detail::isErrorValue(ctx->defineAccessor(objectProto, "__proto__", getFn,
+                                                     setFn, false, true))) {
+            return false;
+        }
+    }
 
     // —— 6. Function.prototype 方法 ——
     if (!defineMethod(ctx, functionProto, "toString", functionProtoToString, 0)) return false;
@@ -903,9 +1164,9 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "entries", objectEntries, 1)) return false;
     // Object.assign(target) 单参合法（无源对象），仅要求 target 存在。
     // 内部 Set 使用 Throw=true，故函数局部严格，不受调用方 sloppy 影响。
-    if (!defineStatic(ctx, objectFn, "assign", objectAssign, 1, /*strict=*/true))
+    if (!defineStatic(ctx, objectFn, "assign", objectAssign, 1, /*strict=*/true, 2))
         return false;
-    if (!defineStatic(ctx, objectFn, "create", objectCreate, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "create", objectCreate, 1, false, 2)) return false;
     if (!defineStatic(ctx, objectFn, "getPrototypeOf", objectGetPrototypeOf, 1)) return false;
     if (!defineStatic(ctx, objectFn, "setPrototypeOf", objectSetPrototypeOf, 2)) return false;
     if (!defineStatic(ctx, objectFn, "defineProperty", objectDefineProperty, 3)) return false;
@@ -929,9 +1190,10 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     if (!defineStatic(ctx, objectFn, "getOwnPropertySymbols",
                       objectGetOwnPropertySymbols, 1))
         return false;
-    if (!defineStatic(ctx, objectFn, "is", objectIs, 2)) return false;
+    if (!defineStatic(ctx, objectFn, "is", objectIs, 0, false, 2)) return false;
     if (!defineStatic(ctx, objectFn, "hasOwn", objectHasOwn, 2)) return false;
     if (!defineStatic(ctx, objectFn, "fromEntries", objectFromEntries, 1)) return false;
+    if (!defineStatic(ctx, objectFn, "groupBy", objectGroupBy, 0, false, 2)) return false;
 
     // —— 8. 注册到 global ——
     bindGlobal(ctx, "Object", objectFn);

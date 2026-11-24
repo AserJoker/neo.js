@@ -69,6 +69,7 @@ Value* ModuleNamespaceType::defineProperty(IContext* ctx, Value* self, Value* ke
         it->second.configurable = false;
         it->second.getter = nullptr;
         it->second.setter = nullptr;
+        it->second.accessor = false;
         return ctx->createBoolean(true);
     }
     d->properties.emplace(

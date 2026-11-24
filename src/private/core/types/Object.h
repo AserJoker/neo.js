@@ -36,9 +36,9 @@ namespace neo::core {
 
 class Value;
 
-// 是否访问器属性（getter/setter 任一非空）
+// 是否访问器属性（显式标记或 getter/setter 任一非空）
 inline bool isAccessorDescriptor(const Property& p) {
-    return p.getter != nullptr || p.setter != nullptr;
+    return p.accessor || p.getter != nullptr || p.setter != nullptr;
 }
 
 // symbol 属性描述符：额外持有 symbol key 本身（GC 需保活 key，且删除时需按身份比对）

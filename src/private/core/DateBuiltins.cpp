@@ -815,11 +815,8 @@ bool registerDateBuiltins(IContext* ctx) {
                             "[Symbol.toPrimitive]", dateToPrimitive, 0)) {
         return false;
     }
-    if (ctx->defineProperty(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
-                            ctx->createString("Date"), false, false, true)
-            ->type()->kind() == TypeKind::Exception) {
-        return false;
-    }
+    // 注：%Date.prototype% 规范上**没有** @@toStringTag，
+    // "Date" 内建 tag 由 Object.prototype.toString 按 [[DateValue]] 给出。
 
     ctx->defineGlobal("Date", dateFn, true, false, true);
     return true;

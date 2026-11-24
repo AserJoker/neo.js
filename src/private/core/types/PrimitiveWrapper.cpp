@@ -288,7 +288,26 @@ Value* PrimitiveWrapperType::defineProperty(IContext* ctx, Value* self, Value* k
     bool matches = false;
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, stringPayload(self), key, k, matches, err)) {
-        if (matches) return readOnlyProperty(ctx, "redefine");
+        if (matches) {
+            // String exotic [[DefineOwnProperty]]（§10.4.3.5）：索引/length 只读、
+            // 不可配置；仅接受与当前描述符一致的重新定义。
+            const std::vector<uint16_t> units = toUtf16Units(*stringPayload(self));
+            Value* current = nullptr;
+            bool currentEnumerable = false;
+            if (k == "length") {
+                current = ctx->createNumber(static_cast<double>(units.size()));
+            } else {
+                uint32_t index = 0;
+                parseArrayIndex(k, index);
+                current = ctx->createString(unitToString(units[index]));
+                currentEnumerable = true;
+            }
+            if (configurable || writable || enumerable != currentEnumerable ||
+                !detail::sameValue(value, current)) {
+                return ctx->createBoolean(false);
+            }
+            return ctx->createBoolean(true);
+        }
     } else if (err != nullptr) {
         return err;
     }
@@ -303,7 +322,7 @@ Value* PrimitiveWrapperType::defineAccessor(IContext* ctx, Value* self, Value* k
     bool matches = false;
     Value* err = nullptr;
     if (resolveStringWrapperKey(ctx, stringPayload(self), key, k, matches, err)) {
-        if (matches) return readOnlyProperty(ctx, "redefine");
+        if (matches) return ctx->createBoolean(false);  // 数据属性不可转为访问器
     } else if (err != nullptr) {
         return err;
     }

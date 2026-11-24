@@ -468,9 +468,12 @@ TEST(PrimitiveWrapperTest, ToStringTagOnPrototypes) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* tag = ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag);
-    EXPECT_EQ(strOf(ctx->getProperty(ctx->booleanPrototype(), tag)), "Boolean");
-    EXPECT_EQ(strOf(ctx->getProperty(ctx->numberPrototype(), tag)), "Number");
-    EXPECT_EQ(strOf(ctx->getProperty(ctx->stringPrototype(), tag)), "String");
+    EXPECT_EQ(ctx->getProperty(ctx->booleanPrototype(), tag)->type()->kind(),
+              neo::core::TypeKind::Undefined);
+    EXPECT_EQ(ctx->getProperty(ctx->numberPrototype(), tag)->type()->kind(),
+              neo::core::TypeKind::Undefined);
+    EXPECT_EQ(ctx->getProperty(ctx->stringPrototype(), tag)->type()->kind(),
+              neo::core::TypeKind::Undefined);
     EXPECT_EQ(strOf(ctx->getProperty(ctx->symbolPrototype(), tag)), "Symbol");
 }
 

@@ -561,6 +561,22 @@ Value* Context::construct(Value* fn, Value* newTarget, size_t argc, Value* argv[
     Value* saved = newTarget_;
     newTarget_ = newTarget != nullptr ? newTarget : fn;
     Value* r = fn->type()->construct(this, fn, argc, argv);
+    // 原生构造器按 NewTarget.prototype 决定实例原型（§10.1.13
+    // OrdinaryCreateFromConstructor 的子类化效果）。脚本构造器已在自身
+    // 构造逻辑中处理 new.target，且可能显式返回对象，故不在此改写。
+    if (r != nullptr && !detail::isErrorValue(r) && newTarget_ != fn &&
+        detail::isObjectKind(r->type()->kind()) &&
+        fn->type()->kind() == TypeKind::Function) {
+        auto* fd = static_cast<FunctionData*>(fn->data());
+        if (!fd->isScript && fd->boundTarget == nullptr) {
+            Value* proto = getProperty(newTarget_, "prototype");
+            if (!detail::isErrorValue(proto) &&
+                detail::isObjectKind(proto->type()->kind())) {
+                Value* set = setPrototype(r, proto);
+                if (detail::isErrorValue(set)) r = set;
+            }
+        }
+    }
     // 构造返回的对象归属调用方作用域：class 派生构造的 this 由 super() 在
     // 内层 execScope 创建，若只返回裸指针，外层 execScope pop 后会被 GC 回收。
     if (r != nullptr && detail::isObjectKind(r->type()->kind()) && current_ != nullptr) {

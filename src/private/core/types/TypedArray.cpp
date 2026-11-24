@@ -212,10 +212,21 @@ Value* TypedArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
             uint32_t index = 0;
             if (parseArrayIndex(pk.name, index)) {
                 if (index >= d->length) return ctx->createBoolean(false);
+                // 整数索引元素不可配置、不可枚举、恒可写（§10.4.5.5）。
+                if (configurable || !enumerable || !writable) {
+                    return ctx->createBoolean(false);
+                }
                 if (Value* err = typedArrayWriteElement(ctx, d, index, value)) {
                     return err;
                 }
                 return value;
+            }
+            if (pk.name == "length") {
+                // [[ArrayLength]] 只读、不可枚举、不可配置。
+                if (configurable || writable || enumerable) {
+                    return ctx->createBoolean(false);
+                }
+                return ctx->createBoolean(true);
             }
         }
     }

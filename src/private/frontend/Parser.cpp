@@ -639,6 +639,11 @@ NodePtr Parser::parseFunctionExpression(bool async) {
 }
 
 bool Parser::parseFormalParameters(NodeList& params) {
+    struct DepthGuard {
+        int& depth;
+        explicit DepthGuard(int& d) : depth(d) { ++depth; }
+        ~DepthGuard() { --depth; }
+    } guard(formalParameterDepth_);
     if (!expect(TokenKind::LeftParen, "'('")) return false;
     if (match(TokenKind::RightParen)) return true;
 
@@ -687,6 +692,9 @@ NodePtr Parser::parseSpreadElement() {
 NodePtr Parser::parseFunctionBody() {
     const SourceLocation start = current_.start;
     if (!expect(TokenKind::LeftBrace, "'{'")) return nullptr;
+    // 函数体是新函数上下文，形参深度不再约束其内部表达式。
+    const int savedFormalDepth = formalParameterDepth_;
+    formalParameterDepth_ = 0;
 
     // 函数体有自己的指令序言；严格性由 Sema 根据 Directive 节点判定。
     bool inDirectivePrologue = true;
@@ -700,7 +708,9 @@ NodePtr Parser::parseFunctionBody() {
         }
     }
 
-    if (!expect(TokenKind::RightBrace, "'}'")) return nullptr;
+    const bool closed = expect(TokenKind::RightBrace, "'}'");
+    formalParameterDepth_ = savedFormalDepth;
+    if (!closed) return nullptr;
     return std::make_unique<BlockStatement>(rangeFrom(start), std::move(body));
 }
 
@@ -927,6 +937,18 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
         inGenerator_ = savedGenerator;
         return nullptr;
     }
+    // 访问器形参约束：get 无参；set 恰好一个非 rest 形参（允许默认值）。
+    if ((methodKind == MethodKind::Get && !params.empty()) ||
+        (methodKind == MethodKind::Set &&
+         (params.size() != 1 ||
+          params.front()->kind() == NodeKind::RestElement))) {
+        error(start, methodKind == MethodKind::Get
+                         ? "Getter must not have parameters"
+                         : "Setter must have exactly one parameter");
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -936,6 +958,7 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
     auto function = std::make_unique<FunctionExpression>(
         rangeFrom(start), nullptr, std::move(params), std::move(body), async,
         generator);
+    function->isMethod = true;
     return std::make_unique<MethodDefinition>(
         rangeFrom(start), std::move(key), std::move(function), computed,
         isStatic, methodKind);
@@ -1925,7 +1948,11 @@ NodePtr Parser::parseArrowFunction() {
         }
         rescan(LexicalGoal::Div);
     } else {
+        // 表达式体是新函数上下文，形参深度不再约束其内部表达式。
+        const int savedFormalDepth = formalParameterDepth_;
+        formalParameterDepth_ = 0;
         body = parseAssignmentExpression();
+        formalParameterDepth_ = savedFormalDepth;
         if (body == nullptr) {
             inAsync_ = savedAsync;
             inGenerator_ = savedGenerator;
@@ -1976,6 +2003,10 @@ NodePtr Parser::parseAssignmentExpression() {
 
 NodePtr Parser::parseYieldExpression() {
     const SourceLocation start = current_.start;
+    if (formalParameterDepth_ > 0) {
+        error(start, "Yield expression not allowed in formal parameters");
+        return nullptr;
+    }
     advance();  // 'yield'
 
     bool delegate = false;
@@ -2116,6 +2147,10 @@ NodePtr Parser::parseUnaryExpression() {
 
 NodePtr Parser::parseAwaitExpression() {
     const SourceLocation start = current_.start;
+    if (formalParameterDepth_ > 0) {
+        error(start, "Await expression not allowed in formal parameters");
+        return nullptr;
+    }
     advance();  // 'await'
     NodePtr argument = parseUnaryExpression();
     if (argument == nullptr) return nullptr;
@@ -2788,7 +2823,11 @@ NodePtr Parser::parsePropertyKey(bool& computed, bool& identifierKey) {
     if (at(TokenKind::LeftBracket)) {
         computed = true;
         advance();  // '['
+        // ComputedPropertyName 内的 `in` 不受外层 for 初始化子句的 [~In] 影响。
+        const bool savedAllowIn = allowIn_;
+        allowIn_ = true;
         NodePtr key = parseAssignmentExpression();
+        allowIn_ = savedAllowIn;
         if (key == nullptr) return nullptr;
         if (!expect(TokenKind::RightBracket, "']'")) return nullptr;
         return key;
@@ -2828,6 +2867,18 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
         inGenerator_ = savedGenerator;
         return nullptr;
     }
+    // 访问器形参约束：get 无参；set 恰好一个非 rest 形参（允许默认值）。
+    if ((propertyKind == PropertyKind::Get && !params.empty()) ||
+        (propertyKind == PropertyKind::Set &&
+         (params.size() != 1 ||
+          params.front()->kind() == NodeKind::RestElement))) {
+        error(start, propertyKind == PropertyKind::Get
+                         ? "Getter must not have parameters"
+                         : "Setter must have exactly one parameter");
+        inAsync_ = savedAsync;
+        inGenerator_ = savedGenerator;
+        return nullptr;
+    }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
@@ -2837,6 +2888,7 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
     auto function = std::make_unique<FunctionExpression>(
         rangeFrom(start), nullptr, std::move(params), std::move(body), async,
         generator);
+    function->isMethod = true;
     return std::make_unique<Property>(rangeFrom(start), std::move(key),
                                       std::move(function), computed, false,
                                       true, propertyKind);

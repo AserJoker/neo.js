@@ -733,6 +733,8 @@ struct FunctionExpression final : Node {
     NodePtr body;  // BlockStatement
     bool async;
     bool generator;
+    // 方法定义（对象字面量/class）产生的函数：形参须 UniqueFormalParameters。
+    bool isMethod = false;
 };
 
 // class [id] [extends superClass] { body }

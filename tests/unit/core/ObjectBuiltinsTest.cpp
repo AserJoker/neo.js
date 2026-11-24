@@ -343,8 +343,10 @@ TEST(ObjectBuiltinsTest, ObjectProtoHasOwnPropertyRejectsNonObject) {
 
     Value* hasOwn = ctx->getProperty(ctx->objectPrototype(), "hasOwnProperty");
     Value* args[1] = {ctx->createString("x")};
-    EXPECT_EQ(ctx->call(hasOwn, ctx->createNumber(1), 1, args)->type()->kind(),
-              TypeKind::Exception);
+    // 非对象 this 走 ToObject（包装成 Number 对象），无自有属性 → false。
+    auto* b = static_cast<neo::core::BooleanData*>(
+        ctx->call(hasOwn, ctx->createNumber(1), 1, args)->data());
+    EXPECT_FALSE(b->value);
 }
 
 // ===== Function.prototype 方法 =====
@@ -658,8 +660,9 @@ TEST(ObjectBuiltinsTest, ObjectProtoValueOfWithNullThis) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* valueOfFn = ctx->getProperty(ctx->objectPrototype(), "valueOf");
+    // ToObject(undefined) 抛 TypeError（ES2024 §20.1.3.7）。
     EXPECT_EQ(ctx->call(valueOfFn, nullptr, 0, nullptr)->type()->kind(),
-              TypeKind::Undefined);
+              TypeKind::Exception);
 }
 
 TEST(ObjectBuiltinsTest, HasOwnPropertyWithoutArgsReturnsFalse) {
@@ -1200,9 +1203,8 @@ TEST(ObjectBuiltinsTest, ObjectProtoPropertyIsEnumerable) {
     // 原型链上的属性不算自有
     Value* args3[1] = {ctx->createString("toString")};
     EXPECT_FALSE(boolOf(ctx->call(fn, obj, 1, args3)));
-    // 非对象 this → Exception
-    EXPECT_EQ(ctx->call(fn, ctx->createNumber(1), 1, args1)->type()->kind(),
-              TypeKind::Exception);
+    // 非对象 this 走 ToObject（Number 包装），无该自有属性 → false
+    EXPECT_FALSE(boolOf(ctx->call(fn, ctx->createNumber(1), 1, args1)));
 }
 
 TEST(ObjectBuiltinsTest, ObjectProtoToLocaleStringDelegatesToToString) {
@@ -1272,19 +1274,15 @@ TEST(ObjectBuiltinsTest, ObjectProtoToStringTagPropagatesErrors) {
                         boom, nullptr);
     EXPECT_EQ(ctx->call(toStringFn, obj, 0, nullptr)->type()->kind(), TypeKind::Exception);
 
-    // @@toStringTag 为对象 → ToString 抛异常（ToPrimitive 失败）→ 透传
+    // @@toStringTag 非原始字符串 → 忽略，回退内建 tag（§20.1.3.6 步骤 16）
     Value* obj2 = ctx->createObject();
     Value* badTag = ctx->createObject();
-    Value* badValueOf = ctx->createNativeFunction(
-        [](IContext* c, Value*, size_t, Value*[]) {
-            return c->createException(c->createString("bad tag"));
-        }, 0);
-    ctx->defineProperty(badTag, "valueOf", badValueOf);
-    ctx->defineProperty(badTag, "toString", badValueOf);
     ctx->defineProperty(obj2,
                         ctx->getWellKnownSymbol(neo::core::WellKnownSymbol::ToStringTag),
                         badTag, true, false, true);
-    EXPECT_EQ(ctx->call(toStringFn, obj2, 0, nullptr)->type()->kind(), TypeKind::Exception);
+    Value* r = ctx->call(toStringFn, obj2, 0, nullptr);
+    EXPECT_EQ(r->type()->kind(), TypeKind::String);
+    EXPECT_EQ(strOf(r), "[object Object]");
 }
 
 TEST(ObjectBuiltinsTest, PropertyIsEnumerableOnArrayAndStringWrapper) {
@@ -1510,10 +1508,10 @@ TEST(ObjectBuiltinsTest, PrototypeMethodsRejectNonObjectThis) {
     Value* isProto = ctx->getProperty(ctx->objectPrototype(), "isPrototypeOf");
     Value* isEnum = ctx->getProperty(ctx->objectPrototype(), "propertyIsEnumerable");
     Value* args[1] = {ctx->createObject()};
-    EXPECT_EQ(ctx->call(isProto, ctx->createNumber(1), 1, args)->type()->kind(),
-              TypeKind::Exception);
-    EXPECT_EQ(ctx->call(isEnum, ctx->createNumber(1), 1, args)->type()->kind(),
-              TypeKind::Exception);
+    // 非对象 this 走 ToObject；isPrototypeOf 参数是对象但原型链不含包装对象 → false；
+    // propertyIsEnumerable 同理 → false。
+    EXPECT_FALSE(boolOf(ctx->call(isProto, ctx->createNumber(1), 1, args)));
+    EXPECT_FALSE(boolOf(ctx->call(isEnum, ctx->createNumber(1), 1, args)));
     // 键 ToPropertyKey 失败（symbol 以外的对象 valueOf 抛异常）
     Value* obj = ctx->createObject();
     Value* boom = ctx->createNativeFunction(
