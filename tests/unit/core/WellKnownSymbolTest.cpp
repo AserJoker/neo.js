@@ -17,6 +17,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 #include "core/WellKnownSymbol.h"
+#include "core/types/Exception.h"
 #include "core/types/Function.h"
 #include "core/types/Object.h"
 #include "core/types/String.h"
@@ -402,7 +403,7 @@ TEST(WellKnownSymbolTest, SymbolKeyForUnregisteredReturnsUndefined) {
               TypeKind::Undefined);
 }
 
-TEST(WellKnownSymbolTest, SymbolKeyForNonSymbolReturnsUndefined) {
+TEST(WellKnownSymbolTest, SymbolKeyForNonSymbolThrowsTypeError) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
@@ -411,11 +412,22 @@ TEST(WellKnownSymbolTest, SymbolKeyForNonSymbolReturnsUndefined) {
     Value* symbolFn = symbolFnOf(ctx.get());
     Value* keyForFn = ctx->getProperty(symbolFn, "keyFor");
 
+    // 非 Symbol 实参抛 TypeError（§20.4.2.6）
     Value* args[1] = {ctx->createNumber(1)};
-    EXPECT_EQ(ctx->call(keyForFn, nullptr, 1, args)->type()->kind(), TypeKind::Undefined);
-    // 无参数也返回 undefined
-    EXPECT_EQ(ctx->call(keyForFn, nullptr, 0, nullptr)->type()->kind(),
-              TypeKind::Undefined);
+    Value* nonSymbol = ctx->call(keyForFn, nullptr, 1, args);
+    ASSERT_EQ(nonSymbol->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(strOf(ctx->getProperty(
+                  static_cast<neo::core::ExceptionData*>(nonSymbol->data())->child,
+                  "name")),
+              "TypeError");
+
+    // 无参数（undefined）同样抛 TypeError
+    Value* noArg = ctx->call(keyForFn, nullptr, 0, nullptr);
+    ASSERT_EQ(noArg->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(strOf(ctx->getProperty(
+                  static_cast<neo::core::ExceptionData*>(noArg->data())->child,
+                  "name")),
+              "TypeError");
 }
 
 TEST(WellKnownSymbolTest, SymbolForCoercesKey) {

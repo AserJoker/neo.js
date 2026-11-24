@@ -672,15 +672,24 @@ TEST(PrimitiveWrapperTest, UndefinedAndNullPropertyAccessThrowsTypeError) {
               "TypeError");
 }
 
-TEST(PrimitiveWrapperTest, PrimitivePropertyWriteStillRejected) {
+TEST(PrimitiveWrapperTest, PrimitivePropertyWriteSilentInSloppyThrowsInStrict) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    EXPECT_EQ(ctx->setProperty(ctx->createString("abc"), "x", ctx->createNumber(1))
-                  ->type()->kind(),
-              TypeKind::Exception);
+    // sloppy 作用域：对原始值 set 静默丢弃，返回 RHS（§10.1.9）
+    Value* rhs = ctx->createNumber(1);
+    EXPECT_EQ(ctx->setProperty(ctx->createString("abc"), "x", rhs), rhs);
+
+    // 严格作用域：抛 TypeError
+    ctx->setFlag("strict");
+    Value* err = ctx->setProperty(ctx->createString("abc"), "x", ctx->createNumber(1));
+    ASSERT_EQ(err->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(strOf(ctx->getProperty(
+                  static_cast<neo::core::ExceptionData*>(err->data())->child,
+                  "name")),
+              "TypeError");
 }
 
 // ===== 运算（ToPrimitive）=====

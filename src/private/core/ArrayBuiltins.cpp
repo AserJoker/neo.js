@@ -71,6 +71,23 @@ Value* lengthOfArrayLike(IContext* ctx, Value* obj, uint32_t& out) {
     return nullptr;
 }
 
+// LengthOfArrayLike 的完整值（不截断到 2^32-1）：concat 需按 §23.1.3.2
+// 检查 n + len > 2^53-1，截断会漏掉溢出并造成超长循环。
+Value* lengthOfArrayLikeFull(IContext* ctx, Value* obj, double& out) {
+    Value* lenV = ctx->getProperty(obj, "length");
+    if (detail::isErrorValue(lenV)) return lenV;
+    Value* nv = detail::toNumberValue(ctx, lenV);
+    if (detail::isErrorValue(nv)) return nv;
+    double n = static_cast<NumberData*>(nv->data())->value;
+    if (std::isnan(n) || n <= 0.0) {
+        out = 0.0;
+        return nullptr;
+    }
+    constexpr double kMaxSafeInteger = 9007199254740991.0;
+    out = n > kMaxSafeInteger ? kMaxSafeInteger : std::floor(n);
+    return nullptr;
+}
+
 Value* indexKey(IContext* ctx, uint32_t index) {
     return ctx->createString(std::to_string(index));
 }
@@ -720,8 +737,14 @@ Value* arrayConcat(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     uint32_t n = 0;
 
     auto appendSpreadable = [&](Value* item) -> Value* {
-        uint32_t len = 0;
-        if (Value* err = lengthOfArrayLike(ctx, item, len)) return err;
+        double lenD = 0.0;
+        if (Value* err = lengthOfArrayLikeFull(ctx, item, lenD)) return err;
+        if (static_cast<double>(n) + lenD > 9007199254740991.0) {
+            return detail::typeError(ctx, "Invalid array length");
+        }
+        uint32_t len = lenD > static_cast<double>(kArrayMaxLength)
+                           ? kArrayMaxLength
+                           : static_cast<uint32_t>(lenD);
         for (uint32_t k = 0; k < len; ++k) {
             Value* key = indexKey(ctx, k);
             bool present = false;

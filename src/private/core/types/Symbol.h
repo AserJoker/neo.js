@@ -66,9 +66,11 @@ public:
 // 唯一性 = data 身份（每个 symbol 独占一个 data，共享时 ref++ 复用同一 data）。
 class SymbolData : public IData {
 public:
-    std::string description;  // 可空（Symbol() 的描述为空）
+    std::string description;  // 可空（Symbol("") 的描述为空字符串）
+    bool hasDescription = true;  // false = [[Description]] 为 undefined
 
-    explicit SymbolData(std::string_view desc) : description(desc) {}
+    explicit SymbolData(std::string_view desc, bool hasDesc = true)
+        : description(desc), hasDescription(hasDesc) {}
 
     // 相等性：data 身份相同才是同一个 symbol（描述不参与判定）
     bool equals(const SymbolData* other) const { return this == other; }

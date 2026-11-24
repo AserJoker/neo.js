@@ -7,7 +7,7 @@
 // - order 保序遍历
 // - 描述符特性（writable/enumerable/configurable）
 // - GC 遍历（prototype + property value 被标记）
-// - 非对象类型的属性操作（get→undefined，set→Exception，has→false）
+// - 非对象类型的属性操作（get→undefined，sloppy set→静默返回 RHS，strict set→Exception，has→false）
 //
 // 关联 ADR: 015（data 持子 value）、018（对象模型）
 
@@ -286,14 +286,62 @@ TEST(ObjectTest, PrimitiveGetPropertyReturnsUndefined) {
     EXPECT_EQ(v->type()->kind(), TypeKind::Undefined);
 }
 
-TEST(ObjectTest, PrimitiveSetPropertyReturnsException) {
+// 非严格作用域：给非 null/undefined 原始值赋属性，写入临时包装对象后被静默丢弃，
+// 返回 RHS 值本身（ES2024 §10.1.9 PutValue sloppy 语义）。
+TEST(ObjectTest, PrimitiveSetPropertySloppyReturnsRhs) {
     auto alloc = createMallocAllocator();
     NullSink sink;
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
+    Value* rhs = ctx->createNumber(2);
+    Value* result = ctx->setProperty(ctx->createNumber(1), "x", rhs);
+
+    // 不得走异常通道；返回值即 RHS 本身（同一 Value）。
+    ASSERT_NE(result->type()->kind(), TypeKind::Exception);
+    EXPECT_EQ(result->type()->kind(), TypeKind::Number);
+    EXPECT_EQ(result->data(), rhs->data());
+    EXPECT_DOUBLE_EQ(static_cast<NumberData*>(result->data())->value, 2.0);
+}
+
+// 严格作用域：给非 null/undefined 原始值赋属性抛 TypeError。
+TEST(ObjectTest, PrimitiveSetPropertyStrictThrowsTypeError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+    ctx->setFlag("strict");
+
     Value* result = ctx->setProperty(ctx->createNumber(1), "x", ctx->createNumber(2));
     EXPECT_EQ(result->type()->kind(), TypeKind::Exception);
+}
+
+// defineProperty 路径（value==nullptr）对原始值恒抛 TypeError，与严格性无关。
+TEST(ObjectTest, PrimitiveDefinePropertyThrowsTypeError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // sloppy 作用域下 defineProperty 仍走 TypeError 分支（value==nullptr）。
+    EXPECT_EQ(ctx->defineProperty(ctx->createNumber(1), "x", ctx->createNumber(2))
+                  ->type()->kind(),
+              TypeKind::Exception);
+}
+
+// null/undefined 恒抛 TypeError，与严格性无关（§7.1.5 PutValue）。
+TEST(ObjectTest, PrimitiveSetPropertyOnNullThrowsTypeError) {
+    auto alloc = createMallocAllocator();
+    NullSink sink;
+    Console console(&sink);
+    auto ctx = createContext(alloc.get(), &console);
+
+    // sloppy 作用域下 null 仍抛错。
+    EXPECT_EQ(ctx->setProperty(ctx->createNull(), "x", ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
+    // undefined 同样抛错。
+    EXPECT_EQ(ctx->setProperty(ctx->createUndefined(), "x", ctx->createNumber(2))->type()->kind(),
+              TypeKind::Exception);
 }
 
 TEST(ObjectTest, PrimitiveHasPropertyIsFalse) {

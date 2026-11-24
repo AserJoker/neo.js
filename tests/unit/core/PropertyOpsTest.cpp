@@ -2,7 +2,8 @@
 //
 // 验证（ADR-018 对象模型 + ADR-016 类型分派）：
 // - 5 种基础类型（undefined/null/boolean/number/string）：无自有属性
-//     get → undefined，set/defineProperty → Exception，has → false，delete → true
+//     get → undefined，set(sloppy) → 静默返回 RHS，set(strict)/defineProperty → Exception，
+//     has → false，delete → true
 // - Exception/Fatal/Uninitialized：属性操作透传 self（异常/哨兵不参与属性操作）
 // - Function：属性容器未接入，非 has 操作返回 Exception("not implemented")
 // - Object：运算/调用占位返回 Exception
@@ -30,6 +31,7 @@
 #include "TestHelpers.h"
 
 #include <cmath>
+#include <string>
 
 namespace {
 
@@ -72,8 +74,10 @@ Value* noopFn(IContext* ctx, Value* /*self*/, size_t /*argc*/, Value* /*argv*/[]
 // 基础类型属性操作断言：无自有属性的统一行为
 void expectPrimitiveNoOwnProperty(IContext* ctx, Value* v) {
     EXPECT_EQ(ctx->getProperty(v, "x")->type()->kind(), TypeKind::Undefined);
-    EXPECT_EQ(ctx->setProperty(v, "x", ctx->createNumber(1))->type()->kind(),
-              TypeKind::Exception);
+    // sloppy 作用域：对原始值 set 静默丢弃，返回 RHS（§10.1.9）
+    Value* rhs = ctx->createNumber(1);
+    EXPECT_EQ(ctx->setProperty(v, "x", rhs), rhs);
+    EXPECT_EQ(ctx->getProperty(v, "x")->type()->kind(), TypeKind::Undefined);
     EXPECT_FALSE(neo::test::hasProperty(ctx, v, "x"));
     Value* del = ctx->deleteProperty(v, "x");
     EXPECT_EQ(del->type()->kind(), TypeKind::Boolean);
@@ -158,9 +162,20 @@ TEST(PropertyOpsTest, PrimitiveSetPropertyMessageContainsTypeName) {
     Console console(&sink);
     auto ctx = createContext(alloc.get(), &console);
 
-    // set 错误消息携带属性名与类型名（primitiveSetProperty）
+    // 严格作用域：set 抛 TypeError，错误消息携带属性名与类型名（primitiveSetProperty）
+    ctx->setFlag("strict");
     Value* err = ctx->setProperty(ctx->createNumber(1), "foo", ctx->createNumber(2));
     ASSERT_EQ(err->type()->kind(), TypeKind::Exception);
+    auto* e = static_cast<neo::core::ExceptionData*>(err->data());
+    EXPECT_EQ(static_cast<StringData*>(
+                  ctx->getProperty(e->child, "name")->data())
+                  ->value,
+              "TypeError");
+    const std::string& msg = static_cast<StringData*>(
+                                 ctx->getProperty(e->child, "message")->data())
+                                 ->value;
+    EXPECT_NE(msg.find("foo"), std::string::npos);
+    EXPECT_NE(msg.find("number"), std::string::npos);
 }
 
 // ===== Exception / Fatal / Uninitialized：透传 self =====

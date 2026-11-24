@@ -2758,13 +2758,31 @@ void Compiler::compileObjectExpression(
                 accessorKey.empty()
                     ? std::string()
                     : (getter ? "get " + accessorKey : "set " + accessorKey);
+            const auto compileAccessor = [&]() {
+                const auto& function =
+                    static_cast<const frontend::FunctionExpression&>(
+                        *prop.value);
+                if (!function.body) {
+                    error(*prop.value, "compiler: accessor missing body");
+                    code_->pushUndefined();
+                    return;
+                }
+                // 访问器是方法定义：不可构造、无自有 prototype（§15.4）。
+                if (prop.computed) {
+                    compileFunctionObject(function, function.params,
+                                          *function.body, false, {},
+                                          function.generator, function.async,
+                                          true);
+                    code_->setFuncNameFromKey(getter ? "get " : "set ");
+                } else {
+                    compileFunctionObject(
+                        function, function.params, *function.body, false,
+                        accessorName, function.generator, function.async, true);
+                }
+            };
             if (getter) {
                 if (prop.value) {
-                    if (prop.computed) {
-                        compileNamedExpressionForKey(*prop.value, "get ");
-                    } else {
-                        compileNamedExpression(*prop.value, accessorName);
-                    }
+                    compileAccessor();
                 } else {
                     code_->pushUndefined();
                 }
@@ -2772,11 +2790,7 @@ void Compiler::compileObjectExpression(
                 code_->pushNull();
             } else {
                 if (prop.value) {
-                    if (prop.computed) {
-                        compileNamedExpressionForKey(*prop.value, "set ");
-                    } else {
-                        compileNamedExpression(*prop.value, accessorName);
-                    }
+                    compileAccessor();
                 } else {
                     code_->pushUndefined();
                 }

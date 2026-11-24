@@ -41,11 +41,23 @@ bool sameValueZero(Value* a, Value* b) {
     return detail::strictEquals(a, b);
 }
 
+// 已删除条目保留为「空槽」（key == nullptr），以维持 forEach/迭代器的
+// 原始插入顺序下标（§24.1.3.5 NOTE：删除后重加会被再次访问）。
 size_t findEntry(const CollectionData* d, Value* key) {
     for (size_t i = 0; i < d->entries.size(); ++i) {
-        if (sameValueZero(d->entries[i].key, key)) return i;
+        if (d->entries[i].key != nullptr && sameValueZero(d->entries[i].key, key)) {
+            return i;
+        }
     }
     return static_cast<size_t>(-1);
+}
+
+size_t liveEntryCount(const CollectionData* d) {
+    size_t count = 0;
+    for (const CollectionEntry& entry : d->entries) {
+        if (entry.key != nullptr) ++count;
+    }
+    return count;
 }
 
 // 成功返回 nullptr 并写入 out；接收者不匹配返回 TypeError。
@@ -88,41 +100,132 @@ Value* collectionCtorCall(IContext* ctx, Value* /*self*/, size_t /*argc*/,
     return detail::typeError(ctx, "Constructor requires 'new'");
 }
 
-// 把 iterable 的条目读成 Value* 列表（Map/Set 构造共用）。
-Value* collectEntries(IContext* ctx, Value* iterable, std::vector<Value*>& out) {
+// AddEntriesFromIterable（§24.1.1.2 / §24.2.1.2）：懒迭代，逐项经 adder 写入。
+// mapEntry=true 时每项须为对象并取 "0"/"1"；否则整项作为 Set 值。
+Value* addEntriesFromIterable(IContext* ctx, Value* target, Value* iterable,
+                              const char* adderName, bool mapEntry) {
     if (iterable->type()->kind() == TypeKind::Undefined ||
         iterable->type()->kind() == TypeKind::Null) {
         return nullptr;
     }
-    return detail::iterableToList(ctx, iterable, out);
+    Value* adder = ctx->getProperty(target, adderName);
+    if (detail::isErrorValue(adder)) return adder;
+    if (!detail::isCallable(adder)) {
+        return detail::typeError(ctx, std::string("'") + adderName +
+                                          "' is not a function");
+    }
+    Value* iterator = detail::getIterator(ctx, iterable);
+    if (detail::isErrorValue(iterator)) return iterator;
+    for (;;) {
+        Value* result = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, iterator, result);
+        }
+        Value* err = nullptr;
+        const bool done = detail::iteratorComplete(ctx, result, err);
+        if (err != nullptr) return detail::iteratorClose(ctx, iterator, err);
+        if (done) return nullptr;
+        Value* item = detail::iteratorValue(ctx, result);
+        if (detail::isErrorValue(item)) {
+            return detail::iteratorClose(ctx, iterator, item);
+        }
+        Value* args[2];
+        size_t n = 1;
+        if (mapEntry) {
+            if (!detail::isObjectKind(item->type()->kind())) {
+                return detail::iteratorClose(
+                    ctx, iterator,
+                    detail::typeError(ctx, "Iterator value is not an entry object"));
+            }
+            Value* key = ctx->getProperty(item, "0");
+            if (detail::isErrorValue(key)) {
+                return detail::iteratorClose(ctx, iterator, key);
+            }
+            Value* value = ctx->getProperty(item, "1");
+            if (detail::isErrorValue(value)) {
+                return detail::iteratorClose(ctx, iterator, value);
+            }
+            args[0] = key;
+            args[1] = value;
+            n = 2;
+        } else {
+            args[0] = item;
+        }
+        Value* r = ctx->call(adder, target, n, args);
+        if (detail::isErrorValue(r)) {
+            return detail::iteratorClose(ctx, iterator, r);
+        }
+    }
 }
 
 Value* mapConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     Value* map = ctx->createCollection(CollectionKind::Map);
     if (detail::isErrorValue(map)) return map;
     if (argc == 0) return map;
-    std::vector<Value*> entries;
-    if (Value* err = collectEntries(ctx, argv[0], entries)) return err;
-    for (Value* entry : entries) {
-        if (!detail::isObjectKind(entry->type()->kind())) {
-            return detail::typeError(ctx, "Iterator value is not an entry object");
-        }
-        Value* key = ctx->getProperty(entry, "0");
-        if (detail::isErrorValue(key)) return key;
-        Value* value = ctx->getProperty(entry, "1");
-        if (detail::isErrorValue(value)) return value;
-        setEntry(asCollection(map), key, value);
+    if (Value* err = addEntriesFromIterable(ctx, map, argv[0], "set", true)) {
+        return err;
     }
     return map;
+}
+
+// Map.groupBy(items, callbackfn)（ES2024 §24.1.2.4）：按回调返回值分组。
+Value* mapGroupBy(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    Value* items = argc > 0 ? argv[0] : ctx->createUndefined();
+    Value* callback = argc > 1 ? argv[1] : ctx->createUndefined();
+    if (!detail::isCallable(callback)) {
+        return detail::typeError(ctx, "Map.groupBy callback must be callable");
+    }
+    Value* map = ctx->createCollection(CollectionKind::Map);
+    if (detail::isErrorValue(map)) return map;
+    Value* iterator = detail::getIterator(ctx, items);
+    if (detail::isErrorValue(iterator)) return iterator;
+    double index = 0.0;
+    for (;;) {
+        Value* result = detail::iteratorNext(ctx, iterator);
+        if (detail::isErrorValue(result)) {
+            return detail::iteratorClose(ctx, iterator, result);
+        }
+        Value* err = nullptr;
+        const bool done = detail::iteratorComplete(ctx, result, err);
+        if (err != nullptr) return detail::iteratorClose(ctx, iterator, err);
+        if (done) return map;
+        Value* value = detail::iteratorValue(ctx, result);
+        if (detail::isErrorValue(value)) {
+            return detail::iteratorClose(ctx, iterator, value);
+        }
+        Value* args[2] = {value, ctx->createNumber(index)};
+        Value* key = ctx->call(callback, ctx->createUndefined(), 2, args);
+        if (detail::isErrorValue(key)) {
+            return detail::iteratorClose(ctx, iterator, key);
+        }
+        // coercion=zero：-0 归一为 +0（§24.1.2.4 GroupBy step 6.h）。
+        if (key->type()->kind() == TypeKind::Number) {
+            const double n = static_cast<NumberData*>(key->data())->value;
+            if (n == 0.0 && std::signbit(n)) key = ctx->createNumber(0.0);
+        }
+        CollectionData* d = asCollection(map);
+        const size_t found = findEntry(d, key);
+        Value* group = nullptr;
+        if (found == static_cast<size_t>(-1)) {
+            group = ctx->createArray();
+            if (detail::isErrorValue(group)) return group;
+            setEntry(d, key, group);
+        } else {
+            group = d->entries[found].value;
+        }
+        auto* ad = static_cast<ArrayData*>(group->data());
+        ad->setElement(ad->length(), value);
+        index += 1.0;
+    }
 }
 
 Value* setConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     Value* set = ctx->createCollection(CollectionKind::Set);
     if (detail::isErrorValue(set)) return set;
     if (argc == 0) return set;
-    std::vector<Value*> values;
-    if (Value* err = collectEntries(ctx, argv[0], values)) return err;
-    for (Value* value : values) addValue(asCollection(set), value);
+    if (Value* err = addEntriesFromIterable(ctx, set, argv[0], "add", false)) {
+        return err;
+    }
     return set;
 }
 
@@ -130,20 +233,8 @@ Value* weakMapConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv
     Value* map = ctx->createCollection(CollectionKind::WeakMap);
     if (detail::isErrorValue(map)) return map;
     if (argc == 0) return map;
-    std::vector<Value*> entries;
-    if (Value* err = collectEntries(ctx, argv[0], entries)) return err;
-    for (Value* entry : entries) {
-        if (!detail::isObjectKind(entry->type()->kind())) {
-            return detail::typeError(ctx, "Iterator value is not an entry object");
-        }
-        Value* key = ctx->getProperty(entry, "0");
-        if (detail::isErrorValue(key)) return key;
-        if (!canBeHeldWeakly(key)) {
-            return detail::typeError(ctx, "Invalid value used as weak map key");
-        }
-        Value* value = ctx->getProperty(entry, "1");
-        if (detail::isErrorValue(value)) return value;
-        setEntry(asCollection(map), key, value);
+    if (Value* err = addEntriesFromIterable(ctx, map, argv[0], "set", true)) {
+        return err;
     }
     return map;
 }
@@ -152,13 +243,8 @@ Value* weakSetConstruct(IContext* ctx, Value* /*self*/, size_t argc, Value* argv
     Value* set = ctx->createCollection(CollectionKind::WeakSet);
     if (detail::isErrorValue(set)) return set;
     if (argc == 0) return set;
-    std::vector<Value*> values;
-    if (Value* err = collectEntries(ctx, argv[0], values)) return err;
-    for (Value* value : values) {
-        if (!canBeHeldWeakly(value)) {
-            return detail::typeError(ctx, "Invalid value used in weak set");
-        }
-        addValue(asCollection(set), value);
+    if (Value* err = addEntriesFromIterable(ctx, set, argv[0], "add", false)) {
+        return err;
     }
     return set;
 }
@@ -199,24 +285,32 @@ Value* mapDelete(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
     const size_t index = findEntry(d, argv[0]);
     if (index == static_cast<size_t>(-1)) return ctx->createBoolean(false);
-    d->entries.erase(d->entries.begin() + static_cast<std::ptrdiff_t>(index));
+    d->entries[index].key = nullptr;
+    d->entries[index].value = nullptr;
     return ctx->createBoolean(true);
 }
 
-Value* collectionClear(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
-    CollectionData* d = asCollection(self);
-    if (d == nullptr) {
-        return detail::typeError(ctx, "clear called on incompatible receiver");
-    }
+Value* collectionClear(IContext* ctx, Value* self, CollectionKind kind,
+                       const char* method) {
+    CollectionData* d = nullptr;
+    if (Value* err = requireCollection(ctx, self, kind, method, d)) return err;
     d->entries.clear();
     return ctx->createUndefined();
+}
+
+Value* mapClear(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    return collectionClear(ctx, self, CollectionKind::Map, "clear");
+}
+
+Value* setClear(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
+    return collectionClear(ctx, self, CollectionKind::Set, "clear");
 }
 
 Value* mapSizeGet(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     CollectionData* d = nullptr;
     if (Value* err = requireCollection(ctx, self, CollectionKind::Map, "size", d))
         return err;
-    return ctx->createNumber(static_cast<double>(d->entries.size()));
+    return ctx->createNumber(static_cast<double>(liveEntryCount(d)));
 }
 
 Value* mapForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
@@ -230,6 +324,7 @@ Value* mapForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* thisArg = argc > 1 ? argv[1] : ctx->createUndefined();
     // live 遍历：新增条目会被访问，删除的条目自然跳过。
     for (size_t i = 0; i < d->entries.size(); ++i) {
+        if (d->entries[i].key == nullptr) continue;
         Value* args[3] = {d->entries[i].value, d->entries[i].key, self};
         Value* result = ctx->call(callback, thisArg, 3, args);
         if (detail::isErrorValue(result)) return result;
@@ -261,7 +356,8 @@ Value* setDelete(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
     const size_t index = findEntry(d, argv[0]);
     if (index == static_cast<size_t>(-1)) return ctx->createBoolean(false);
-    d->entries.erase(d->entries.begin() + static_cast<std::ptrdiff_t>(index));
+    d->entries[index].key = nullptr;
+    d->entries[index].value = nullptr;
     return ctx->createBoolean(true);
 }
 
@@ -269,7 +365,7 @@ Value* setSizeGet(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]
     CollectionData* d = nullptr;
     if (Value* err = requireCollection(ctx, self, CollectionKind::Set, "size", d))
         return err;
-    return ctx->createNumber(static_cast<double>(d->entries.size()));
+    return ctx->createNumber(static_cast<double>(liveEntryCount(d)));
 }
 
 Value* setForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
@@ -282,6 +378,7 @@ Value* setForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     }
     Value* thisArg = argc > 1 ? argv[1] : ctx->createUndefined();
     for (size_t i = 0; i < d->entries.size(); ++i) {
+        if (d->entries[i].key == nullptr) continue;
         Value* value = d->entries[i].key;
         Value* args[3] = {value, value, self};
         Value* result = ctx->call(callback, thisArg, 3, args);
@@ -329,7 +426,8 @@ Value* weakMapDelete(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
     const size_t index = findEntry(d, argv[0]);
     if (index == static_cast<size_t>(-1)) return ctx->createBoolean(false);
-    d->entries.erase(d->entries.begin() + static_cast<std::ptrdiff_t>(index));
+    d->entries[index].key = nullptr;
+    d->entries[index].value = nullptr;
     return ctx->createBoolean(true);
 }
 
@@ -359,7 +457,8 @@ Value* weakSetDelete(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (argc == 0) return ctx->createBoolean(false);
     const size_t index = findEntry(d, argv[0]);
     if (index == static_cast<size_t>(-1)) return ctx->createBoolean(false);
-    d->entries.erase(d->entries.begin() + static_cast<std::ptrdiff_t>(index));
+    d->entries[index].key = nullptr;
+    d->entries[index].value = nullptr;
     return ctx->createBoolean(true);
 }
 
@@ -404,7 +503,16 @@ Value* collectionIteratorNext(IContext* ctx, Value* self, size_t /*argc*/,
         return createIterResultObject(ctx, ctx->createUndefined(), true);
     }
     CollectionData* d = asCollection(it->collection);
-    if (d == nullptr || it->index >= d->entries.size()) {
+    if (d == nullptr) {
+        it->collection = nullptr;
+        return createIterResultObject(ctx, ctx->createUndefined(), true);
+    }
+    // 跳过已删除的空槽，保持原始插入顺序。
+    while (it->index < d->entries.size() &&
+           d->entries[it->index].key == nullptr) {
+        ++it->index;
+    }
+    if (it->index >= d->entries.size()) {
         it->collection = nullptr;
         return createIterResultObject(ctx, ctx->createUndefined(), true);
     }
@@ -438,30 +546,52 @@ Value* createIterResultObject(IContext* ctx, Value* value, bool done) {
     return detail::isErrorValue(r) ? r : result;
 }
 
+// 内建方法契约：不可构造、无自有 prototype、length 与最小实参数分离。
+FunctionCreateOptions builtinMethodOptions() {
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    return opts;
+}
+
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    Value* f = ctx->createNativeFunction(fn, minArgc, {},
+                                         builtinMethodOptions());
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
+    if (ctx->defineProperty(f, "length", ctx->createNumber(static_cast<double>(minArgc)), false,
+                            false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     return ctx->defineProperty(target, name, f, true, false, true)->type()->kind() !=
            TypeKind::Exception;
 }
 
-bool defineSymbolMethod(IContext* ctx, Value* target, WellKnownSymbol which,
-                        const char* name, NativeFn fn, size_t minArgc) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
-    if (f == ctx->oomValue()) return false;
-    ctx->setFunctionName(f, name);
-    return ctx->defineProperty(target, ctx->getWellKnownSymbol(which), f, true, false,
-                               true)
-               ->type()->kind() != TypeKind::Exception;
-}
-
 bool defineGetter(IContext* ctx, Value* target, const char* name, NativeFn getter) {
-    Value* f = ctx->createNativeFunction(getter, 0);
+    Value* f = ctx->createNativeFunction(getter, 0, {},
+                                         builtinMethodOptions());
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, std::string("get ") + name);
     return ctx->defineAccessor(target, name, f, nullptr, false, true)
+               ->type()->kind() != TypeKind::Exception;
+}
+
+// @@species getter：返回 this（§24.1.2.2 / §24.2.2.2）。
+Value* collectionSpeciesGetter(IContext* /*ctx*/, Value* self, size_t /*argc*/,
+                               Value* /*argv*/[]) {
+    return self;
+}
+
+bool defineSymbolGetter(IContext* ctx, Value* target, WellKnownSymbol which,
+                        const char* name, NativeFn getter) {
+    Value* f = ctx->createNativeFunction(getter, 0, {},
+                                         builtinMethodOptions());
+    if (f == ctx->oomValue()) return false;
+    ctx->setFunctionName(f, std::string("get ") + name);
+    return ctx->defineAccessor(target, ctx->getWellKnownSymbol(which), f,
+                               nullptr, false, true)
                ->type()->kind() != TypeKind::Exception;
 }
 
@@ -534,23 +664,30 @@ bool registerCollectionBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, mapProto, "set", mapSet, 2)) return false;
     if (!defineMethod(ctx, mapProto, "has", mapHas, 1)) return false;
     if (!defineMethod(ctx, mapProto, "delete", mapDelete, 1)) return false;
-    if (!defineMethod(ctx, mapProto, "clear", collectionClear, 0)) return false;
+    if (!defineMethod(ctx, mapProto, "clear", mapClear, 0)) return false;
     if (!defineMethod(ctx, mapProto, "forEach", mapForEach, 1)) return false;
     if (!defineMethod(ctx, mapProto, "keys", mapKeys, 0)) return false;
     if (!defineMethod(ctx, mapProto, "values", mapValues, 0)) return false;
     if (!defineMethod(ctx, mapProto, "entries", mapEntries, 0)) return false;
     if (!defineGetter(ctx, mapProto, "size", mapSizeGet)) return false;
     if (!defineTag(ctx, mapProto, "Map")) return false;
-    if (!defineSymbolMethod(ctx, mapProto, WellKnownSymbol::Iterator,
-                            "[Symbol.iterator]", mapEntries, 0)) {
-        return false;
+    // Map.prototype[Symbol.iterator] 与 entries 是同一个函数对象（§24.1.3.12）。
+    {
+        Value* entriesFn = ctx->getProperty(mapProto, "entries");
+        if (detail::isErrorValue(entriesFn)) return false;
+        if (ctx->defineProperty(mapProto,
+                                ctx->getWellKnownSymbol(WellKnownSymbol::Iterator),
+                                entriesFn, true, false, true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
     }
 
     // —— 6. Set.prototype ——
     if (!defineMethod(ctx, setProto, "add", setAdd, 1)) return false;
     if (!defineMethod(ctx, setProto, "has", setHas, 1)) return false;
     if (!defineMethod(ctx, setProto, "delete", setDelete, 1)) return false;
-    if (!defineMethod(ctx, setProto, "clear", collectionClear, 0)) return false;
+    if (!defineMethod(ctx, setProto, "clear", setClear, 0)) return false;
     if (!defineMethod(ctx, setProto, "forEach", setForEach, 1)) return false;
     // keys 与 values 是同一个函数对象（§24.2.3.8 / §24.2.3.10）
     if (!defineMethod(ctx, setProto, "values", setValues, 0)) return false;
@@ -563,8 +700,11 @@ bool registerCollectionBuiltins(IContext* ctx) {
     if (!defineMethod(ctx, setProto, "entries", setEntries, 0)) return false;
     if (!defineGetter(ctx, setProto, "size", setSizeGet)) return false;
     if (!defineTag(ctx, setProto, "Set")) return false;
-    if (!defineSymbolMethod(ctx, setProto, WellKnownSymbol::Iterator,
-                            "[Symbol.iterator]", setValues, 0)) {
+    // Set.prototype[Symbol.iterator] 与 values 是同一个函数对象（§24.2.3.11）。
+    if (ctx->defineProperty(setProto,
+                            ctx->getWellKnownSymbol(WellKnownSymbol::Iterator),
+                            setValuesFn, true, false, true)
+            ->type()->kind() == TypeKind::Exception) {
         return false;
     }
 
@@ -586,6 +726,23 @@ bool registerCollectionBuiltins(IContext* ctx) {
     if (!registerCtor(ctx, "Set", setConstruct, setProto)) return false;
     if (!registerCtor(ctx, "WeakMap", weakMapConstruct, weakMapProto)) return false;
     if (!registerCtor(ctx, "WeakSet", weakSetConstruct, weakSetProto)) return false;
+
+    // Map / Set 的 @@species getter（§24.1.2.2 / §24.2.2.2）。
+    for (const char* name : {"Map", "Set"}) {
+        Value* ctor = ctx->getProperty(ctx->globalObject(), name);
+        if (detail::isErrorValue(ctor)) return false;
+        if (!defineSymbolGetter(ctx, ctor, WellKnownSymbol::Species,
+                                "[Symbol.species]", collectionSpeciesGetter)) {
+            return false;
+        }
+    }
+
+    // Map.groupBy（ES2024 §24.1.2.4）。
+    {
+        Value* mapCtor = ctx->getProperty(ctx->globalObject(), "Map");
+        if (detail::isErrorValue(mapCtor)) return false;
+        if (!defineMethod(ctx, mapCtor, "groupBy", mapGroupBy, 2)) return false;
+    }
     return true;
 }
 

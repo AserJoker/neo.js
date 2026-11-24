@@ -334,6 +334,7 @@ inline const char* typeofName(Value* v) {
         case TypeKind::String:    return "string";
         case TypeKind::Symbol:    return "symbol";
         case TypeKind::Function:  return "function";
+        case TypeKind::Proxy:     return isCallable(v) ? "function" : "object";
         default:
             // 其余对象布局类型（对象/数组/包装/Error/Promise/迭代器/协程...）
             // 都是 "object"；内部非对象值（Exception/Fatal/Interrupt/Uninitialized）

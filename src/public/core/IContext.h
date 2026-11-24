@@ -271,8 +271,11 @@ public:
     // description 可空；每次调用分配独立的 data，故同描述的两个 symbol 不相等
     // （唯一性 = data 身份，不可变类型按 ADR-019 §4 共享 data）。
     // 返回 Value*：正常 symbol，或 OOM 哨兵（ADR-031）。
+    // hasDescription=false 表示 [[Description]] 为 undefined（Symbol() /
+    // Symbol(undefined)），与 Symbol("") 的空字符串描述区分。
     virtual Value* createSymbol(std::string_view description = {},
-                                std::string_view name = {}) = 0;
+                                std::string_view name = {},
+                                bool hasDescription = true) = 0;
 
     // getWellKnownSymbol: 获取 well-known symbol（ES2024 §6.1.5.1）。
     // Context 创建时一次性生成全部 15 个，生命周期与 Context 一致，始终返回同一 Value。
@@ -1248,6 +1251,10 @@ public:
     // create* 内存耗尽时返回此单例，调用方用指针比较判断是否 OOM（v == ctx->oomValue()）。
     // OOM 属 Fatal（不可捕获），调用点检查到 Fatal 立即透传（ADR-017 §4）。
     virtual Value* oomValue() const = 0;
+
+    // %ThrowTypeError% 内建（§10.2.1）：严格 arguments 的 callee 访问器与
+    // Function.prototype.caller/arguments 共用同一函数对象。
+    virtual Value* throwTypeError() = 0;
 
     // —— 变量定义与赋值（ADR-030 阶段 5）——
     // define: 在 current scope 定义变量名。clone source 的 data 进新槽位。

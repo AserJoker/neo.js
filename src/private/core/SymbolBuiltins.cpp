@@ -36,13 +36,41 @@ namespace {
 // Symbol(description) —— 返回新 symbol。
 // description 走 ToString（ES2024 §20.4.1.1），可触发用户 toString。
 Value* symbolCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
-    std::string desc;
-    if (argc > 0 && argv[0]->type()->kind() != TypeKind::Undefined) {
-        Value* s = detail::toStringValue(ctx, argv[0]);
-        if (detail::isErrorValue(s)) return s;
-        desc = detail::valueToString(s);
+    if (argc == 0 || argv[0]->type()->kind() == TypeKind::Undefined) {
+        return ctx->createSymbol({}, {}, false);
     }
-    return ctx->createSymbol(desc);
+    Value* s = detail::toStringValue(ctx, argv[0]);
+    if (detail::isErrorValue(s)) return s;
+    return ctx->createSymbol(detail::valueToString(s));
+}
+
+// Symbol 的 [[Construct]]：始终抛 TypeError（§20.4.1.1）。
+Value* symbolConstruct(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                       Value* /*argv*/[]) {
+    return detail::typeError(ctx, "Symbol is not a constructor");
+}
+
+// thisSymbolValue：this 为 symbol 或 Symbol 包装对象时返回其 symbol，否则 TypeError。
+Value* thisSymbolValue(IContext* ctx, Value* self) {
+    Value* sym = self;
+    if (sym != nullptr && sym->type()->kind() == TypeKind::PrimitiveWrapper) {
+        sym = wrapperPrimitiveValue(sym);
+    }
+    if (sym == nullptr || sym->type()->kind() != TypeKind::Symbol) {
+        return detail::typeError(
+            ctx, "Symbol.prototype method requires that 'this' be a Symbol");
+    }
+    return sym;
+}
+
+// Symbol.prototype.description getter（ES2024 §20.4.3.2）。
+Value* symbolDescription(IContext* ctx, Value* self, size_t /*argc*/,
+                         Value* /*argv*/[]) {
+    Value* sym = thisSymbolValue(ctx, self);
+    if (detail::isErrorValue(sym)) return sym;
+    auto* d = static_cast<SymbolData*>(sym->data());
+    if (!d->hasDescription) return ctx->createUndefined();
+    return ctx->createString(d->description);
 }
 
 // Symbol.prototype.toString() —— this 必须是 symbol 或 Symbol 包装对象
@@ -87,8 +115,11 @@ Value* symbolFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
 
 // Symbol.keyFor(sym) —— 反查注册表 key（ES2024 §20.4.2.6）
 Value* symbolKeyFor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
-    if (argc == 0) return ctx->createUndefined();
-    return ctx->symbolKeyFor(argv[0]);
+    Value* sym = argc > 0 ? argv[0] : ctx->createUndefined();
+    if (sym->type()->kind() != TypeKind::Symbol) {
+        return detail::typeError(ctx, "Symbol.keyFor requires a symbol argument");
+    }
+    return ctx->symbolKeyFor(sym);
 }
 
 // 把值定义为 global object 属性（全局环境记录的对象记录）。
@@ -99,22 +130,52 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 }  // namespace
 
 bool registerSymbolBuiltins(IContext* ctx) {
-    // 1. Symbol 构造函数（普通函数，非构造函数语义）
+    // 1. Symbol 构造函数（普通函数，非构造函数语义；有 prototype 属性）
     Value* symbolFn = ctx->createNativeFunction(symbolCtor, 0);
     if (symbolFn == ctx->oomValue()) return false;
     ctx->setFunctionName(symbolFn, "Symbol");
+    ctx->setFunctionConstructor(symbolFn, symbolConstruct);
 
     // 2. Symbol.prototype：createNativeFunction 已自动创建，直接取用
     Value* proto = ctx->getProperty(symbolFn, "prototype");
     if (proto->type()->kind() != TypeKind::Object) return false;
 
+    // 内建方法契约：不可构造、无自有 prototype、length 与最小实参数分离。
+    FunctionCreateOptions methodOpts;
+    methodOpts.constructible = false;
+    methodOpts.hasPrototypeProperty = false;
+    const auto defineMethod = [&](Value* target, Value* key, NativeFn fn,
+                                  std::string_view name, double length,
+                                  bool writable = true) -> bool {
+        Value* f = ctx->createNativeFunction(fn, 0, {}, methodOpts);
+        if (f == ctx->oomValue()) return false;
+        ctx->setFunctionName(f, name);
+        if (ctx->defineProperty(f, "length", ctx->createNumber(length), false,
+                                false, true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
+        return ctx->defineProperty(target, key, f, writable, false, true)
+                   ->type()->kind() != TypeKind::Exception;
+    };
+
     // 2a. prototype.toString
-    Value* toStringFn = ctx->createNativeFunction(symbolToString, 0);
-    if (toStringFn == ctx->oomValue()) return false;
-    ctx->setFunctionName(toStringFn, "toString");
-    if (ctx->defineProperty(proto, "toString", toStringFn, true, false, true)->type()->kind() ==
-        TypeKind::Exception) {
+    if (!defineMethod(proto, ctx->createString("toString"), symbolToString,
+                      "toString", 0)) {
         return false;
+    }
+
+    // 2a'. prototype.description getter（ES2024 §20.4.3.2）
+    {
+        Value* getter = ctx->createNativeFunction(symbolDescription, 0, {},
+                                                  methodOpts);
+        if (getter == ctx->oomValue()) return false;
+        ctx->setFunctionName(getter, "get description");
+        if (ctx->defineAccessor(proto, "description", getter, nullptr, false,
+                                true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
     }
 
     // 2b. prototype[Symbol.toStringTag] = "Symbol"
@@ -125,12 +186,8 @@ bool registerSymbolBuiltins(IContext* ctx) {
     }
 
     // 2c. prototype[Symbol.toPrimitive]（ES2024 §20.4.3.5）
-    Value* toPrimFn = ctx->createNativeFunction(symbolToPrimitive, 0);
-    if (toPrimFn == ctx->oomValue()) return false;
-    ctx->setFunctionName(toPrimFn, "[Symbol.toPrimitive]");
-    if (ctx->defineProperty(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToPrimitive),
-                            toPrimFn, false, false, true)
-            ->type()->kind() == TypeKind::Exception) {
+    if (!defineMethod(proto, ctx->getWellKnownSymbol(WellKnownSymbol::ToPrimitive),
+                      symbolToPrimitive, "[Symbol.toPrimitive]", 1, false)) {
         return false;
     }
 
@@ -147,19 +204,12 @@ bool registerSymbolBuiltins(IContext* ctx) {
 
     // 4. Symbol.for / Symbol.keyFor（不可写/不可枚举/可配置，ES2024 §20.4.2.2）
     // minArgc=0：无参时按 undefined 处理（ES 规范不要求参数个数）
-    Value* forFn = ctx->createNativeFunction(symbolFor, 0);
-    if (forFn == ctx->oomValue()) return false;
-    ctx->setFunctionName(forFn, "for");
-    if (ctx->defineProperty(symbolFn, "for", forFn, true, false, true)->type()->kind() ==
-        TypeKind::Exception) {
+    if (!defineMethod(symbolFn, ctx->createString("for"), symbolFor, "for",
+                      1)) {
         return false;
     }
-
-    Value* keyForFn = ctx->createNativeFunction(symbolKeyFor, 0);
-    if (keyForFn == ctx->oomValue()) return false;
-    ctx->setFunctionName(keyForFn, "keyFor");
-    if (ctx->defineProperty(symbolFn, "keyFor", keyForFn, true, false, true)->type()->kind() ==
-        TypeKind::Exception) {
+    if (!defineMethod(symbolFn, ctx->createString("keyFor"), symbolKeyFor,
+                      "keyFor", 1)) {
         return false;
     }
 

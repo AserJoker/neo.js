@@ -74,7 +74,7 @@ class Context : public IContext {
     std::vector<CallFrame> callStack_;
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
     // %ThrowTypeError%（unmapped arguments 的 callee 访问器），惰性创建并挂 global。
-    Value* argumentsThrower_ = nullptr;
+    Value* throwTypeError_ = nullptr;
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
     // 内建原型（ADR-035）：Object.prototype 是所有普通对象原型链的终点，
     // Function.prototype 是所有函数对象的原型（其自身原型是 Object.prototype）。
@@ -299,7 +299,8 @@ public:
                         std::string_view name = {}) override;
     Value* createString(std::string_view s, std::string_view name = {}) override;
     Value* createSymbol(std::string_view description = {},
-                        std::string_view name = {}) override;
+                        std::string_view name = {},
+                        bool hasDescription = true) override;
     Value* getWellKnownSymbol(WellKnownSymbol which) const override {
         return wellKnownSymbols_[static_cast<uint8_t>(which)];
     }
@@ -691,6 +692,7 @@ public:
 
     // OOM 哨兵
     Value* oomValue() const override { return oomValue_; }
+    Value* throwTypeError() override;
 
     // 变量定义与赋值
     Value* define(std::string_view name, Value* source,

@@ -230,8 +230,10 @@ TEST(SymbolTest, PropertyOpsBehaveLikePrimitive) {
 
     Value* sym = ctx->createSymbol("s");
     EXPECT_EQ(ctx->getProperty(sym, "x")->type()->kind(), TypeKind::Undefined);
-    EXPECT_EQ(ctx->setProperty(sym, "x", ctx->createNumber(1))->type()->kind(),
-              TypeKind::Exception);
+    // sloppy 作用域：对原始值 set 静默丢弃，返回 RHS（§10.1.9）
+    Value* rhs = ctx->createNumber(1);
+    EXPECT_EQ(ctx->setProperty(sym, "x", rhs), rhs);
+    EXPECT_EQ(ctx->getProperty(sym, "x")->type()->kind(), TypeKind::Undefined);
     EXPECT_FALSE(neo::test::hasProperty(ctx, sym, "x"));
     EXPECT_EQ(ctx->deleteProperty(sym, "x")->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(ctx->defineProperty(sym, "x", ctx->createNumber(2))->type()->kind(),

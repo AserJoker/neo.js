@@ -81,10 +81,14 @@ Metadata parseMetadata(std::string_view source) {
     std::string currentKey;
     size_t pos = 0;
     while (pos < body.size()) {
-        size_t lineEnd = body.find('\n', pos);
+        // 行终止符兼容 CR / LF / CRLF（Test262 含 CR-only 用例）。
+        size_t lineEnd = body.find_first_of("\r\n", pos);
         if (lineEnd == std::string_view::npos) lineEnd = body.size();
         std::string_view line = body.substr(pos, lineEnd - pos);
-        pos = lineEnd + 1;
+        pos = lineEnd;
+        while (pos < body.size() && (body[pos] == '\r' || body[pos] == '\n')) {
+            ++pos;
+        }
 
         std::string_view trimmed = trimView(line);
         if (trimmed.empty() || trimmed.front() == '#') continue;

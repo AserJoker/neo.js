@@ -225,6 +225,7 @@ Value* numberToFixed(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* err = nullptr;
     double raw = toIntegerOrInfinity(ctx, argOrUndefined(ctx, argc, argv, 0), err);
     if (err != nullptr) return err;
+    // §21.1.3.3：digits 范围检查（含非有限 f）先于非有限 x 的返回。
     if (raw < 0.0 || raw > 100.0) {
         return detail::rangeError(ctx, "toFixed() digits argument must be between 0 and 100");
     }
@@ -293,12 +294,13 @@ Value* numberToExponential(IContext* ctx, Value* self, size_t argc, Value* argv[
     Value* err = nullptr;
     double raw = hasDigits ? toIntegerOrInfinity(ctx, argv[0], err) : 0.0;
     if (err != nullptr) return err;
+    // §21.1.3.2：非有限值在 fractionDigits 范围检查之前直接返回。
+    if (std::isnan(x)) return ctx->createString("NaN");
+    if (std::isinf(x)) return ctx->createString(x > 0 ? "Infinity" : "-Infinity");
     if (hasDigits && (raw < 0.0 || raw > 100.0)) {
         return detail::rangeError(
             ctx, "toExponential() argument must be between 0 and 100");
     }
-    if (std::isnan(x)) return ctx->createString("NaN");
-    if (std::isinf(x)) return ctx->createString(x > 0 ? "Infinity" : "-Infinity");
 
     const bool negative = std::signbit(x) && x != 0.0;
     if (x == 0.0) {
@@ -360,12 +362,13 @@ Value* numberToPrecision(IContext* ctx, Value* self, size_t argc, Value* argv[])
     Value* err = nullptr;
     double raw = toIntegerOrInfinity(ctx, argv[0], err);
     if (err != nullptr) return err;
+    // §21.1.3.5：非有限值在 precision 范围检查之前直接返回。
+    if (std::isnan(x)) return ctx->createString("NaN");
+    if (std::isinf(x)) return ctx->createString(x > 0 ? "Infinity" : "-Infinity");
     if (raw < 1.0 || raw > 100.0) {
         return detail::rangeError(ctx, "toPrecision() argument must be between 1 and 100");
     }
     const size_t precision = static_cast<size_t>(raw);
-    if (std::isnan(x)) return ctx->createString("NaN");
-    if (std::isinf(x)) return ctx->createString(x > 0 ? "Infinity" : "-Infinity");
 
     ExactDecimal ex = exactDecimal(x);
     std::string digits;
@@ -529,7 +532,11 @@ Value* numberIsSafeInteger(IContext* ctx, Value* /*self*/, size_t argc, Value* a
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc, int lengthOverride) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    // 内建方法不可构造且无自有 prototype 属性（§20.3.3 等）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     if (lengthOverride >= 0) {
@@ -563,10 +570,11 @@ bool registerNumberBuiltins(IContext* ctx, Value* numberFn, Value* proto) {
     // toString 已由包装类注册；这里用支持 radix 的实现覆盖。
     if (!defineMethod(ctx, proto, "toString", numberToStringRadix, 0, 1)) return false;
 
-    if (!defineMethod(ctx, numberFn, "isFinite", numberIsFinite, 1, 1)) return false;
-    if (!defineMethod(ctx, numberFn, "isNaN", numberIsNaN, 1, 1)) return false;
-    if (!defineMethod(ctx, numberFn, "isInteger", numberIsInteger, 1, 1)) return false;
-    if (!defineMethod(ctx, numberFn, "isSafeInteger", numberIsSafeInteger, 1, 1))
+    // 零实参合法（返回 false），length 仍为 1：最小实参数与 length 分离。
+    if (!defineMethod(ctx, numberFn, "isFinite", numberIsFinite, 0, 1)) return false;
+    if (!defineMethod(ctx, numberFn, "isNaN", numberIsNaN, 0, 1)) return false;
+    if (!defineMethod(ctx, numberFn, "isInteger", numberIsInteger, 0, 1)) return false;
+    if (!defineMethod(ctx, numberFn, "isSafeInteger", numberIsSafeInteger, 0, 1))
         return false;
 
     // Number.parseInt / Number.parseFloat 与全局函数同值。

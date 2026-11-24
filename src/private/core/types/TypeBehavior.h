@@ -44,50 +44,103 @@ namespace neo::core::detail {
 // 其余走 strtod 解析（"42"→42, "3.14"→3.14, "1e309"→Infinity, "x"→NaN）。
 // 注意 JS 只认精确大小写的 "Infinity"（"infinity"/"INF" → NaN），
 // 而 strtod 大小写不敏感会解析 "inf"/"infinity" → inf，故需特判拦截。
-inline double stringToNumber(const std::string& s) {
-    // 跳过前导空白
+// JS WhiteSpace（ES2024 §11.2）：TAB/VT/FF/SP/NBSP/BOM + Unicode Zs + 行终止符。
+inline bool isJsWhiteSpace(uint32_t cp) {
+    switch (cp) {
+        case 0x0009: case 0x000A: case 0x000B: case 0x000C: case 0x000D:
+        case 0x0020: case 0x00A0: case 0x1680: case 0x2028: case 0x2029:
+        case 0x202F: case 0x205F: case 0x3000: case 0xFEFF:
+            return true;
+        default:
+            return cp >= 0x2000 && cp <= 0x200A;
+    }
+}
+
+// 解析无符号非十进制整数字面量（0x/0o/0b 的 digits 部分）。
+// 至少一位且全部合法，否则 NaN。
+inline double parseRadixInteger(std::string_view digits, unsigned radix) {
+    if (digits.empty()) return std::nan("");
+    long double value = 0.0L;
+    for (const char ch : digits) {
+        unsigned d = 0;
+        if (ch >= '0' && ch <= '9') d = static_cast<unsigned>(ch - '0');
+        else if (ch >= 'a' && ch <= 'f') d = static_cast<unsigned>(ch - 'a') + 10;
+        else if (ch >= 'A' && ch <= 'F') d = static_cast<unsigned>(ch - 'A') + 10;
+        else return std::nan("");
+        if (d >= radix) return std::nan("");
+        value = value * static_cast<long double>(radix) + static_cast<long double>(d);
+    }
+    return static_cast<double>(value);
+}
+
+// StrDecimalLiteral 文法校验（不含 Infinity，已在调用方特判）：
+//   [+-] ( DecimalDigits [. DecimalDigits?] | . DecimalDigits ) [ExponentPart]
+inline bool isValidDecimalLiteral(std::string_view t) {
     size_t i = 0;
-    while (i < s.size() && (s[i] == ' ' || s[i] == '\t' || s[i] == '\n' || s[i] == '\r')) ++i;
-    if (i >= s.size()) return 0.0;  // 空串或全空白 → +0
-    // 跳过尾部空白，得到有效内容 [i, j)
-    size_t j = s.size();
-    while (j > i && (s[j-1] == ' ' || s[j-1] == '\t' || s[j-1] == '\n' || s[j-1] == '\r')) --j;
-    size_t len = j - i;
-    // JS 特判：仅 "Infinity" / "+Infinity" / "-Infinity" 精确匹配 → ±Infinity
-    // （strtod 大小写不敏感会误判 "infinity"/"INF"，须在 strtod 前拦截）
-    if (len == 8 && s.compare(i, 8, "Infinity") == 0) {
-        return std::numeric_limits<double>::infinity();
+    const size_t n = t.size();
+    if (i < n && (t[i] == '+' || t[i] == '-')) ++i;
+    bool digits = false;
+    while (i < n && t[i] >= '0' && t[i] <= '9') { ++i; digits = true; }
+    if (i < n && t[i] == '.') {
+        ++i;
+        while (i < n && t[i] >= '0' && t[i] <= '9') { ++i; digits = true; }
     }
-    if (len == 9 && s[i] == '+' && s.compare(i+1, 8, "Infinity") == 0) {
-        return std::numeric_limits<double>::infinity();
+    if (!digits) return false;
+    if (i < n && (t[i] == 'e' || t[i] == 'E')) {
+        ++i;
+        if (i < n && (t[i] == '+' || t[i] == '-')) ++i;
+        const size_t expStart = i;
+        while (i < n && t[i] >= '0' && t[i] <= '9') ++i;
+        if (i == expStart) return false;
     }
-    if (len == 9 && s[i] == '-' && s.compare(i+1, 8, "Infinity") == 0) {
-        return -std::numeric_limits<double>::infinity();
+    return i == n;
+}
+
+inline double stringToNumber(const std::string& s) {
+    // 按码点裁剪 JS WhiteSpace（含 NBSP/BOM/Unicode Zs）。
+    size_t begin = 0;
+    while (begin < s.size()) {
+        size_t i = begin;
+        uint32_t cp = 0;
+        if (!unicode::decodeCodePoint(s, i, cp) || !isJsWhiteSpace(cp)) break;
+        begin = i;
     }
-    // 其余走 strtod（"42"/"3.14"/"1e309"/"0x1F" 等）
-    // 注：strtod 不认 "NaN" 字面量（C 标准未要求），未匹配时 end==start → NaN。
-    //     但 strtod 大小写不敏感会解析 "inf"/"infinity"/"INF" → inf，
-    //     合法的 "Infinity" 已在上方特判返回，此处 strtod 若得 inf 需区分：
-    //     数字溢出（如 "1e309"）合法 → inf；字面量误判（如 "infinity"）→ NaN。
-    //     区分依据：trim 后首字符是数字或符号后跟数字 → 合法溢出；否则 → 误判。
-    const char* start = s.c_str() + i;
-    char* end = nullptr;
-    double result = std::strtod(start, &end);
-    // 跳过尾部空白（strtod 保证 end 非 nullptr）
-    while (*end != '\0' &&
-           (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r')) {
-        ++end;
+    size_t end = begin;
+    size_t scan = begin;
+    while (scan < s.size()) {
+        size_t i = scan;
+        uint32_t cp = 0;
+        if (!unicode::decodeCodePoint(s, i, cp)) {
+            ++scan;
+            end = scan;
+            continue;
+        }
+        if (!isJsWhiteSpace(cp)) end = i;
+        scan = i;
     }
-    // 未完全消费 → NaN
-    if (*end != '\0') return std::nan("");
-    // strtod 得 inf：若首字符非数字/符号 → 字面量误判（"infinity"/"INF"）→ NaN；
-    // 若是数字/符号开头 → 合法溢出（"1e309"）→ 保留 inf。
-    if (std::isinf(result)) {
-        char c = s[i];
-        if (c == '+' || c == '-') c = s[i + 1];  // 跳过符号看实际首字符
-        if (c < '0' || c > '9') return std::nan("");  // 非数字开头 → 误判
+    if (begin >= end) return 0.0;  // 空串或全空白 → +0
+    const std::string_view t(s.data() + begin, end - begin);
+
+    // Infinity 仅精确匹配（strtod 大小写不敏感会误判 "inf"/"INF"）。
+    if (t == "Infinity") return std::numeric_limits<double>::infinity();
+    if (t == "+Infinity") return std::numeric_limits<double>::infinity();
+    if (t == "-Infinity") return -std::numeric_limits<double>::infinity();
+
+    // 非十进制整数字面量：0x/0o/0b（不允许前导符号）。
+    if (t.size() >= 2 && t[0] == '0') {
+        switch (t[1]) {
+            case 'x': case 'X': return parseRadixInteger(t.substr(2), 16);
+            case 'o': case 'O': return parseRadixInteger(t.substr(2), 8);
+            case 'b': case 'B': return parseRadixInteger(t.substr(2), 2);
+            default: break;
+        }
     }
-    return result;
+
+    // 十进制：先按文法校验，再交给 strtod 做正确舍入
+    // （strtod 会接受 0x/hex、inf/nan 等 JS 不接受的扩展，须前置拦截）。
+    if (!isValidDecimalLiteral(t)) return std::nan("");
+    const std::string tmp(t);
+    return std::strtod(tmp.c_str(), nullptr);
 }
 
 // —— ToBoolean 转换（ES2024 §7.1.2）——
@@ -703,12 +756,14 @@ inline Value* ordinaryHasInstance(IContext* ctx, Value* ctor, Value* obj) {
         return typeError(ctx, "Function has non-object prototype in instanceof check");
     }
 
-    for (Value* cur = ctx->getPrototype(obj);
-         cur != nullptr && isObjectKind(cur->type()->kind());
-         cur = ctx->getPrototype(cur)) {
+    // 逐跳 [[GetPrototypeOf]]：Proxy 等可抛错，错误须透传而非当作链终止。
+    Value* cur = ctx->getPrototype(obj);
+    while (true) {
         if (isErrorValue(cur)) return cur;
+        if (cur == nullptr || !isObjectKind(cur->type()->kind())) break;
         // 原型跨域复制后 Value* 不同但共享 data，按对象身份比较 data（ADR-065 §4）。
         if (cur->data() == proto->data()) return ctx->createBoolean(true);
+        cur = ctx->getPrototype(cur);
     }
     return ctx->createBoolean(false);
 }
@@ -812,7 +867,16 @@ inline Value* primitiveGetProperty(IContext* ctx, Value* self, Value* key) {
 }
 
 inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,
-                                   Value* /*value*/) {
+                                   Value* value) {
+    // null/undefined 的 PutValue 恒抛 TypeError（§7.1.5），与严格性无关。
+    const TypeKind kind = self->type()->kind();
+    if (kind == TypeKind::Null || kind == TypeKind::Undefined) {
+        std::string msg = "Cannot set property '" + keyToString(key) + "' of " +
+                          std::string(self->type()->name());
+        return typeError(ctx, msg);
+    }
+    // 其余原始值：ToObject 后写入的是临时包装对象，sloppy 静默丢弃（§10.1.9）。
+    if (value != nullptr && !ctx->hasFlag("strict")) return value;
     std::string msg = "Cannot set property '" + keyToString(key) + "' of " +
                       std::string(self->type()->name());
     return typeError(ctx, msg);

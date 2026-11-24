@@ -89,6 +89,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <new>
@@ -168,15 +169,15 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         wellKnownSymbols_[i] = v;
     }
 
-    // 7. 注册 Symbol 包装类（构造函数 + prototype.toString + well-known 属性）。
-    //    依赖 well-known symbols 已就绪；失败说明系统不可用，abort。
-    if (!registerSymbolBuiltins(this)) {
+    // 7. 建立内建原型链并注册 Object / Function 构造函数（ADR-035）。
+    //    必须最先注册：其它内建创建的对象/函数据此自动挂链。
+    if (!registerObjectFunctionBuiltins(this)) {
         std::abort();
     }
 
-    // 8. 建立内建原型链并注册 Object / Function 构造函数（ADR-035）。
-    //    必须在其它内建之后：此前创建的对象/函数不挂链，之后自动挂。
-    if (!registerObjectFunctionBuiltins(this)) {
+    // 8. 注册 Symbol 包装类（构造函数 + prototype.toString + well-known 属性）。
+    //    依赖 Object.prototype / Function.prototype 已就绪。
+    if (!registerSymbolBuiltins(this)) {
         std::abort();
     }
     // global object 在 Object.prototype 就绪前创建（原型为 null），此处回填。
@@ -489,9 +490,12 @@ Value* Context::createString(std::string_view s, std::string_view name) {
     return createTracked(getStringType(), gc_->allocData<StringData>(s), name);
 }
 
-Value* Context::createSymbol(std::string_view description, std::string_view name) {
+Value* Context::createSymbol(std::string_view description, std::string_view name,
+                             bool hasDescription) {
     // 每次创建分配独立的 SymbolData：唯一性由 data 身份保证
-    return createTracked(getSymbolType(), gc_->allocData<SymbolData>(description), name);
+    return createTracked(getSymbolType(),
+                         gc_->allocData<SymbolData>(description, hasDescription),
+                         name);
 }
 
 // —— Symbol 注册表（ES2024 §20.4.2.1 / §20.4.2.6）——
@@ -1969,8 +1973,10 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
         if (proto == oomValue_) return proto;
         static_cast<ObjectData*>(fnValue->data())->prototype = proto;
     }
-    // 绑定函数的 name = "bound " + target.name（ES2024 §10.4.1.3 step 6）
+    // 绑定函数的 name = "bound " + target.name（ES2024 §10.4.1.3 step 6）。
+    // Get(Target, "name") 的错误须透传（getter 可抛）。
     Value* targetName = getProperty(target, "name");
+    if (detail::isErrorValue(targetName)) return targetName;
     std::string name = "bound ";
     if (targetName->type()->kind() == TypeKind::String) {
         name += static_cast<StringData*>(targetName->data())->value;
@@ -1978,13 +1984,38 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     Value* nameValue = createString(name);
     if (nameValue == oomValue_) return nameValue;
     defineProperty(fnValue, "name", nameValue, false, false, true);
-    // 绑定函数的 length = max(0, target.length - boundArgs.size())（ES2024 §10.4.1.3）
-    Value* targetLength = getProperty(target, "length");
+    // 绑定函数的 length（ES2024 §10.4.1.3 step 5-8）：
+    //   仅当 target 有自有 "length" 且值为 Number 时参与计算；
+    //   NaN→0，±∞ 按规范，其余 ToIntegerOrInfinity 后减去已绑定实参数。
     double len = 0.0;
-    if (targetLength->type()->kind() == TypeKind::Number) {
-        len = static_cast<NumberData*>(targetLength->data())->value -
-              static_cast<double>(argc);
-        if (len < 0.0) len = 0.0;
+    {
+        Value* lenKey = createString("length");
+        if (lenKey == oomValue_) return lenKey;
+        PropertyKey pk;
+        if (Value* err = neo::core::toPropertyKey(this, lenKey, pk)) return err;
+        bool exists = false;
+        Property desc;
+        if (Value* err =
+                target->type()->getOwnProperty(this, target, pk, exists, desc)) {
+            return err;
+        }
+        if (exists) {
+            Value* targetLength = getProperty(target, "length");
+            if (detail::isErrorValue(targetLength)) return targetLength;
+            if (targetLength->type()->kind() == TypeKind::Number) {
+                const double raw =
+                    static_cast<NumberData*>(targetLength->data())->value;
+                if (std::isnan(raw)) {
+                    len = 0.0;
+                } else if (std::isinf(raw)) {
+                    len = raw > 0.0 ? raw : 0.0;
+                } else {
+                    len = std::trunc(raw) - static_cast<double>(argc);
+                    // max(...,0) 同时把 -0 归一为 +0。
+                    if (!(len > 0.0)) len = 0.0;
+                }
+            }
+        }
     }
     Value* lengthValue = createNumber(len);
     if (lengthValue == oomValue_) return lengthValue;
@@ -2042,6 +2073,20 @@ Value* Context::createArray(std::string_view bindName) {
     return arr;
 }
 
+Value* Context::throwTypeError() {
+    if (throwTypeError_ != nullptr) return throwTypeError_;
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    opts.strict = true;
+    Value* thrower = createNativeFunction(throwTypeErrorNative, 0, {}, opts);
+    if (thrower == oomValue_) return thrower;
+    setFunctionName(thrower, "");
+    global_->add(thrower);
+    throwTypeError_ = thrower;
+    return thrower;
+}
+
 Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
                                       bool mapped) {
     Scope* env = currentFunctionEnv();
@@ -2079,20 +2124,9 @@ Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
         Value* r = defineProperty(obj, "callee", callee, true, false, true);
         if (detail::isErrorValue(r)) return r;
     } else {
-        if (argumentsThrower_ == nullptr) {
-            FunctionCreateOptions opts;
-            opts.constructible = false;
-            opts.hasPrototypeProperty = false;
-            opts.strict = true;
-            Value* thrower =
-                createNativeFunction(throwTypeErrorNative, 0, {}, opts);
-            if (thrower == oomValue_) return thrower;
-            setFunctionName(thrower, "ThrowTypeError");
-            global_->add(thrower);
-            argumentsThrower_ = thrower;
-        }
-        Value* r = defineAccessor(obj, "callee", argumentsThrower_,
-                                  argumentsThrower_, false, true);
+        Value* thrower = throwTypeError();
+        if (thrower == oomValue_) return thrower;
+        Value* r = defineAccessor(obj, "callee", thrower, thrower, false, true);
         if (detail::isErrorValue(r)) return r;
     }
 

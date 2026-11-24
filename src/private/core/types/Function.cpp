@@ -58,6 +58,28 @@ Value* checkMinArgc(IContext* ctx, const FunctionData* d, size_t argc) {
     return detail::typeError(ctx, msg);
 }
 
+// GetPrototypeFromConstructor（§9.1.14）：取 newTarget.prototype；非对象时
+// 经 GetFunctionRealm（§7.3.22）回退到本 realm 的 %Object.prototype%。
+// 单 realm 下唯一可观测的失败是已撤销 Proxy（GetFunctionRealm 步骤 4.a）。
+Value* prototypeFromConstructor(IContext* ctx, Value* newTarget) {
+    Value* proto = ctx->getProperty(newTarget, "prototype");
+    if (detail::isErrorValue(proto)) return proto;
+    if (detail::isObjectKind(proto->type()->kind())) return proto;
+
+    Value* cur = newTarget;
+    while (cur != nullptr && cur->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(cur->data());
+        if (d->boundTarget == nullptr) break;
+        cur = d->boundTarget;
+    }
+    if (cur != nullptr && cur->type()->kind() == TypeKind::Proxy &&
+        proxyHandler(cur) == nullptr) {
+        return detail::typeError(ctx,
+                                 "Cannot get function realm from revoked Proxy");
+    }
+    return ctx->objectPrototype();
+}
+
 }  // namespace
 
 Value* FunctionType::call(IContext* ctx, Value* self, Value* thisArg,
@@ -277,13 +299,12 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
         }
 
         // 基类：OrdinaryCreateFromConstructor(newTarget)，字段由 VM 初始化。
-        Value* proto = ctx->getProperty(nt, "prototype");
+        Value* proto = prototypeFromConstructor(ctx, nt);
+        if (detail::isErrorValue(proto)) return proto;
         Value* thisObj = ctx->createObject();
         if (thisObj == ctx->oomValue()) return thisObj;
-        if (detail::isObjectKind(proto->type()->kind())) {
-            Value* r = ctx->setPrototype(thisObj, proto);
-            if (r->type()->kind() == TypeKind::Exception) return r;
-        }
+        Value* r = ctx->setPrototype(thisObj, proto);
+        if (r->type()->kind() == TypeKind::Exception) return r;
         Value* res = d->isScript
                          ? invokeScriptFunction(ctx, self, thisObj, argc, argv, nt)
                          : invokeNativeFunction(ctx, self, thisObj, argc, argv,
@@ -299,13 +320,12 @@ Value* FunctionType::construct(IContext* ctx, Value* self, size_t argc, Value* a
     // script 函数：新建 this（原型取 newTarget.prototype），以 this 运行函数体。
     // 返回值按 [[Construct]] 语义处理：对象覆盖 this，原始值忽略。
     if (d->isScript) {
-        Value* proto = ctx->getProperty(nt, "prototype");
+        Value* proto = prototypeFromConstructor(ctx, nt);
+        if (detail::isErrorValue(proto)) return proto;
         Value* thisObj = ctx->createObject();
         if (thisObj == ctx->oomValue()) return thisObj;
-        if (detail::isObjectKind(proto->type()->kind())) {
-            Value* r = ctx->setPrototype(thisObj, proto);
-            if (r->type()->kind() == TypeKind::Exception) return r;
-        }
+        Value* r = ctx->setPrototype(thisObj, proto);
+        if (r->type()->kind() == TypeKind::Exception) return r;
         Value* res = invokeScriptFunction(ctx, self, thisObj, argc, argv, nt);
         if (res == nullptr) return thisObj;
         TypeKind rk = res->type()->kind();

@@ -34,15 +34,6 @@ namespace {
 
 Value* toObjectOrThrow(IContext* ctx, Value* v);
 
-// Function.prototype 的 caller/arguments 受限访问器（ES2024 §20.2.3.3/§20.2.3.4）：
-// 读写都抛 TypeError；严格函数在自身定义同名访问器（§10.2.1.2）。
-Value* restrictedFunctionProperty(IContext* ctx, Value*, size_t, Value*[]) {
-    return detail::typeError(
-        ctx,
-        "'caller', 'callee', and 'arguments' properties may not be accessed on "
-        "strict mode functions or the arguments objects for calls to them");
-}
-
 // —— Object.prototype 方法 ——
 
 // Object.prototype.toString()（ES2024 §20.1.3.6）：
@@ -323,11 +314,11 @@ Value* objectProtoToLocaleString(IContext* ctx, Value* self, size_t /*argc*/,
 // 有源码切片时返回切片文本；native/裁剪后无源码时返回 "[native code]"。
 Value* functionProtoToString(IContext* ctx, Value* self, size_t /*argc*/,
                              Value* /*argv*/[]) {
-    // Proxy 没有源码表示，规范要求抛 TypeError（ES2024 §20.2.3.5 step 2）。
-    if (self != nullptr && self->type()->kind() == TypeKind::Proxy) {
-        return detail::typeError(ctx, "Function.prototype.toString on Proxy");
+    // 非可调用 this 抛 TypeError；可调用 Proxy 无源码，落到 NativeFunction 形式。
+    if (self == nullptr || !detail::isCallable(self)) {
+        return detail::typeError(ctx, "Function.prototype.toString called on non-function");
     }
-    if (self != nullptr && self->type()->kind() == TypeKind::Function) {
+    if (self->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(self->data());
         if (d->source.source != nullptr) {
             const std::string& text = d->source.source->text;
@@ -429,6 +420,12 @@ Value* objectCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
 // Function(...args) / new Function(...args)（ES2024 §20.2.1.1）：
 // 前 n-1 个参数是形参源码（逗号拼接），最后一个参数是函数体源码。
 // 在全局环境创建，不捕获调用方作用域；严格性只由函数体自身的指令序言决定。
+// Function.prototype 自身：可调用、接受任意参数、返回 undefined（§20.2.3）。
+Value* functionProtoNoop(IContext* ctx, Value* /*self*/, size_t /*argc*/,
+                         Value* /*argv*/[]) {
+    return ctx->createUndefined();
+}
+
 Value* functionCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
     std::string params;
     std::string body;
@@ -1027,7 +1024,7 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     FunctionCreateOptions fprotoOpts;
     fprotoOpts.constructible = false;
     fprotoOpts.hasPrototypeProperty = false;
-    Value* functionProto = ctx->createNativeFunction(functionCtor, 0, {}, fprotoOpts);
+    Value* functionProto = ctx->createNativeFunction(functionProtoNoop, 0, {}, fprotoOpts);
     if (functionProto == ctx->oomValue()) return false;
     ctx->setFunctionName(functionProto, "");
     if (ctx->setPrototype(functionProto, objectProto)->type()->kind() == TypeKind::Exception) {
@@ -1061,6 +1058,11 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     Value* functionFn = ctx->createNativeFunction(functionCtor, 0);
     if (functionFn == ctx->oomValue()) return false;
     ctx->setFunctionName(functionFn, "Function");
+    // Function.length = 1（§20.2.1.1），允许零实参调用。
+    if (ctx->defineProperty(functionFn, "length", ctx->createNumber(1.0), false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
     // Function.prototype 属性指向 functionProto（不可写/不可枚举/不可配置）
     if (ctx->defineProperty(functionFn, "prototype", functionProto, false, false, false)
             ->type()->kind() == TypeKind::Exception) {
@@ -1124,15 +1126,27 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
     // —— 6. Function.prototype 方法 ——
     if (!defineMethod(ctx, functionProto, "toString", functionProtoToString, 0)) return false;
     // minArgc=0：无参调用合法（thisArg 按 undefined 处理，ES2024 §20.2.3.3）
-    if (!defineMethod(ctx, functionProto, "call", functionProtoCall, 0)) return false;
-    if (!defineMethod(ctx, functionProto, "apply", functionProtoApply, 0)) return false;
-    if (!defineMethod(ctx, functionProto, "bind", functionProtoBind, 0)) return false;
+    if (!defineMethod(ctx, functionProto, "call", functionProtoCall, 0, false, 1))
+        return false;
+    if (!defineMethod(ctx, functionProto, "apply", functionProtoApply, 0, false, 2))
+        return false;
+    if (!defineMethod(ctx, functionProto, "bind", functionProtoBind, 0, false, 1))
+        return false;
     // Function.prototype[@@hasInstance]（ES2024 §20.2.3.6）：
     // writable=false / 不可枚举 / configurable=false（规范明确不可配置）
     {
-        Value* hasInstance = ctx->createNativeFunction(functionProtoHasInstance, 0);
+        FunctionCreateOptions hiOpts;
+        hiOpts.constructible = false;
+        hiOpts.hasPrototypeProperty = false;
+        Value* hasInstance =
+            ctx->createNativeFunction(functionProtoHasInstance, 0, {}, hiOpts);
         if (hasInstance == ctx->oomValue()) return false;
         ctx->setFunctionName(hasInstance, "[Symbol.hasInstance]");
+        if (ctx->defineProperty(hasInstance, "length", ctx->createNumber(1.0), false,
+                                false, true)
+                ->type()->kind() == TypeKind::Exception) {
+            return false;
+        }
         if (ctx->defineProperty(functionProto,
                                 ctx->getWellKnownSymbol(WellKnownSymbol::HasInstance),
                                 hasInstance, false, false, false)
@@ -1143,9 +1157,8 @@ bool registerObjectFunctionBuiltins(IContext* ctx) {
 
     // Function.prototype.caller / arguments：受限访问器，读写均抛 TypeError。
     {
-        Value* thrower = ctx->createNativeFunction(restrictedFunctionProperty, 0);
+        Value* thrower = ctx->throwTypeError();
         if (thrower == ctx->oomValue()) return false;
-        ctx->setFunctionName(thrower, "");
         if (ctx->defineAccessor(functionProto, "caller", thrower, thrower, false,
                                 true)
                 ->type()->kind() == TypeKind::Exception) {
