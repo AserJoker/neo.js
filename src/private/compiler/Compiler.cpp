@@ -383,6 +383,12 @@ void Compiler::compileStatement(const Node& node) {
 }
 
 void Compiler::compileExpression(const Node& node) {
+    // 尾位置只作用于当前表达式；嵌套子表达式默认不在尾位置，除非复合表达式
+    // 显式向尾子表达式传播（逗号末项/条件分支/逻辑右侧/标签模板 tag）。
+    const bool isTail = tailPosition_;
+    tailPosition_ = false;
+    const bool savedTail = currentTail_;
+    currentTail_ = isTail;
     uint32_t begin = code_->here();
     switch (node.kind()) {
         case NodeKind::Identifier:
@@ -514,6 +520,7 @@ void Compiler::compileExpression(const Node& node) {
             code_->pushUndefined();
             break;
     }
+    currentTail_ = savedTail;
     mapNode(node, begin);
 }
 
@@ -587,15 +594,13 @@ void Compiler::compileExpressionStatement(
 
 void Compiler::compileReturnStatement(const frontend::ReturnStatement& node) {
     if (node.argument) {
-        // 尾调用（§15.10.1）：return 的整个参数是一个调用表达式。
+        // 尾调用（§15.10.1）：return 的参数整体处于尾位置，由复合表达式
+        // （逗号末项/条件分支/逻辑右侧/标签模板 tag）继续向内传播。
         // 待执行 finally / for-of close 时调用不在尾位置。
         // 只有函数体内的 return 才可能是尾调用（脚本/模块顶层无 return）。
-        const bool tailCandidate =
-            functionDepth_ > 0 && tailUnsafeDepth_ == 0 &&
-            node.argument->kind() == NodeKind::CallExpression;
-        if (tailCandidate) tailCallCandidate_ = true;
+        tailPosition_ = functionDepth_ > 0 && tailUnsafeDepth_ == 0;
         compileExpression(*node.argument);
-        tailCallCandidate_ = false;
+        tailPosition_ = false;
     } else {
         code_->pushUndefined();
     }
@@ -2236,9 +2241,11 @@ void Compiler::compileLogicalExpression(
             return;
     }
 
-    // 短路：保留左值；否则丢弃左值并求右值。
+    // 短路：保留左值；否则丢弃左值并求右值。右操作数继承逻辑表达式的尾位置。
     code_->pop();
+    tailPosition_ = currentTail_;
     compileExpression(*node.right);
+    tailPosition_ = false;
     code_->patchU32(jump + 2, code_->here());
 }
 
@@ -2251,10 +2258,14 @@ void Compiler::compileConditionalExpression(
     }
     compileExpression(*node.test);
     uint32_t toElse = code_->jfalse();
+    tailPosition_ = currentTail_;
     compileExpression(*node.consequent);
+    tailPosition_ = false;
     uint32_t toEnd = code_->jmp();
     code_->patchU32(toElse + 2, code_->here());
+    tailPosition_ = currentTail_;
     compileExpression(*node.alternate);
+    tailPosition_ = false;
     code_->patchU32(toEnd + 2, code_->here());
 }
 
@@ -2266,12 +2277,16 @@ void Compiler::compileSequenceExpression(
     }
     for (size_t i = 0; i < node.expressions.size(); ++i) {
         const frontend::NodePtr& expression = node.expressions[i];
+        const bool last = i + 1 == node.expressions.size();
+        // 逗号表达式只有最后一项继承尾位置。
+        if (last) tailPosition_ = currentTail_;
         if (!expression) {
             code_->pushUndefined();
         } else {
             compileExpression(*expression);
         }
-        if (i + 1 < node.expressions.size()) code_->pop();
+        tailPosition_ = false;
+        if (!last) code_->pop();
     }
 }
 
@@ -2302,9 +2317,8 @@ void Compiler::compileArrowFunctionExpression(
 }
 
 void Compiler::compileCallExpression(const frontend::CallExpression& node) {
-    // 先消费尾调用候选：callee/实参内部的嵌套调用不是尾位置。
-    const bool tailCall = tailCallCandidate_;
-    tailCallCandidate_ = false;
+    // 先消费尾位置：callee/实参内部的嵌套调用不是尾位置。
+    const bool tailCall = currentTail_;
     if (!node.callee) {
         error(node, "compiler: call expression missing callee");
         code_->pushUndefined();
@@ -2428,7 +2442,12 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
             code_->callMethod(argc);
         }
     } else if (directEvalCandidate) {
-        code_->directEval(argc);
+        // 尾位置：内建 eval 仍按直接 eval 执行，被遮蔽时按尾调用处理。
+        if (tailCall && !chainOptional) {
+            code_->directEvalTail(argc);
+        } else {
+            code_->directEval(argc);
+        }
     } else if (tailCall && !chainOptional) {
         code_->tailCall(argc);
     } else {
@@ -2565,6 +2584,9 @@ void Compiler::compileTaggedTemplateExpression(
     const auto& quasi =
         static_cast<const frontend::TemplateLiteral&>(*node.quasi);
 
+    // 标签模板的 tag 调用继承尾位置（§15.10.1）。
+    const bool tailCall = currentTail_;
+
     bool isMember = node.tag->kind() == NodeKind::MemberExpression;
     if (isMember) {
         const auto& member =
@@ -2613,7 +2635,13 @@ void Compiler::compileTaggedTemplateExpression(
     }
 
     if (isMember) {
-        code_->callMethod(argc);
+        if (tailCall) {
+            code_->tailCallMethod(argc);
+        } else {
+            code_->callMethod(argc);
+        }
+    } else if (tailCall) {
+        code_->tailCall(argc);
     } else {
         code_->call(argc);
     }

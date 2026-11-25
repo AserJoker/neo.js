@@ -254,6 +254,7 @@ private:
     neo::core::Value* opLoadSlotRef();
     neo::core::Value* opStoreSlotRef();
     neo::core::Value* opMarkParamInit();
+    neo::core::Value* opDirectEvalTail();
     neo::core::Value* opBindThis();
     neo::core::Value* opLoadThis();
     neo::core::Value* opStoreThis();

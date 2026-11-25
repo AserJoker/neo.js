@@ -423,11 +423,14 @@ enum class OpCode : uint16_t {
     // 用于：形参中的直接 eval 引入 var 与形参同名 → SyntaxError；形参中创建
     // 的闭包需捕获环境链以看到 eval 注入的 var。
     MarkParamInit,
+    // u32 argc：尾位置的直接 eval 调用点。callee 是内建 %eval% 时执行直接
+    // eval；否则按尾调用（PrepareForTailCall）处理。
+    DirectEvalTail,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::MarkParamInit) + 1;
+    static_cast<size_t>(OpCode::DirectEvalTail) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

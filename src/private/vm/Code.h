@@ -639,6 +639,12 @@ struct Code {
         emitU32(argc);
         return pc;
     }
+    // 尾位置的直接 eval 调用点：callee 不是内建 eval 时按尾调用处理。
+    uint32_t directEvalTail(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::DirectEvalTail);
+        emitU32(argc);
+        return pc;
+    }
     // 带展开的直接 eval 调用点：栈上 [callee, argsArray]。
     uint32_t directEvalSpread() {
         return emitOp(OpCode::DirectEvalSpread);
