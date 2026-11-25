@@ -31,6 +31,30 @@ namespace neo::core {
 
 namespace {
 
+// 退出调用时摘除闭包作用域。仍被 Environment 闭包 pin 住时不能直接孤立：
+// 逃逸闭包经 parent 链查找 global 时需要模块根，故保留 lookup-only 挂载；
+// 否则恢复孤立，避免成为 GC 根。
+void detachClosureScope(FunctionData* d) {
+    if (d->closureScope == nullptr) return;
+    // captureRef 含所有者自身 pin（=1）；>1 才表示另有 Environment 闭包引用。
+    if (d->closureScope->captureRef() > 1 && d->rootScope != nullptr) {
+        d->closureScope->linkLookupParent(d->rootScope);
+    } else {
+        d->closureScope->reparent(nullptr);
+    }
+}
+
+// 协程挂起时孤立 execScope：有闭包 pin 住则只摘所有权、保留 parent 查找链
+// （否则恢复后逃逸闭包失去 global 回退），无 pin 时直接孤立。
+void detachExecScope(Scope* execScope) {
+    if (execScope == nullptr) return;
+    if (execScope->captureRef() > 0) {
+        execScope->detachFromParentTree();
+    } else {
+        execScope->reparent(nullptr);
+    }
+}
+
 // 创建并绑定 arguments 到函数执行作用域（§10.4.4）。
 // 成功返回 nullptr；失败返回错误值（OOM 等）。
 Value* bindArgumentsObject(IContext* ctx, Scope* execScope, Value* fn,
@@ -96,7 +120,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         if (execScope == nullptr) {
             // 临时 scope 分配失败（OOM）：撤销挂载并恢复 root，返回 OOM 哨兵
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
@@ -131,7 +155,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     //    closureScope 的子，随闭包作用域一起销毁。
     if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
         if (--d->activeCalls == 0) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
@@ -160,9 +184,9 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             // 回退 current 到 closureScope，再把 execScope 摘下孤立化
             // （不能 popScope——那会销毁 execScope，跨 yield 状态全部丢失）。
             ctx->setCurrentScope(d->closureScope);
-            execScope->reparent(nullptr);
+            detachExecScope(execScope);
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
@@ -184,7 +208,7 @@ Value* invokeNativeFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
     // 10. 最外层调用退出时摘除闭包作用域，恢复孤立状态（不再是 GC 根）。
     //     Environment 模式常驻定义点环境链，不摘除。
     if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-        d->closureScope->reparent(nullptr);
+        detachClosureScope(d);
     }
 
     // 11. 恢复调用方 root/current（closureScope 不在调用方链上，须显式恢复）
@@ -223,7 +247,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         Scope* execScope = ctx->pushNewScope(d->closureScope);
         if (execScope == nullptr) {
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
@@ -238,7 +262,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         if (detail::isErrorValue(boundThis)) {
             while (ctx->current() != d->closureScope) ctx->popScope();
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setCurrentScope(savedCurrent);
             ctx->setRootScope(savedRoot);
@@ -274,7 +298,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
                 ctx->setCurrentFunction(savedFunction);
                 while (ctx->current() != d->closureScope) ctx->popScope();
                 if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                    d->closureScope->reparent(nullptr);
+                    detachClosureScope(d);
                 }
                 ctx->setCurrentScope(savedCurrent);
                 ctx->setRootScope(savedRoot);
@@ -298,7 +322,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         // 5. Fatal：不恢复现场、不平衡栈（不可捕获），只摘除闭包挂载
         if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
@@ -318,7 +342,7 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             ctx->popScope();
         }
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setCurrentScope(savedCurrent);
         ctx->setRootScope(savedRoot);
@@ -381,7 +405,7 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
     Scope* execScope = ctx->pushNewScope(d->closureScope);
     if (execScope == nullptr) {
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
@@ -406,7 +430,7 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
             ctx->setCurrentFunction(savedFunction);
             while (ctx->current() != d->closureScope) ctx->popScope();
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setCurrentScope(savedCurrent);
             ctx->setRootScope(savedRoot);
@@ -432,9 +456,9 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
     if (bodyStart) {
         out.execScope = execScope;
         out.vmState = new vm::VmState(machine.snapshot());
-        execScope->reparent(nullptr);
+        detachExecScope(execScope);
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setCurrentFunctionEnv(savedFunctionEnv);
         ctx->setCurrentFunction(savedFunction);
@@ -446,7 +470,7 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
     // 参数绑定失败（或异常）：调用方直接返回该结果，不创建协程。
     if (res != nullptr && res->type()->kind() == TypeKind::Fatal) {
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setRootScope(savedRoot);
         ctx->setCurrentScope(savedCurrent);
@@ -460,7 +484,7 @@ GeneratorPrelude prepareGeneratorCoroutine(IContext* ctx, Value* fn,
     ctx->setCurrentFunction(savedFunction);
     while (ctx->current() != d->closureScope) ctx->popScope();
     if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-        d->closureScope->reparent(nullptr);
+        detachClosureScope(d);
     }
     ctx->setCurrentScope(savedCurrent);
     ctx->setRootScope(savedRoot);
@@ -497,7 +521,7 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
         execScope = ctx->pushNewScope(d->closureScope);
         if (execScope == nullptr) {
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setRootScope(savedRoot);
             ctx->setCurrentScope(savedCurrent);
@@ -529,7 +553,7 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
             ctx->setCurrentFunction(savedFunction);
             while (ctx->current() != d->closureScope) ctx->popScope();
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-                d->closureScope->reparent(nullptr);
+                detachClosureScope(d);
             }
             ctx->setCurrentScope(savedCurrent);
             ctx->setRootScope(savedRoot);
@@ -572,10 +596,10 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
         if (co->vmState == nullptr) co->vmState = new vm::VmState();
         *co->vmState = machine.snapshot();
         co->yielded = asInterrupt(res)->value;
-        execScope->reparent(nullptr);
+        detachExecScope(execScope);
         co->state = CoroutineState::Suspended;
         if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-            d->closureScope->reparent(nullptr);
+            detachClosureScope(d);
         }
         ctx->setCurrentFunctionEnv(savedFunctionEnv);
         ctx->setCurrentFunction(savedFunction);
@@ -597,7 +621,7 @@ Value* resumeScriptCoroutine(IContext* ctx, Value* coroutine, Value* sentValue) 
     }
     co->execScope = nullptr;
     if (--d->activeCalls == 0 && !d->capturesEnvironment) {
-        d->closureScope->reparent(nullptr);
+        detachClosureScope(d);
     }
     ctx->setCurrentScope(savedCurrent);
     ctx->setRootScope(savedRoot);

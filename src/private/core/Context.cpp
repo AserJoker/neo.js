@@ -1515,7 +1515,10 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     if (opts.strict) closure->setFlag("strict");
     // 定义点处于 dynamic 作用域（直接 eval 沿链继承）时，函数必须捕获运行时
     // 环境链而非静态 slot：closureScope 挂到 current 并 pin 整条链。
-    if (current_ != nullptr && current_->dynamicChain()) {
+    // 形参初始化期间（param-init）同理：稍后形参中的直接 eval 可能引入 var，
+    // 先于 eval 创建的闭包也须沿运行时环境链看到它（§9.2.12 step 20）。
+    if (current_ != nullptr &&
+        (current_->dynamicChain() || current_->hasFlag("param-init"))) {
         linkEnvironmentCapture(d, current_);
     }
 
