@@ -24,6 +24,23 @@ namespace neo::core {
 
 namespace {
 
+// CanonicalNumericIndexString（ES2024 §7.1.19）：字符串是规范数字索引串时
+// 返回 true 并写回数值；"-0" 单独处理（ToString(-0) 为 "0"，不相等）。
+bool canonicalNumericIndex(IContext* ctx, const std::string& name, double& out) {
+    if (name == "-0") {
+        out = -0.0;
+        return true;
+    }
+    Value* str = ctx->createString(name);
+    if (str == ctx->oomValue()) return false;
+    Value* num = detail::toNumberValue(ctx, str);
+    if (detail::isErrorValue(num)) return false;
+    const double n = static_cast<NumberData*>(num->data())->value;
+    if (detail::numberToString(n) != name) return false;
+    out = n;
+    return true;
+}
+
 uint64_t readRaw(const uint8_t* bytes, size_t index, size_t size) {
     uint64_t value = 0;
     for (size_t i = 0; i < size; ++i) {
@@ -260,6 +277,27 @@ Value* TypedArrayType::indexedElement(IContext* ctx, Value* self,
 bool TypedArrayType::indexedWritable(Value* /*self*/) const { return true; }
 bool TypedArrayType::indexedConfigurable(Value* /*self*/) const { return false; }
 bool TypedArrayType::indexedLengthWritable(Value* /*self*/) const { return false; }
+
+Value* TypedArrayType::setWithReceiver(IContext* ctx, Value* self,
+                                       const PropertyKey& key, Value* value,
+                                       Value* receiver) {
+    TypedArrayData* d = asTypedArray(self);
+    if (d != nullptr && !key.isSymbol) {
+        double numeric = 0;
+        if (canonicalNumericIndex(ctx, key.name, numeric)) {
+            // 整数索引 exotic [[Set]]：规范数字索引串但非有效整数索引（NaN、
+            // Infinity、小数、-0、越界、已 detach）时直接返回 true，既不写元素
+            // 也不在 receiver 上创建属性（§10.4.5.5）。
+            ArrayBufferData* buffer = asArrayBuffer(d->buffer);
+            const bool valid =
+                buffer != nullptr && !buffer->detached && std::isfinite(numeric) &&
+                std::trunc(numeric) == numeric && !std::signbit(numeric) &&
+                numeric < static_cast<double>(d->length);
+            if (!valid) return ctx->createBoolean(true);
+        }
+    }
+    return IType::setWithReceiver(ctx, self, key, value, receiver);
+}
 
 Value* TypedArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                                       Value* value, bool writable, bool enumerable,

@@ -36,6 +36,11 @@ public:
     bool indexedConfigurable(Value* self) const override;
     bool indexedLengthWritable(Value* self) const override;
 
+    // [[Set]]：规范数字索引串但非有效整数索引时静默返回 true（§10.4.5.5），
+    // 避免 OrdinarySet 沿原型链在 receiver 上创建属性。
+    Value* setWithReceiver(IContext* ctx, Value* self, const PropertyKey& key,
+                           Value* value, Value* receiver) override;
+
     Value* defineProperty(IContext* ctx, Value* self, Value* key, Value* value,
                           bool writable, bool enumerable,
                           bool configurable) override;

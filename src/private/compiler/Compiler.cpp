@@ -1089,9 +1089,11 @@ void Compiler::compileForInStatement(
     for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
         code_->popLabel(*it);
     }
+    // break 已由 VM 回退到循环作用域，只需跳过 pop_label；循环作用域仍须
+    // 由随后的 pop_scope 清理（与 switch 一致）。
+    uint32_t breakTarget = code_->here();
     code_->popScope();
-    uint32_t endPc = code_->here();
-    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
+    for (uint32_t push : pushes) code_->patchU32(push + 10, breakTarget);
     if (evalCompletion_) {
         emitLoopEnd(loopSlot);
         emitMergeCompletion(outerSlot);

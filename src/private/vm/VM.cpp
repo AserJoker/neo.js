@@ -1363,20 +1363,19 @@ Value* VM::storeRefValue(Value* base, bool isWith, bool hasSlot,
                          const std::string& name, Value* value) {
     Value* result = nullptr;
     if (isWith) {
-        // 对象环境记录 SetMutableBinding（§9.1.1.4.5）：严格模式下若属性
-        // 已不存在（例如 getter 中 delete），必须抛 ReferenceError，而不是
-        // 在对象上重新创建属性。
-        if (ctx_->hasFlag("strict")) {
-            Value* key = ctx_->createString(name);
-            if (key == ctx_->oomValue()) return fail(key);
-            Value* has = ctx_->hasProperty(base, key);
-            if (detail::isErrorValue(has)) return fail(has);
-            if (!detail::toBoolean(has)) {
-                return fail(detail::referenceError(
-                    ctx_, "Assignment to undeclared identifier '" + name + "'"));
-            }
+        // 对象环境记录 SetMutableBinding（§9.1.1.4.5）步骤 2：写入前先
+        // HasProperty。属性在解析后消失时，严格模式抛 ReferenceError，
+        // 宽松模式静默忽略（不得在对象上重新创建属性）。
+        Value* key = ctx_->createString(name);
+        if (key == ctx_->oomValue()) return fail(key);
+        Value* has = ctx_->hasProperty(base, key);
+        if (detail::isErrorValue(has)) return fail(has);
+        if (!detail::toBoolean(has) && ctx_->hasFlag("strict")) {
+            return fail(detail::referenceError(
+                ctx_, "Assignment to undeclared identifier '" + name + "'"));
         }
-        result = ctx_->setProperty(base, name, value);
+        // 宽松模式即使属性已消失仍执行 Set（§9.1.1.4.5 步骤 4）。
+        result = ctx_->setProperty(base, key, value);
     } else if (hasSlot) {
         // 声明式绑定：写回 RHS 求值前捕获的槽位，避免 eval 注入更内层
         // 同名 var 后写错目标。

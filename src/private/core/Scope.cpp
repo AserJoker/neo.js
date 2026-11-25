@@ -177,6 +177,35 @@ bool Scope::withBindingCaptureChain(std::string_view name, Value*& withObject,
     return false;
 }
 
+Value* Scope::withBindingLookup(std::string_view name, Value*& withObject,
+                                Value*& key, bool& bound) const {
+    bound = false;
+    auto it = withBindings_.find(std::string(name));
+    if (it != withBindings_.end()) {
+        if (context_ == nullptr) return nullptr;
+        Value* err = resolveWithBinding(context_, it->second.withObject,
+                                        it->second.key, bound);
+        if (err != nullptr) return err;
+        if (bound) {
+            withObject = it->second.withObject;
+            key = it->second.key;
+        }
+        return nullptr;
+    }
+    if (Value* obj = this->withObject()) {
+        if (context_ == nullptr) return nullptr;
+        Value* k = context_->createString(name);
+        if (k == context_->oomValue()) return k;
+        Value* err = resolveWithBinding(context_, obj, k, bound);
+        if (err != nullptr) return err;
+        if (bound) {
+            withObject = obj;
+            key = k;
+        }
+    }
+    return nullptr;
+}
+
 Value* Scope::lookupChain(std::string_view name) const {
     const Scope* s = this;
     while (s != nullptr) {
@@ -307,6 +336,18 @@ Scope::StoreOutcome WithScope::store(IContext* ctx, std::string_view name,
     // 向外查找），交给外层作用域处理。绑定在解析后消失的情况由
     // storeWithRef 捕获的 withObject 直接处理。
     if (!bound) return StoreOutcome::NotFound;
+    // SetMutableBinding 步骤 2：写入前再查一次 HasProperty。
+    Value* has = ctx->hasProperty(withObject_, key);
+    if (detail::isErrorValue(has)) {
+        result = has;
+        return StoreOutcome::Error;
+    }
+    if (!detail::toBoolean(has) && ctx->hasFlag("strict")) {
+        // 属性在解析后消失：严格模式抛 ReferenceError，宽松模式仍执行 Set。
+        result = detail::referenceError(
+            ctx, "'" + std::string(name) + "' is not defined");
+        return StoreOutcome::Error;
+    }
     result = ctx->setProperty(withObject_, key, source);
     return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;
 }

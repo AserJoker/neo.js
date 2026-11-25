@@ -3459,6 +3459,17 @@ Value* Context::load(std::string_view name) {
             if (detail::isErrorValue(withObj)) return withObj;
             Value* key = createString(name);
             if (key == oomValue()) return key;
+            // HasBinding 已返回 true；GetBindingValue 步骤 2 再查一次
+            // HasProperty（属性可能在两次检查间被删除）。
+            Value* has = hasProperty(withObj, key);
+            if (detail::isErrorValue(has)) return has;
+            if (!detail::toBoolean(has)) {
+                if (hasFlag("strict")) {
+                    return detail::referenceError(
+                        this, "'" + std::string(name) + "' is not defined");
+                }
+                return createUndefined();
+            }
             return getProperty(withObj, key);
         }
         Scope::Binding* binding = s->lookupBinding(name);
@@ -3485,9 +3496,32 @@ Value* Context::load(std::string_view name) {
             }
             return slot;
         }
+        // 闭包捕获的 with 绑定（不在动态 WithScope 上）：按 GetBindingValue
+        // 先 HasProperty 再 Get（HasBinding 已在解析期完成）。
+        if (s->bindingKind(name) == Scope::BindingKind::With) {
+            Value* wobj = nullptr;
+            Value* wkey = nullptr;
+            bool bound = false;
+            Value* err = s->withBindingLookup(name, wobj, wkey, bound);
+            if (err != nullptr) return err;
+            if (bound) {
+                Value* has = hasProperty(wobj, wkey);
+                if (detail::isErrorValue(has)) return has;
+                if (!detail::toBoolean(has)) {
+                    if (hasFlag("strict")) {
+                        return detail::referenceError(
+                            this, "'" + std::string(name) + "' is not defined");
+                    }
+                    return createUndefined();
+                }
+                return getProperty(wobj, wkey);
+            }
+        }
     }
-    // with 属性 / 间接绑定等动态路径。
-    Value* value = current()->lookupChain(name);
+    // 全局对象记录（GlobalScope::lookup 内含 HasProperty + Get）。
+    // 不再从 current() 重新 lookupChain：那会让 with 代理的 HasBinding 被
+    // 重复触发（解析期已查过一次）。
+    Value* value = global_->lookup(name);
     if (value != nullptr) return value;
     return detail::referenceError(
         this, "'" + std::string(name) + "' is not defined");

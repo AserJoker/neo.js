@@ -212,6 +212,14 @@ public:
                     context.error(node.range().start,
                                   "Labelled function declaration is not allowed "
                                   "as the body of a with statement");
+                } else if (statement.body &&
+                           statement.body->kind() ==
+                               NodeKind::FunctionDeclaration) {
+                    // with 体必须是 Statement，FunctionDeclaration 不是 Statement。
+                    context.error(statement.body->range().start,
+                                  "In non-strict mode code, functions can only be "
+                                  "declared at top level, inside a block, or as "
+                                  "the body of an if statement");
                 }
                 break;
             }

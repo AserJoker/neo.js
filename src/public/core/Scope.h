@@ -430,6 +430,12 @@ public:
     bool withBindingCaptureChain(std::string_view name, Value*& withObject,
                                  Value*& key) const;
 
+    // 解析本作用域的 with 绑定（含 @@unscopables），返回错误值或 nullptr。
+    // bound 为 true 时 withObject/key 有效。与 getWithBindingChain 不同，
+    // 这里把 getter 抛出的异常透传给调用方。
+    Value* withBindingLookup(std::string_view name, Value*& withObject,
+                             Value*& key, bool& bound) const;
+
     // —— 作用域标注（ADR-030 阶段 5）——
     // flags 是作用域级标注（如 "strict"），语法上只能标注在模块作用域/函数体上。
     // 查找沿 parent 链向上继承（内层 scope 自动继承外层标注）。
