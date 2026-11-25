@@ -56,7 +56,14 @@ Value* Scope::lookup(std::string_view name) const {
     auto wit = withBindings_.find(std::string(name));
     if (wit != withBindings_.end()) {
         // with 属性绑定：读取时实时解析，属性被重新赋值后仍能看到新值。
+        // 属性可能已被删除或被 @@unscopables 排除：此时该名字不再是本环境
+        // 记录的绑定，须继续沿外层作用域查找。
         if (context_ == nullptr) return nullptr;
+        bool bound = false;
+        Value* err = resolveWithBinding(context_, wit->second.withObject,
+                                        wit->second.key, bound);
+        if (err != nullptr) return err;
+        if (!bound) return nullptr;
         return context_->getProperty(wit->second.withObject, wit->second.key);
     }
 
@@ -100,12 +107,23 @@ bool Scope::getWithBindingChain(std::string_view name, Value*& withObject,
         if (s->namedValues_.find(std::string(name)) != s->namedValues_.end()) {
             return false;
         }
-        // 已捕获的 with 属性绑定。
+        // 已捕获的 with 属性绑定：仍须按运行期 HasBinding 判定（属性可能
+        // 在闭包创建后才加入、或随后被删除/被 @@unscopables 排除）。
         auto it = s->withBindings_.find(std::string(name));
         if (it != s->withBindings_.end()) {
-            withObject = it->second.withObject;
-            key = it->second.key;
-            return true;
+            bool bound = false;
+            Value* err = context_ != nullptr
+                             ? resolveWithBinding(context_, it->second.withObject,
+                                                  it->second.key, bound)
+                             : nullptr;
+            if (err == nullptr && bound) {
+                withObject = it->second.withObject;
+                key = it->second.key;
+                return true;
+            }
+            // 未绑定：继续向外层查找（不是遮蔽）。
+            s = s->parent_;
+            continue;
         }
         // 导入绑定同样遮蔽 with 对象。
         if (s->importBindings_.find(std::string(name)) != s->importBindings_.end()) {
@@ -129,6 +147,36 @@ bool Scope::getWithBindingChain(std::string_view name, Value*& withObject,
     return false;
 }
 
+bool Scope::withBindingCaptureChain(std::string_view name, Value*& withObject,
+                                    Value*& key) const {
+    for (const Scope* s = this; s != nullptr; s = s->parent_) {
+        // 内层直接/导入绑定先于 with：该名字不由 with 解析。
+        if (s->namedValues_.find(std::string(name)) != s->namedValues_.end()) {
+            return false;
+        }
+        if (s->importBindings_.find(std::string(name)) != s->importBindings_.end()) {
+            return false;
+        }
+        // 已捕获的 with 绑定：沿用其对象与键。
+        auto it = s->withBindings_.find(std::string(name));
+        if (it != s->withBindings_.end()) {
+            withObject = it->second.withObject;
+            key = it->second.key;
+            return true;
+        }
+        // 动态 WithScope：即使当前没有该属性也捕获，运行期再按 HasBinding 判定。
+        if (Value* obj = s->withObject()) {
+            if (context_ == nullptr) return false;
+            Value* k = context_->createString(name);
+            if (k == context_->oomValue()) return false;
+            withObject = obj;
+            key = k;
+            return true;
+        }
+    }
+    return false;
+}
+
 Value* Scope::lookupChain(std::string_view name) const {
     const Scope* s = this;
     while (s != nullptr) {
@@ -141,9 +189,18 @@ Value* Scope::lookupChain(std::string_view name) const {
 
 Scope::StoreOutcome Scope::store(IContext* ctx, std::string_view name,
                                  Value* source, Value*& result) {
-    // 闭包捕获的 with 属性：写入实时走 setProperty。
+    // 闭包捕获的 with 属性：写入实时走 setProperty。属性已不存在或被
+    // @@unscopables 排除时，交给外层作用域处理（对象环境记录 SetMutableBinding）。
     auto it = withBindings_.find(std::string(name));
     if (it != withBindings_.end()) {
+        bool bound = false;
+        Value* err = resolveWithBinding(ctx, it->second.withObject,
+                                        it->second.key, bound);
+        if (err != nullptr) {
+            result = err;
+            return StoreOutcome::Error;
+        }
+        if (!bound) return StoreOutcome::NotFound;
         result = ctx->setProperty(it->second.withObject, it->second.key, source);
         return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;
     }

@@ -780,6 +780,9 @@ public:
     void reportUnhandledRejections() override;
 
 private:
+    // 直接 eval 在变量环境新增 var 后，回溯把该作用域子树中已创建、尚未
+    // 捕获环境的闭包挂到定义点环境链，使其能看到后加入的绑定。
+    void captureClosuresInScopeTree(Scope* scope);
     // 线程亲和断言：debug 构建下校验当前线程是该 Context 的 owner。
     void assertOwnerThread() const;
     // 入队（loop 标记由调用方指定）。返回任务 id，OOM 返回 0。

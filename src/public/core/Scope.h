@@ -81,6 +81,9 @@ private:
     IContext* context_ = nullptr;                           // 借用，解析间接绑定用
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
     std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
+    // 在本作用域创建的函数对象（非拥有，已在 values_ 中保活）。直接 eval
+    // 引入 var 时据此回溯链接闭包环境，使其看到后加入的绑定。
+    std::vector<Value*> closures_;
     std::unordered_map<std::string, Binding> namedValues_; // 命名绑定（借用 Value）
     // 导入绑定：本地名字别名到导出方的同一个 Value* 槽位（只读）。
     // 槽位由导出方模块作用域持有；本作用域登记到 values_ 保活。
@@ -261,12 +264,20 @@ public:
     // 跟踪一个 Value（仅登记，不改变其引用计数；可达性由 GC 从 global 树标记）。
     // 同一 Value 多次 add 会多次登记（GC 标记幂等，无副作用）。
     void add(Value* v) { values_.push_back(v); }
+    void addClosure(Value* v) { closures_.push_back(v); }
+    const std::vector<Value*>& closures() const { return closures_; }
 
     // 取消跟踪一个 Value（仅移除登记）。只移除一次出现，找不到返回 false。
     bool remove(Value* v) {
         for (auto it = values_.begin(); it != values_.end(); ++it) {
             if (*it == v) {
                 values_.erase(it);
+                for (auto cit = closures_.begin(); cit != closures_.end(); ++cit) {
+                    if (*cit == v) {
+                        closures_.erase(cit);
+                        break;
+                    }
+                }
                 return true;
             }
         }
@@ -412,6 +423,12 @@ public:
     // 找到返回 true；直接/间接绑定遮蔽或不存在返回 false。
     bool getWithBindingChain(std::string_view name, Value*& withObject,
                              Value*& key) const;
+
+    // 闭包捕获用：取沿链第一个「会遮蔽 name 的 with 环境记录」，不要求对象
+    // 当前已绑定该属性（属性可能在闭包创建后才加入）。若在遇到 with 之前
+    // 先遇到直接/导入绑定，则该绑定遮蔽 with，返回 false。
+    bool withBindingCaptureChain(std::string_view name, Value*& withObject,
+                                 Value*& key) const;
 
     // —— 作用域标注（ADR-030 阶段 5）——
     // flags 是作用域级标注（如 "strict"），语法上只能标注在模块作用域/函数体上。

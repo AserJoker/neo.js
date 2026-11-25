@@ -447,6 +447,21 @@ void trackValue(Scope* scope, Value* v, std::string_view name) {
 
 }  // namespace
 
+void Context::captureClosuresInScopeTree(Scope* scope) {
+    if (scope == nullptr) return;
+    for (Value* v : scope->closures()) {
+        if (v == nullptr || v->type()->kind() != TypeKind::Function) continue;
+        auto* d = static_cast<FunctionData*>(v->data());
+        // 已在 Environment 模式或已捕获过：幂等跳过。
+        if (d->capturesEnvironment) continue;
+        linkEnvironmentCapture(d, scope);
+    }
+    // 链接只改 captureRef/parent，不改 children_，可直接遍历。
+    for (Scope* child : scope->children()) {
+        captureClosuresInScopeTree(child);
+    }
+}
+
 void Context::assertOwnerThread() const {
     assert(ownerThread_ == std::this_thread::get_id() &&
            "Context is thread-affine; cross-thread access must go through a "
@@ -1525,6 +1540,9 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     // bindName 仅用于变量绑定（与函数名无关）
     Value* fnValue = createTracked(getFunctionType(), d, bindName);
     if (fnValue == oomValue_) return fnValue;
+    // 记录定义点作用域中创建的函数，供直接 eval 引入 var 后回溯链接闭包环境。
+    // 全局作用域不记录：其 var 走对象记录，且子树含大量内建。
+    if (current_ != nullptr && current_ != global_) current_->addClosure(fnValue);
 
     // 函数对象的原型是 Function.prototype（ADR-035）。bootstrap 期间尚未建立，跳过。
     if (functionPrototype_ != nullptr) {
@@ -3099,7 +3117,7 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     // 属性后续被 setProperty 重新赋值时，闭包仍能读到新值。
     Value* withObject = nullptr;
     Value* withKey = nullptr;
-    if (current()->getWithBindingChain(name, withObject, withKey)) {
+    if (current()->withBindingCaptureChain(name, withObject, withKey)) {
         (void)d->closureScope->defineWith(name, withObject, withKey);
         return fn;
     }
@@ -3112,11 +3130,6 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     // 沿当前作用域链查找闭包变量
     Value* v = current()->lookupChain(name);
     if (v == nullptr) {
-        // with 动态名字：Sema 因查找路径穿过 with 而登记为捕获，但创建
-        // 闭包时 with 对象尚未绑定该属性。此时不建立捕获，留待运行期
-        // with 引用操作按对象环境记录重新解析（未声明则按 sloppy 全局
-        // 创建 / strict ReferenceError 处理）。非 with 环境下仍视为错误。
-        if (current()->hasWithScopeInChain()) return fn;
         std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
         return detail::referenceError(this, msg);
     }
@@ -3557,6 +3570,11 @@ Value* Context::declareVar(std::string_view name) {
         std::string msg =
             "Identifier '" + std::string(name) + "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    // 直接 eval 新增 var：先于该 var 创建的闭包也须沿运行时环境链看到它。
+    if (evalVarScope_ != nullptr && target == evalVarScope_ &&
+        target != global_) {
+        captureClosuresInScopeTree(target);
     }
     return nullptr;
 }
