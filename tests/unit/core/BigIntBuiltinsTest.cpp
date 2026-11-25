@@ -172,7 +172,7 @@ TEST(BigIntBuiltinsTest, PrototypeMetadata) {
     EXPECT_DOUBLE_EQ(numOf(f.ctx->getProperty(ctor, "length")), 1.0);
     EXPECT_DOUBLE_EQ(
         numOf(f.ctx->getProperty(f.ctx->getProperty(proto, "toString"), "length")),
-        1.0);
+        0.0);
     EXPECT_DOUBLE_EQ(
         numOf(f.ctx->getProperty(f.ctx->getProperty(ctor, "asIntN"), "length")),
         2.0);

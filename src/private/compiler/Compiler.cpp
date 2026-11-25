@@ -2778,6 +2778,9 @@ void Compiler::compileObjectExpression(
             // get/set：缺失的一侧压 null（引擎按无访问器处理）。
             code_->dup();
             compilePropertyKey(prop);
+            // ComputedPropertyName 求值即含 ToPropertyKey（§13.2.5.4），
+            // 必须早于访问器函数求值。
+            if (prop.computed) code_->toPropertyKey();
             const bool getter =
                 prop.propertyKind == frontend::PropertyKind::Get;
             const std::string accessorKey =
@@ -2850,6 +2853,9 @@ void Compiler::compileObjectExpression(
         // define_prop 消费 obj，栈上保留一份继续累积属性。
         code_->dup();
         compilePropertyKey(prop);
+        // ComputedPropertyName 求值即含 ToPropertyKey（§13.2.5.4），
+        // 必须早于值表达式求值。
+        if (prop.computed) code_->toPropertyKey();
         if (prop.value) {
             if (prop.method &&
                 prop.value->kind() == NodeKind::FunctionExpression) {

@@ -105,6 +105,11 @@ Value* toIndexValue(IContext* ctx, Value* v, uint64_t& out) {
 
 // BigInt(value)
 Value* bigintCtor(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) {
+    // BigInt 实现 [[Construct]] 但 new 调用一律 TypeError（§21.2.1.1）。
+    Value* nt = ctx->newTarget();
+    if (nt != nullptr && nt->type()->kind() != TypeKind::Undefined) {
+        return detail::typeError(ctx, "BigInt is not a constructor");
+    }
     if (argc == 0) return ctx->createBigInt(neo::bigint::BigInt());
 
     Value* prim = detail::toPrimitive(ctx, argv[0], detail::PreferredType::Number);
@@ -215,7 +220,11 @@ Value* bigintAsIntN(IContext* ctx, Value* /*self*/, size_t /*argc*/,
 
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t length) {
-    Value* f = ctx->createNativeFunction(fn, 0);
+    // 内建方法：不可构造、无自有 prototype。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 0, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     Value* len = ctx->createNumber(static_cast<double>(length));
@@ -229,7 +238,11 @@ bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
 
 bool defineStaticMethod(IContext* ctx, Value* target, const char* name,
                         NativeFn fn) {
-    Value* f = ctx->createNativeFunction(fn, 2);
+    // 静态方法是内建函数，不是构造器（§21.2.2）。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, 2, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     return ctx->defineProperty(target, name, f, true, false, true)
@@ -244,7 +257,7 @@ bool registerBigIntBuiltins(IContext* ctx) {
     if (proto == ctx->oomValue()) return false;
     ctx->setBigIntPrototype(proto);
 
-    if (!defineMethod(ctx, proto, "toString", bigintToString, 1)) return false;
+    if (!defineMethod(ctx, proto, "toString", bigintToString, 0)) return false;
     if (!defineMethod(ctx, proto, "toLocaleString", bigintToLocaleString, 0)) {
         return false;
     }
@@ -256,9 +269,10 @@ bool registerBigIntBuiltins(IContext* ctx) {
         return false;
     }
 
-    // BigInt 可调用但不可构造；prototype 属性手动定义。
+    // BigInt 实现 [[Construct]]（isConstructor 为 true），但 new 调用抛 TypeError；
+    // prototype 属性手动定义。
     FunctionCreateOptions opts;
-    opts.constructible = false;
+    opts.constructible = true;
     opts.hasPrototypeProperty = false;
     Value* ctor = ctx->createNativeFunction(bigintCtor, 0, {}, opts);
     if (ctor == ctx->oomValue()) return false;
