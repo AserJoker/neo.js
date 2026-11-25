@@ -16,6 +16,7 @@
 #include "core/types/Number.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
+#include "unicode/Utf8.h"
 
 #include <cmath>
 #include <cstdint>
@@ -115,22 +116,76 @@ inline Value* abstractEquals(IContext* ctx, Value* a, Value* b) {
     return ctx->createBoolean(false);
 }
 
-// —— IsLessThan（ES2024 §7.2.13）——
-// 两侧 ToPrimitive(NUMBER)：都为 string 按字符串比较，否则 ToNumber 后比较。
-// NaN 时规范返回 undefined；用 undefinedOut 标记，由调用方按运算符决定结果。
-inline Value* abstractLessThan(IContext* ctx, Value* a, Value* b,
-                               bool& undefinedOut) {
-    undefinedOut = false;
-    Value* ap = toPrimitive(ctx, a, PreferredType::Number);
-    if (isErrorValue(ap)) return ap;
-    Value* bp = toPrimitive(ctx, b, PreferredType::Number);
-    if (isErrorValue(bp)) return bp;
+// 关系比较按 UTF-16 码元序列（§7.2.13），不是码点/UTF-8 字节序：
+// 例如 "\u{10000}"（D800 DC00）< "\uFFFF"。
+inline void appendUtf16CodeUnits(std::u16string& out, const std::string& s) {
+    size_t i = 0;
+    while (i < s.size()) {
+        uint32_t cp = 0;
+        if (!neo::unicode::decodeCodePoint(s, i, cp)) {
+            out.push_back(static_cast<char16_t>(0xFFFD));
+            continue;
+        }
+        if (cp <= 0xFFFF) {
+            out.push_back(static_cast<char16_t>(cp));
+        } else {
+            cp -= 0x10000;
+            out.push_back(static_cast<char16_t>(0xD800 + (cp >> 10)));
+            out.push_back(static_cast<char16_t>(0xDC00 + (cp & 0x3FF)));
+        }
+    }
+}
 
-    if (ap->type()->kind() == TypeKind::String &&
-        bp->type()->kind() == TypeKind::String) {
+// —— IsLessThan（ES2024 §7.2.13）——
+// leftFirst 决定两侧 ToPrimitive 的顺序（x > y / x <= y 传 false）。
+// 字符串按 UTF-16 码元比较；BigInt 与 String 用 StringToBigInt 精确比较；
+// NaN/非法数字串返回 undefined（undefinedOut 标记）。
+inline Value* abstractLessThan(IContext* ctx, Value* a, Value* b,
+                               bool leftFirst, bool& undefinedOut) {
+    undefinedOut = false;
+    Value* ap = nullptr;
+    Value* bp = nullptr;
+    if (leftFirst) {
+        ap = toPrimitive(ctx, a, PreferredType::Number);
+        if (isErrorValue(ap)) return ap;
+        bp = toPrimitive(ctx, b, PreferredType::Number);
+        if (isErrorValue(bp)) return bp;
+    } else {
+        bp = toPrimitive(ctx, b, PreferredType::Number);
+        if (isErrorValue(bp)) return bp;
+        ap = toPrimitive(ctx, a, PreferredType::Number);
+        if (isErrorValue(ap)) return ap;
+    }
+
+    const TypeKind apk = ap->type()->kind();
+    const TypeKind bpk = bp->type()->kind();
+    if (apk == TypeKind::String && bpk == TypeKind::String) {
         const std::string& x = static_cast<StringData*>(ap->data())->value;
         const std::string& y = static_cast<StringData*>(bp->data())->value;
-        return ctx->createBoolean(x < y);
+        std::u16string xs;
+        std::u16string ys;
+        appendUtf16CodeUnits(xs, x);
+        appendUtf16CodeUnits(ys, y);
+        return ctx->createBoolean(xs < ys);
+    }
+    // BigInt 与 String：StringToBigInt 精确比较，非法数字串 → undefined。
+    if (apk == TypeKind::BigInt && bpk == TypeKind::String) {
+        neo::bigint::BigInt parsed;
+        if (!stringToBigInt(static_cast<StringData*>(bp->data())->value,
+                            parsed)) {
+            undefinedOut = true;
+            return ctx->createBoolean(false);
+        }
+        return ctx->createBoolean(bigIntValue(ap) < parsed);
+    }
+    if (apk == TypeKind::String && bpk == TypeKind::BigInt) {
+        neo::bigint::BigInt parsed;
+        if (!stringToBigInt(static_cast<StringData*>(ap->data())->value,
+                            parsed)) {
+            undefinedOut = true;
+            return ctx->createBoolean(false);
+        }
+        return ctx->createBoolean(parsed < bigIntValue(bp));
     }
 
     Value* an = toNumericValue(ctx, ap);
@@ -173,21 +228,21 @@ inline Value* abstractLessThan(IContext* ctx, Value* a, Value* b,
 
 inline Value* lessThan(IContext* ctx, Value* a, Value* b) {
     bool undef = false;
-    Value* r = abstractLessThan(ctx, a, b, undef);
+    Value* r = abstractLessThan(ctx, a, b, true, undef);
     if (isErrorValue(r)) return r;
     return undef ? ctx->createBoolean(false) : r;
 }
 
 inline Value* greaterThan(IContext* ctx, Value* a, Value* b) {
     bool undef = false;
-    Value* r = abstractLessThan(ctx, b, a, undef);
+    Value* r = abstractLessThan(ctx, b, a, false, undef);
     if (isErrorValue(r)) return r;
     return undef ? ctx->createBoolean(false) : r;
 }
 
 inline Value* lessThanOrEqual(IContext* ctx, Value* a, Value* b) {
     bool undef = false;
-    Value* r = abstractLessThan(ctx, b, a, undef);
+    Value* r = abstractLessThan(ctx, b, a, false, undef);
     if (isErrorValue(r)) return r;
     if (undef) return ctx->createBoolean(false);
     return ctx->createBoolean(!toBoolean(r));
@@ -195,7 +250,7 @@ inline Value* lessThanOrEqual(IContext* ctx, Value* a, Value* b) {
 
 inline Value* greaterThanOrEqual(IContext* ctx, Value* a, Value* b) {
     bool undef = false;
-    Value* r = abstractLessThan(ctx, a, b, undef);
+    Value* r = abstractLessThan(ctx, a, b, true, undef);
     if (isErrorValue(r)) return r;
     if (undef) return ctx->createBoolean(false);
     return ctx->createBoolean(!toBoolean(r));

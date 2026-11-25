@@ -104,7 +104,7 @@ std::vector<uint32_t> shiftLeftMagnitude(const std::vector<uint32_t>& v,
     std::vector<uint32_t> out(v.size() + wordShift + 1, 0);
     for (size_t i = 0; i < v.size(); ++i) {
         uint64_t cur = static_cast<uint64_t>(v[i]) << bitShift;
-        out[i + wordShift] = static_cast<uint32_t>(cur);
+        out[i + wordShift] |= static_cast<uint32_t>(cur);
         if (bitShift != 0) {
             out[i + wordShift + 1] |= static_cast<uint32_t>(cur >> 32);
         }

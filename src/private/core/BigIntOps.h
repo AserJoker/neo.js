@@ -52,6 +52,10 @@ inline bool stringToBigInt(std::string_view text, neo::bigint::BigInt& out) {
     if (text[pos] == '+' || text[pos] == '-') {
         negative = text[pos] == '-';
         ++pos;
+        // 符号后必须紧跟十进制数字，不能再出现符号（"++0"/"--0" 非法）。
+        if (pos >= text.size() || text[pos] == '+' || text[pos] == '-') {
+            return false;
+        }
     } else if (text.size() - pos >= 2 && text[pos] == '0') {
         int radix = 0;
         switch (text[pos + 1]) {
