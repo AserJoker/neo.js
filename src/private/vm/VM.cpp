@@ -126,6 +126,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::Div:           return "div";
         case OpCode::Inc:           return "inc";
         case OpCode::Dec:           return "dec";
+        case OpCode::ToNumeric:     return "to_numeric";
         case OpCode::Lt:            return "lt";
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
@@ -420,6 +421,7 @@ const VM::Handler* VM::handlers() {
         &VM::opBodyStart,
         &VM::opThrowTypeError,
         &VM::opToPropertyKey,
+        &VM::opToNumeric,
     };
     return table;
 }
@@ -2558,6 +2560,17 @@ Value* VM::opToPropertyKey() {
     }
     Value* key = pop();
     Value* result = ctx_->toPropertyKey(key);
+    if (detail::isErrorValue(result)) return fail(result);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opToNumeric() {
+    if (stack_.empty()) {
+        return badBytecode("to_numeric: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* result = detail::toNumericValue(ctx_, value);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
     return nullptr;

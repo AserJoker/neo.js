@@ -245,6 +245,7 @@ private:
     neo::core::Value* opBodyStart();
     neo::core::Value* opThrowTypeError();
     neo::core::Value* opToPropertyKey();
+    neo::core::Value* opToNumeric();
     neo::core::Value* opBindThis();
     neo::core::Value* opLoadThis();
     neo::core::Value* opStoreThis();

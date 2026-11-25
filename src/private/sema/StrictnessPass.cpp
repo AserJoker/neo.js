@@ -542,6 +542,8 @@ private:
                     static_cast<frontend::ArrowFunctionExpression&>(node);
                 params = &function.params;
                 body = function.body.get();
+                // 箭头函数使用 UniqueFormalParameters：重名参数恒为早期错误。
+                uniqueParams = true;
                 break;
             }
             default:

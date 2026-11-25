@@ -580,21 +580,40 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
     }
+    // 函数名规则（§15.2 各产生式）：生成器名恒禁 yield（+Yield），
+    // async generator 名恒禁 await（+Await）；普通/async 函数名继承外层
+    // 上下文的 await（含 class 静态块的 +Await），但不继承 yield。
+    if (id && id->kind() == NodeKind::Identifier) {
+        const auto& name = static_cast<const Identifier&>(*id).name;
+        const bool forbidYield = generator || (async && inGenerator_);
+        const bool forbidAwait =
+            (async && generator) || (!generator && (inAsync_ || inStaticBlock_));
+        if ((forbidYield && name == "yield") ||
+            (forbidAwait && name == "await")) {
+            error(id->range().start,
+                  "'" + name + "' is not a valid function name here");
+        }
+    }
 
     // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
+    // 普通/生成器/async 函数的形参与函数体都是 ~Await，静态块的 +Await 不穿透。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = async;
     inGenerator_ = generator;
+    inStaticBlock_ = false;
     NodeList params;
     if (!parseFormalParameters(params)) {
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::RegExp);
 
@@ -615,21 +634,40 @@ NodePtr Parser::parseFunctionExpression(bool async) {
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
     }
+    // 函数名规则（§15.2 各产生式）：生成器名恒禁 yield（+Yield），
+    // async generator 名恒禁 await（+Await）；普通/async 函数名继承外层
+    // 上下文的 await（含 class 静态块的 +Await），但不继承 yield。
+    if (id && id->kind() == NodeKind::Identifier) {
+        const auto& name = static_cast<const Identifier&>(*id).name;
+        const bool forbidYield = generator || (async && inGenerator_);
+        const bool forbidAwait =
+            (async && generator) || (!generator && (inAsync_ || inStaticBlock_));
+        if ((forbidYield && name == "yield") ||
+            (forbidAwait && name == "await")) {
+            error(id->range().start,
+                  "'" + name + "' is not a valid function name here");
+        }
+    }
 
     // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
+    // 普通/生成器/async 函数的形参与函数体都是 ~Await，静态块的 +Await 不穿透。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = async;
     inGenerator_ = generator;
+    inStaticBlock_ = false;
     NodeList params;
     if (!parseFormalParameters(params)) {
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 
@@ -727,6 +765,16 @@ NodePtr Parser::parseClassDeclaration() {
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
     }
+    // class 名是 BindingIdentifier[?Yield, ?Await]。
+    if (id && id->kind() == NodeKind::Identifier) {
+        const auto& name = static_cast<const Identifier&>(*id).name;
+        if ((inAsync_ && name == "await") ||
+            (inGenerator_ && name == "yield") ||
+            (inStaticBlock_ && name == "await")) {
+            error(id->range().start,
+                  "'" + name + "' is not a valid class name here");
+        }
+    }
 
     NodePtr superClass;
     if (match(TokenKind::Extends)) {
@@ -750,6 +798,16 @@ NodePtr Parser::parseClassExpression() {
     NodePtr id;
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
+    }
+    // class 名是 BindingIdentifier[?Yield, ?Await]。
+    if (id && id->kind() == NodeKind::Identifier) {
+        const auto& name = static_cast<const Identifier&>(*id).name;
+        if ((inAsync_ && name == "await") ||
+            (inGenerator_ && name == "yield") ||
+            (inStaticBlock_ && name == "await")) {
+            error(id->range().start,
+                  "'" + name + "' is not a valid class name here");
+        }
     }
 
     NodePtr superClass;
@@ -791,12 +849,15 @@ NodePtr Parser::parseStaticBlock() {
     // 静态块不在 async/generator 上下文中。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = false;
     inGenerator_ = false;
+    inStaticBlock_ = true;
 
     NodePtr block = parseBlockStatement();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
     if (block == nullptr) return nullptr;
 
     auto* blockStatement = static_cast<BlockStatement*>(block.get());
@@ -929,12 +990,16 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
     // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
+    // 方法形参/函数体是 ~Await 上下文：class 静态块的 +Await 不穿透。
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = async;
     inGenerator_ = generator;
+    inStaticBlock_ = false;
     NodeList params;
     if (!parseFormalParameters(params)) {
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     // 访问器形参约束：get 无参；set 恰好一个非 rest 形参（允许默认值）。
@@ -947,11 +1012,13 @@ NodePtr Parser::parseClassMethodWithKey(SourceLocation start, NodePtr key,
                          : "Setter must have exactly one parameter");
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 
@@ -1934,8 +2001,12 @@ NodePtr Parser::parseArrowFunction() {
         return nullptr;
     }
 
+    // 箭头函数体是 ~Await（ConciseBody[~Await]）：class 静态块的 +Await
+    // 只作用于箭头形参，不穿透到函数体。
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = async;
     inGenerator_ = false;
+    inStaticBlock_ = false;
 
     NodePtr body;
     bool expression = false;
@@ -1944,6 +2015,7 @@ NodePtr Parser::parseArrowFunction() {
         if (body == nullptr) {
             inAsync_ = savedAsync;
             inGenerator_ = savedGenerator;
+            inStaticBlock_ = savedStaticBlock;
             return nullptr;
         }
         rescan(LexicalGoal::Div);
@@ -1956,6 +2028,7 @@ NodePtr Parser::parseArrowFunction() {
         if (body == nullptr) {
             inAsync_ = savedAsync;
             inGenerator_ = savedGenerator;
+            inStaticBlock_ = savedStaticBlock;
             return nullptr;
         }
         expression = true;
@@ -1963,6 +2036,7 @@ NodePtr Parser::parseArrowFunction() {
 
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
 
     return std::make_unique<ArrowFunctionExpression>(
         rangeFrom(start), std::move(params), std::move(body), async, expression);
@@ -2112,6 +2186,18 @@ NodePtr Parser::parseBinaryExpression(int minPrecedence) {
         if (!binaryOperator(current_.kind, info)) break;
         if (info.op == BinaryOperator::In && !allowIn_) break;
         if (info.precedence < minPrecedence) break;
+
+        // ExponentiationExpression 的左操作数必须是 UpdateExpression：
+        // `-a ** b` / `!a ** b` / `await a ** b` 等是早期错误（§13.15.1）。
+        // 括号包裹的一元表达式（`(-a) ** b`）仍是合法 UpdateExpression。
+        if (info.op == BinaryOperator::Exponentiate &&
+            !left->isParenthesized() &&
+            (left->kind() == NodeKind::UnaryExpression ||
+             left->kind() == NodeKind::AwaitExpression)) {
+            error(left->range().start,
+                  "Unary expression cannot be the left operand of '**'");
+            return nullptr;
+        }
 
         const SourceLocation start = left->range().start;
         advance();
@@ -2307,6 +2393,12 @@ NodePtr Parser::parseMetaProperty(std::string metaName,
         error(current_.start, "Expected '" + propertyName + "'");
         return nullptr;
     }
+    // 元属性关键字不得含转义（如 new.t\u0061rget）。
+    if (current_.hasEscape) {
+        error(current_.start,
+              "Keyword must not contain escaped characters");
+        return nullptr;
+    }
     NodePtr property = parseIdentifierName();
     if (property == nullptr) return nullptr;
 
@@ -2489,6 +2581,7 @@ NodePtr Parser::parsePrimaryExpression() {
             // await/yield 在对应上下文中不能作 IdentifierReference；
             // 合法的 await/yield 表达式已在 parseUnary/parseAssignment 处理。
             if ((inAsync_ && current_.text == "await") ||
+                (inStaticBlock_ && current_.text == "await") ||
                 (inGenerator_ && current_.text == "yield")) {
                 error(current_.start, "'" + current_.text +
                                           "' is not a valid identifier here");
@@ -2857,14 +2950,18 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
                                            bool generator,
                                            PropertyKind propertyKind) {
     // 形参同样处于 [+Yield]/[+Await] 上下文：await/yield 不能作绑定标识符。
+    // 方法形参/函数体是 ~Await，class 静态块的 +Await 不穿透。
     const bool savedAsync = inAsync_;
     const bool savedGenerator = inGenerator_;
+    const bool savedStaticBlock = inStaticBlock_;
     inAsync_ = async;
     inGenerator_ = generator;
+    inStaticBlock_ = false;
     NodeList params;
     if (!parseFormalParameters(params)) {
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     // 访问器形参约束：get 无参；set 恰好一个非 rest 形参（允许默认值）。
@@ -2877,11 +2974,13 @@ NodePtr Parser::parseMethodPropertyWithKey(SourceLocation start, NodePtr key,
                          : "Setter must have exactly one parameter");
         inAsync_ = savedAsync;
         inGenerator_ = savedGenerator;
+        inStaticBlock_ = savedStaticBlock;
         return nullptr;
     }
     NodePtr body = parseFunctionBody();
     inAsync_ = savedAsync;
     inGenerator_ = savedGenerator;
+    inStaticBlock_ = savedStaticBlock;
     if (body == nullptr) return nullptr;
     rescan(LexicalGoal::Div);
 
@@ -2962,7 +3061,8 @@ NodePtr Parser::parseProperty() {
         const auto* identifier = static_cast<const Identifier*>(key.get());
         // await / yield 在对应上下文中不能作简写属性的 IdentifierReference。
         if ((inGenerator_ && identifier->name == "yield") ||
-            (inAsync_ && identifier->name == "await")) {
+            (inAsync_ && identifier->name == "await") ||
+            (inStaticBlock_ && identifier->name == "await")) {
             error(identifier->range().start,
                   "'" + identifier->name +
                       "' is not a valid identifier reference here");
@@ -3101,7 +3201,8 @@ NodePtr Parser::parseObjectPatternProperty() {
         const auto* identifier = static_cast<const Identifier*>(key.get());
         // await / yield 在对应上下文中不能作简写属性的 IdentifierReference。
         if ((inGenerator_ && identifier->name == "yield") ||
-            (inAsync_ && identifier->name == "await")) {
+            (inAsync_ && identifier->name == "await") ||
+            (inStaticBlock_ && identifier->name == "await")) {
             error(identifier->range().start,
                   "'" + identifier->name +
                       "' is not a valid identifier reference here");

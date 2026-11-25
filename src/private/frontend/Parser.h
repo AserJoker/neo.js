@@ -221,6 +221,9 @@ private:
     // 当前函数体的上下文关键字状态（await / yield）。
     bool inAsync_ = false;
     bool inGenerator_ = false;
+    // class 静态块内 await 恒为保留字（ClassStaticBlockStatementList[+Await]），
+    // 且该约束穿透嵌套函数（不像 inAsync_ 会被普通函数重置）。
+    bool inStaticBlock_ = false;
     // 正在解析形参列表的嵌套层数：其中不允许 YieldExpression / AwaitExpression。
     int formalParameterDepth_ = 0;
     std::vector<ParseError> errors_;

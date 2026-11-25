@@ -2939,6 +2939,14 @@ void Compiler::compilePropertyKey(const frontend::Property& node) {
             code_->push(
                 static_cast<const frontend::NumericLiteral&>(*node.key).value);
             break;
+        case NodeKind::BigIntLiteral: {
+            // BigInt 字面量键：运行时按 ToPropertyKey 转成十进制字符串。
+            const auto& literal =
+                static_cast<const frontend::BigIntLiteral&>(*node.key);
+            code_->pushBigInt(literal.digits,
+                              static_cast<uint32_t>(literal.radix));
+            break;
+        }
         default:
             error(*node.key, "compiler: unsupported property key");
             code_->pushUndefined();
@@ -3270,7 +3278,11 @@ void Compiler::compileUpdateExpression(
             if (member.computed) code_->toPropertyKey();
             code_->dup2();                    // [base, key, base, key]
             code_->getSuperPropFromBase();    // [base, key, old]
-            if (!node.prefix) code_->clone();
+            if (!node.prefix) {
+                // 后缀表达式结果 = ToNumeric(old)（§13.4.4），不是原始旧值。
+                code_->toNumeric();           // [base, key, num]
+                code_->clone();
+            }
             if (node.op == frontend::UpdateOperator::Increment) {
                 code_->inc();
             } else {
@@ -3287,9 +3299,23 @@ void Compiler::compileUpdateExpression(
         }
         compileExpression(*member.object);
         compileMemberKey(member);
+        // 引用求值：先检查基值可强制转换，再 ToPropertyKey（各一次，§13.4.4/§13.4.5）。
+        // 顺序不可颠倒：base 为 null/undefined 时不得触发键的 toString；
+        // 且键只转换一次，否则 getProp/setProp 会各触发一次用户 toString。
+        code_->swap();  // [key, obj]
+        code_->dup();
+        uint32_t coercible = code_->jNotNullish();
+        code_->throwTypeError("Cannot read properties of null or undefined");
+        code_->patchU32(coercible + 2, code_->here());
+        code_->swap();  // [obj, key]
+        if (member.computed) code_->toPropertyKey();
         code_->dup2();
         code_->getProp();
-        if (!node.prefix) code_->clone();
+        if (!node.prefix) {
+            // 后缀表达式结果 = ToNumeric(old)（§13.4.4），不是原始旧值。
+            code_->toNumeric();
+            code_->clone();
+        }
         if (node.op == frontend::UpdateOperator::Increment) {
             code_->inc();
         } else {
@@ -3324,7 +3350,9 @@ void Compiler::compileUpdateExpression(
             }
             code_->storeWithRef(name);  // [new]（storeWithRef 已压回新值）
         } else {
-            code_->dup();  // [obj, old, old]
+            // 后缀表达式结果 = ToNumeric(old)（§13.4.4）。
+            code_->toNumeric();  // [obj, num]
+            code_->dup();        // [obj, num, num]
             if (node.op == frontend::UpdateOperator::Increment) {
                 code_->inc();
             } else {
@@ -3344,7 +3372,9 @@ void Compiler::compileUpdateExpression(
         code_->dup();
         code_->store(name);
     } else {
-        // 后缀：快照旧值留在栈上作为表达式结果（绑定槽会被 store 原地改写）。
+        // 后缀：快照 ToNumeric(old) 留在栈上作为表达式结果（§13.4.4），
+        // 绑定槽会被 store 原地改写。
+        code_->toNumeric();
         code_->clone();
         code_->swap();
         if (node.op == frontend::UpdateOperator::Increment) {
@@ -4562,6 +4592,13 @@ void Compiler::compileClassKey(const frontend::Node& key, bool computed) {
             compileNumericLiteral(
                 static_cast<const frontend::NumericLiteral&>(key));
             return;
+        case NodeKind::BigIntLiteral: {
+            const auto& literal =
+                static_cast<const frontend::BigIntLiteral&>(key);
+            code_->pushBigInt(literal.digits,
+                              static_cast<uint32_t>(literal.radix));
+            return;
+        }
         case NodeKind::PrivateIdentifier:
             error(key, "compiler: private class elements not supported");
             code_->pushUndefined();

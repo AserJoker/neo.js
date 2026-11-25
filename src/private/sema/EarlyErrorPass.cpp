@@ -30,14 +30,21 @@ public:
             }
             const auto& prop = static_cast<const frontend::Property&>(*property);
             if (prop.computed || prop.shorthand || prop.method ||
-                prop.propertyKind != frontend::PropertyKind::Init || !prop.key ||
-                prop.key->kind() != frontend::NodeKind::Identifier) {
+                prop.propertyKind != frontend::PropertyKind::Init || !prop.key) {
                 continue;
             }
-            if (static_cast<const frontend::Identifier&>(*prop.key).name !=
-                "__proto__") {
+            // 标识符键与字符串字面量键都算 PropertyName；计算键不算。
+            std::string name;
+            if (prop.key->kind() == frontend::NodeKind::Identifier) {
+                name =
+                    static_cast<const frontend::Identifier&>(*prop.key).name;
+            } else if (prop.key->kind() == frontend::NodeKind::StringLiteral) {
+                name = static_cast<const frontend::StringLiteral&>(*prop.key)
+                           .value;
+            } else {
                 continue;
             }
+            if (name != "__proto__") continue;
             if (seen) {
                 context.error(prop.range().start,
                               "Duplicate __proto__ fields are not allowed in "
@@ -45,6 +52,31 @@ public:
                 return;
             }
             seen = true;
+        }
+    }
+};
+
+// CoverInitializedName（ES2024 §13.2.5.1）：`{ a = 1 }` 只作为对象赋值模式
+// 的 cover grammar 存在。Parser 在确定为赋值/绑定模式时会把 ObjectExpression
+// 转换为 ObjectPattern；残留到 Sema 的 ObjectExpression 中的简写初始化器
+// 必然未转换为模式，属早期错误。
+class CoverInitializedNameVisitor final : public IVisitor {
+public:
+    void enter(Walker&, SemaContext& context, frontend::Node& node) override {
+        if (node.kind() != frontend::NodeKind::ObjectExpression) return;
+        auto& object = static_cast<frontend::ObjectExpression&>(node);
+        for (const frontend::NodePtr& property : object.properties) {
+            if (!property || property->kind() != frontend::NodeKind::Property) {
+                continue;
+            }
+            const auto& prop = static_cast<const frontend::Property&>(*property);
+            if (!prop.shorthand || !prop.value) continue;
+            if (prop.value->kind() != frontend::NodeKind::AssignmentExpression) {
+                continue;
+            }
+            context.error(prop.value->range().start,
+                          "Invalid shorthand property initializer");
+            return;
         }
     }
 };
@@ -268,8 +300,20 @@ public:
                 ++functionDepth_;
                 return;
             }
+            case NodeKind::ArrowFunctionExpression: {
+                // 箭头形参处于 +Await 上下文（ConciseBody 才是 ~Await），
+                // 因此静态块的绑定限制作用于形参但不穿透函数体。
+                auto& arrow =
+                    static_cast<frontend::ArrowFunctionExpression&>(node);
+                if (staticDepth_ != 0 && functionDepth_ == 0) {
+                    for (frontend::NodePtr& param : arrow.params) {
+                        reportAwait(context, param.get());
+                    }
+                }
+                ++functionDepth_;
+                return;
+            }
             case NodeKind::FunctionExpression:
-            case NodeKind::ArrowFunctionExpression:
                 ++functionDepth_;
                 return;
             case NodeKind::ClassDeclaration: {
@@ -435,6 +479,7 @@ void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
     walker.addAll(makeControlFlowVisitor(annotations, options));
     walker.addAll(makeModuleVisitor(annotations));
     walker.addAll(std::make_unique<DuplicateProtoVisitor>());
+    walker.addAll(std::make_unique<CoverInitializedNameVisitor>());
     walker.addAll(std::make_unique<ClassElementVisitor>());
     walker.addAll(std::make_unique<LexicalBindingVisitor>());
     walker.addAll(std::make_unique<StaticBlockAwaitVisitor>());

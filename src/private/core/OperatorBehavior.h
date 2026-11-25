@@ -401,6 +401,11 @@ inline Value* binaryOpValues(IContext* ctx, BinaryOperator op, Value* a,
             }
             double x = static_cast<NumberData*>(an->data())->value;
             double y = static_cast<NumberData*>(bn->data())->value;
+            // std::pow 对 1^NaN / (-1)^±Infinity 返回 1，规范要求 NaN
+            // （§6.1.6.1.3 Number::exponentiate）。
+            if (std::isnan(y) || ((x == 1.0 || x == -1.0) && std::isinf(y))) {
+                return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
+            }
             return ctx->createNumber(std::pow(x, y));
         }
         case BinaryOperator::StrictEqual:
