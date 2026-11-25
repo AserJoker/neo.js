@@ -111,6 +111,9 @@ private:
     // 值登记进 values_ 保活（GC 从作用域树标记）。
     Value* thisValue_ = nullptr;
     bool hasOwnThis_ = false;
+    // 箭头函数的执行环境：this 是词法捕获的，不是可 BindThisValue 的函数环境。
+    // GetThisEnvironment / BindThisValue 须跳过它找外层非箭头函数环境。
+    bool lexicalThis_ = false;
     Value* newTarget_ = nullptr;
     bool hasOwnNewTarget_ = false;
 
@@ -227,6 +230,8 @@ public:
     // —— 函数环境：this / new.target（ADR-047）——
     // 专用槽位，不进入 namedValues_；set 时登记到 values_ 保活。
     bool hasOwnThis() const { return hasOwnThis_; }
+    bool lexicalThis() const { return lexicalThis_; }
+    void markLexicalThis() { lexicalThis_ = true; }
     Value* thisValue() const { return thisValue_; }
     void setThis(Value* v) {
         thisValue_ = v;

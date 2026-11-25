@@ -322,6 +322,9 @@ private:
         FunctionInfo& info = functionInfo(node.id());
         info.isArrow = true;
         info.isAsync = function.async;
+        // 箭头继承外层的 super 词法上下文；需要 super() 时捕获定义点环境，
+        // 使 BindThisValue 落到外层构造器的函数环境。
+        info.lexicalSuperCall = ctx().allowsSuperCall;
     }
 
     void annotateStaticBlock(Node& node) {

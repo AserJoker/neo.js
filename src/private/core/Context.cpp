@@ -621,7 +621,12 @@ Value* Context::constructSuper(Value* superCtor, Value* newTarget, size_t argc,
         superCtor->type()->kind() == TypeKind::Undefined) {
         return detail::typeError(this, "Super constructor null is not a constructor");
     }
+    // GetThisEnvironment：跳过箭头函数的词法 this 环境，落到外层非箭头
+    // 函数环境（§9.4.2）。箭头 super() 的 BindThisValue 必须写回构造器。
     Scope* env = currentFunctionEnv_;
+    while (env != nullptr && (!env->hasOwnThis() || env->lexicalThis())) {
+        env = env->parent();
+    }
     // §13.3.7.1：先 Construct 父构造器，再 BindThisValue；重复 super() 的
     // ReferenceError 发生在父构造器已经执行之后。
     Value* obj = construct(superCtor, newTarget, argc, argv);
@@ -629,15 +634,17 @@ Value* Context::constructSuper(Value* superCtor, Value* newTarget, size_t argc,
     if (!detail::isObjectKind(obj->type()->kind())) {
         return detail::typeError(this, "Super constructor must return an object");
     }
-    if (env != nullptr) {
-        Value* current = env->thisValue();
-        if (current != nullptr &&
-            current->type()->kind() != TypeKind::Uninitialized) {
-            return detail::referenceError(
-                this, "Super constructor may only be called once");
-        }
-        env->setThis(obj);
+    if (env == nullptr) {
+        return detail::referenceError(
+            this, "Super constructor may only be called once");
     }
+    Value* current = env->thisValue();
+    if (current != nullptr &&
+        current->type()->kind() != TypeKind::Uninitialized) {
+        return detail::referenceError(
+            this, "Super constructor may only be called once");
+    }
+    env->setThis(obj);
     return obj;
 }
 
@@ -765,6 +772,13 @@ void Context::addClassInitializer(Value* classCtor, Value* initializer) {
 Value* Context::initializeInstanceElements(Value* instance, Value* classCtor) {
     if (instance == nullptr || !detail::isObjectKind(instance->type()->kind())) {
         return detail::typeError(this, "instance elements initialization on non-object");
+    }
+    // 箭头 super()：实例元素属于词法外层的构造器类，而非箭头自身。
+    if (classCtor != nullptr && classCtor->type()->kind() == TypeKind::Function) {
+        auto* fd = static_cast<FunctionData*>(classCtor->data());
+        if (fd->isArrow && fd->outerOwnerClass != nullptr) {
+            classCtor = fd->outerOwnerClass;
+        }
     }
     ClassData* cd = classDataOf(classCtor);
     if (cd == nullptr) {
@@ -1340,6 +1354,14 @@ Value* Context::registerClass(const NativeClassDef& def) {
 }
 
 Value* Context::classSuperConstructor(Value* classCtor) {
+    // 箭头函数自身不是 class 成员：super() 的 GetSuperConstructor 作用于
+    // 词法外层构造器，故改用定义点继承的 ownerClass。
+    if (classCtor != nullptr && classCtor->type()->kind() == TypeKind::Function) {
+        auto* d = static_cast<FunctionData*>(classCtor->data());
+        if (d->isArrow && d->outerOwnerClass != nullptr) {
+            classCtor = d->outerOwnerClass;
+        }
+    }
     ClassData* cd = classDataOfMember(classCtor);
     if (cd == nullptr) return nullptr;
     // GetSuperConstructor 取活动函数的 [[Prototype]]（动态，可被

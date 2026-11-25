@@ -462,6 +462,8 @@ inline constexpr uint32_t kFunctionInFieldInitializer = 1u << 9;
 inline constexpr uint32_t kClassDerived = 1u << 5;
 // push_function：箭头函数（无自身 this/new.target/arguments 绑定）。
 inline constexpr uint32_t kFunctionArrow = 1u << 10;
+// push_function：派生构造器内的箭头，需捕获定义点环境链以支持 super()。
+inline constexpr uint32_t kFunctionLexicalSuper = 1u << 11;
 
 // 指令名（诊断/测试用）。
 const char* opCodeName(OpCode op);

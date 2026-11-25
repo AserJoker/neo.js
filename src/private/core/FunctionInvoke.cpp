@@ -257,8 +257,15 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         }
 
         // this 优先级：函数自身绑定（箭头/bind）> 调用点传入（按严格性替换）。
-        Value* boundThis =
-            d->self != nullptr ? d->self : ordinaryCallThis(ctx, d, thisArg);
+        // 派生构造器内的箭头在 super() 之前创建时没有焊死 this，须沿捕获的
+        // 环境链取外层函数环境的值（可能是 Uninitialized，读取时再报错）。
+        Value* boundThis = d->self;
+        if (boundThis == nullptr && d->isArrow && d->closureScope != nullptr) {
+            boundThis = d->closureScope->lookupThis();
+        }
+        if (boundThis == nullptr) {
+            boundThis = ordinaryCallThis(ctx, d, thisArg);
+        }
         if (detail::isErrorValue(boundThis)) {
             while (ctx->current() != d->closureScope) ctx->popScope();
             if (--d->activeCalls == 0 && !d->capturesEnvironment) {
@@ -272,6 +279,9 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
         }
         execScope->setThis(boundThis);
         if (d->isArrow) {
+            // 箭头环境记录不是 GetThisEnvironment 的终点：super() 的
+            // BindThisValue 须落到外层非箭头函数环境。
+            execScope->markLexicalThis();
             // 箭头函数没有自己的 new.target：取定义点捕获的值（由
             // inherit_new_target 写入 closureScope）。
             Value* inherited = d->closureScope != nullptr

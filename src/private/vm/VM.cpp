@@ -2467,6 +2467,10 @@ Value* VM::opPushFunction() {
     if ((flags & kFunctionArrow) != 0) {
         ctx_->setFunctionArrow(fn, true);
     }
+    if ((flags & kFunctionLexicalSuper) != 0) {
+        // 箭头 super() 需要外层构造器的函数环境（BindThisValue / 重复调用检测）。
+        ctx_->setFunctionCapturesEnvironment(fn);
+    }
     if ((flags & kFunctionGenerator) != 0) {
         ctx_->setFunctionGenerator(fn, true);
     }
@@ -3372,8 +3376,14 @@ Value* VM::opConstructSuper() {
     for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
 
     Value* superCtor = ctx_->classSuperConstructor(ctx_->currentFunction());
-    Value* result = ctx_->constructSuper(superCtor, ctx_->newTarget(), argc,
-                                         args.empty() ? nullptr : args.data());
+    // new.target 是词法绑定：箭头 super() 取定义点捕获的值，而非当前
+    // Context 的动态构造目标。
+    Value* lexicalNewTarget = ctx_->current() != nullptr
+                                  ? ctx_->current()->lookupNewTarget()
+                                  : nullptr;
+    Value* result = ctx_->constructSuper(
+        superCtor, lexicalNewTarget != nullptr ? lexicalNewTarget : ctx_->newTarget(),
+        argc, args.empty() ? nullptr : args.data());
     if (detail::isErrorValue(result)) return fail(result);
     // super() 返回后初始化当前 class 的实例元素（字段/私有 brand）。
     Value* init =
@@ -3392,8 +3402,12 @@ Value* VM::opConstructSuperSpread() {
     if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
 
     Value* superCtor = ctx_->classSuperConstructor(ctx_->currentFunction());
-    Value* result = ctx_->constructSuper(superCtor, ctx_->newTarget(),
-                                         args.size(), args.data());
+    Value* lexicalNewTarget = ctx_->current() != nullptr
+                                  ? ctx_->current()->lookupNewTarget()
+                                  : nullptr;
+    Value* result = ctx_->constructSuper(
+        superCtor, lexicalNewTarget != nullptr ? lexicalNewTarget : ctx_->newTarget(),
+        args.size(), args.data());
     if (detail::isErrorValue(result)) return fail(result);
     Value* init =
         ctx_->initializeInstanceElements(result, ctx_->currentFunction());

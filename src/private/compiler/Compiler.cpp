@@ -4757,6 +4757,11 @@ void Compiler::compileFunctionObject(const Node& node,
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
     if (arrow) flags |= vm::kFunctionArrow;
+    // 派生构造器内的箭头可能调用 super()：捕获定义点环境链，调用期才能
+    // 找到外层构造器的函数环境执行 BindThisValue。
+    if (arrow && info != nullptr && info->lexicalSuperCall) {
+        flags |= vm::kFunctionLexicalSuper;
+    }
     if (!arrow && !hasArgumentsParam) flags |= vm::kFunctionHasArguments;
     if (arrow && inFieldInitializer_) flags |= vm::kFunctionInFieldInitializer;
     if (mapped) flags |= vm::kFunctionArgumentsMapped;
@@ -4817,8 +4822,14 @@ void Compiler::compileFunctionObject(const Node& node,
     if (arrow && !method) {
         code_->inheritHomeObject();
         code_->inheritNewTarget();
-        code_->loadThis();
-        code_->bindThis();
+        // 派生构造器内的箭头可能出现在 super() 之前：此时 this 尚未初始化，
+        // 不能在此读取。改为调用期沿捕获的环境链取外层 this（见 FunctionInvoke）。
+        const bool lexicalSuper =
+            info != nullptr && info->lexicalSuperCall;
+        if (!lexicalSuper) {
+            code_->loadThis();
+            code_->bindThis();
+        }
     }
 }
 
