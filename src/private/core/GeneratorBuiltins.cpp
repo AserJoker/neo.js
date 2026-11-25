@@ -24,6 +24,7 @@
 #include "core/types/Coroutine.h"
 #include "core/types/Exception.h"
 #include "core/types/Interrupt.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
 namespace neo::core {
@@ -130,6 +131,32 @@ Value* generatorIterator(IContext* /*ctx*/, Value* self, size_t /*argc*/,
     return self;
 }
 
+// %GeneratorFunction%(...args)（ES2024 §27.3.1）：前 n-1 个参数是形参源码，
+// 最后一个参数是函数体源码，在全局环境创建生成器函数（不捕获调用方作用域）。
+Value* generatorFunctionCtor(IContext* ctx, Value* /*self*/, size_t argc,
+                             Value* argv[]) {
+    std::string params;
+    std::string body;
+    for (size_t i = 0; i < argc; ++i) {
+        Value* text = ctx->toString(argv[i]);
+        if (detail::isErrorValue(text)) return text;
+        const std::string& str = static_cast<StringData*>(text->data())->value;
+        if (i + 1 == argc) {
+            body = str;
+        } else {
+            if (!params.empty()) params += ",";
+            params += str;
+        }
+    }
+    // 复用编译管线：生成器函数表达式会走 setFunctionGenerator 挂
+    // %GeneratorFunction.prototype% 与 %GeneratorPrototype%。
+    std::string source =
+        "(function* anonymous(" + params + "\n) {\n" + body + "\n})";
+    Value* src = ctx->createString(source);
+    if (src == ctx->oomValue()) return src;
+    return ctx->evalSource(src, nullptr, false);
+}
+
 // 定义原型方法（writable / 不可枚举 / 可配置），length 显式覆盖。
 bool defineMethod(IContext* ctx, Value* obj, const char* name, NativeFn fn,
                   size_t length) {
@@ -172,9 +199,35 @@ bool registerGeneratorBuiltins(IContext* ctx) {
     }
     ctx->setGeneratorFunctionPrototype(genFuncProto);
     // prototype：%GeneratorPrototype%，writable=false / enumerable=false /
-    // configurable=false。
+    // configurable=true（§27.3.3.2）。
     if (ctx->defineProperty(genFuncProto, "prototype", genProto, false, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
+    // —— %GeneratorFunction%（§27.3.1）——
+    // 生成器函数对象的 constructor；调用/构造均走动态源码编译。
+    Value* genFuncCtor = ctx->createNativeFunction(generatorFunctionCtor, 0);
+    if (genFuncCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(genFuncCtor, "GeneratorFunction");
+    ctx->setFunctionConstructor(genFuncCtor, generatorFunctionCtor);
+    if (ctx->defineProperty(genFuncCtor, "length", ctx->createNumber(1.0), false,
+                            false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    // %GeneratorFunction%.prototype = %GeneratorFunction.prototype%
+    // （writable=false / enumerable=false / configurable=false）。
+    if (ctx->defineProperty(genFuncCtor, "prototype", genFuncProto, false, false,
                             false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    // %GeneratorFunction.prototype%.constructor = %GeneratorFunction%
+    // （writable=false / enumerable=false / configurable=true）。
+    if (ctx->defineProperty(genFuncProto, "constructor", genFuncCtor, false,
+                            false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }
