@@ -160,6 +160,33 @@ bool registerGeneratorBuiltins(IContext* ctx) {
     }
     ctx->setGeneratorPrototype(genProto);
 
+    // —— %GeneratorFunction.prototype%（普通对象，原型 = %Function.prototype%）——
+    // 生成器函数对象的 [[Prototype]]（ES2024 §27.5.1.2）。
+    Value* genFuncProto = ctx->createObject();
+    if (genFuncProto == ctx->oomValue()) return false;
+    if (Value* fnProto = ctx->functionPrototype()) {
+        if (ctx->setPrototype(genFuncProto, fnProto)->type()->kind() ==
+            TypeKind::Exception) {
+            return false;
+        }
+    }
+    ctx->setGeneratorFunctionPrototype(genFuncProto);
+    // prototype：%GeneratorPrototype%，writable=false / enumerable=false /
+    // configurable=false。
+    if (ctx->defineProperty(genFuncProto, "prototype", genProto, false, false,
+                            false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    // @@toStringTag = "GeneratorFunction"。
+    if (ctx->defineProperty(genFuncProto,
+                            ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+                            ctx->createString("GeneratorFunction"), false, false,
+                            true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
     // —— next / return / throw ——
     if (!defineMethod(ctx, genProto, "next", generatorNext, 1)) return false;
     if (!defineMethod(ctx, genProto, "return", generatorReturn, 1)) return false;

@@ -114,6 +114,9 @@ public:
     std::vector<std::string> paramNames;  // mapped arguments 的索引→形参名
     // 箭头函数/显式绑定的 this（ADR-021 §2b）。非空时 invoke 优先于传入 thisArg。
     Value* self = nullptr;           // GC 需遍历
+    // 箭头函数：没有自己的 this/new.target/arguments 绑定，调用时继承定义点
+    // 外层环境（§15.3.4）。
+    bool isArrow = false;
     NativeFn constructFn;  // 可选构造钩子（nullptr = native + 默认 this 语义）
     bool constructible = true;  // 是否可作为构造函数（IsConstructor，§7.2.4）
     // 是否为生成器函数（function*，ADR-045 §8）。为 true 时 call 不执行函数体，

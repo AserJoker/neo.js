@@ -4730,9 +4730,26 @@ void Compiler::compileFunctionObject(const Node& node,
     }
     const bool mapped = !arrow && !strict && simpleParams;
 
+    // 形参已绑定名为 arguments 的标识符时不创建 arguments 对象（§10.4.4
+    // FunctionDeclarationInstantiation 的 argumentsObjectNeeded）。
+    bool hasArgumentsParam = false;
+    for (const frontend::NodePtr& param : params) {
+        if (!param) continue;
+        std::vector<std::string> boundNames;
+        collectPatternNames(*param, boundNames);
+        for (const std::string& boundName : boundNames) {
+            if (boundName == "arguments") {
+                hasArgumentsParam = true;
+                break;
+            }
+        }
+        if (hasArgumentsParam) break;
+    }
+
     uint32_t flags = 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
-    if (!arrow) flags |= vm::kFunctionHasArguments;
+    if (arrow) flags |= vm::kFunctionArrow;
+    if (!arrow && !hasArgumentsParam) flags |= vm::kFunctionHasArguments;
     if (arrow && inFieldInitializer_) flags |= vm::kFunctionInFieldInitializer;
     if (mapped) flags |= vm::kFunctionArgumentsMapped;
     if (method) {
@@ -4791,6 +4808,7 @@ void Compiler::compileFunctionObject(const Node& node,
     // [[HomeObject]]（箭头自身没有，super 解析走外层方法）。
     if (arrow && !method) {
         code_->inheritHomeObject();
+        code_->inheritNewTarget();
         code_->loadThis();
         code_->bindThis();
     }
@@ -4955,7 +4973,8 @@ void Compiler::hoistScope(const frontend::NodeList& body, bool varScope,
 }
 
 void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
-    if (varScope) hoistVarSlots(body, false);
+    std::unordered_set<std::string> varNames;
+    if (varScope) hoistVarSlots(body, false, &varNames);
     hoistLexicalSlots(body, varScope && globalCode_);
 
     // 直接函数声明：先建 undefined 槽（函数对象在 hoistFunctions 创建）。
@@ -4980,6 +4999,9 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
         if (globalCode_ && varScope) {
             // 全局函数声明：属性落到 global object（CreateGlobalFunctionBinding）。
             code_->declareGlobalFunction(name);
+        } else if (varNames.count(name) != 0) {
+            // 同名 var 已建槽：函数声明复用该绑定，不再重复 define
+            // （§10.2.1.3 中 var 与函数声明同名合法）。
         } else {
             code_->pushUndefined();
             code_->define(name, true, true, true);
@@ -4987,7 +5009,8 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
     }
 }
 
-void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
+void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare,
+                             std::unordered_set<std::string>* outNames) {
     // var：递归收集（不进入嵌套函数），在函数/模块/eval 变量环境建槽。
     std::vector<std::string> varNames;
     for (const frontend::NodePtr& statement : body) {
@@ -4999,6 +5022,7 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare) {
     std::unordered_set<std::string> seen;
     for (const std::string& name : varNames) {
         if (!seen.insert(name).second) continue;
+        if (outNames != nullptr) outNames->insert(name);
         // 函数已有隐式 arguments 绑定：var arguments 是 no-op（§10.2.1.2）。
         if (hasArgumentsBinding_ && name == "arguments") continue;
         if (declare) {

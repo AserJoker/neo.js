@@ -247,8 +247,20 @@ Value* invokeScriptFunction(IContext* ctx, Value* fn, Value* thisArg, size_t arg
             return boundThis;
         }
         execScope->setThis(boundThis);
-        execScope->setNewTarget(newTarget != nullptr ? newTarget
-                                                     : ctx->createUndefined());
+        if (d->isArrow) {
+            // 箭头函数没有自己的 new.target：取定义点捕获的值（由
+            // inherit_new_target 写入 closureScope）。
+            Value* inherited = d->closureScope != nullptr
+                                   ? d->closureScope->lookupNewTarget()
+                                   : nullptr;
+            execScope->setNewTarget(inherited != nullptr
+                                        ? inherited
+                                        : ctx->createUndefined());
+        } else {
+            execScope->setNewTarget(newTarget != nullptr
+                                        ? newTarget
+                                        : ctx->createUndefined());
+        }
         ctx->setCurrentFunctionEnv(execScope);
         ctx->setCurrentFunction(fn);
 

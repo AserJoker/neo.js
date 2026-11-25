@@ -507,6 +507,30 @@ bool registerAsyncGeneratorBuiltins(IContext* ctx) {
     }
     ctx->setAsyncGeneratorPrototype(asyncGenProto);
 
+    // —— %AsyncGeneratorFunction.prototype%（原型 = %Function.prototype%）——
+    // 异步生成器函数对象的 [[Prototype]]（ES2024 §27.6.1.2）。
+    Value* asyncGenFuncProto = ctx->createObject();
+    if (asyncGenFuncProto == ctx->oomValue()) return false;
+    if (Value* fnProto = ctx->functionPrototype()) {
+        if (ctx->setPrototype(asyncGenFuncProto, fnProto)->type()->kind() ==
+            TypeKind::Exception) {
+            return false;
+        }
+    }
+    ctx->setAsyncGeneratorFunctionPrototype(asyncGenFuncProto);
+    if (ctx->defineProperty(asyncGenFuncProto, "prototype", asyncGenProto,
+                            false, false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    if (ctx->defineProperty(asyncGenFuncProto,
+                            ctx->getWellKnownSymbol(WellKnownSymbol::ToStringTag),
+                            ctx->createString("AsyncGeneratorFunction"), false,
+                            false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
     if (!defineMethod(ctx, asyncGenProto, "next", asyncGeneratorNext, 1)) return false;
     if (!defineMethod(ctx, asyncGenProto, "return", asyncGeneratorReturn, 1)) {
         return false;

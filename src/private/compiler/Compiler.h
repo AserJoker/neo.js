@@ -24,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -267,7 +268,9 @@ private:
     // 模块三段式拆分：建槽（var/let/const/函数占位）与函数对象创建分开发射。
     void hoistSlots(const frontend::NodeList& body, bool varScope);
     // eval：var 槽与词法槽分开提升（sloppy 模式 var 进调用方变量环境）。
-    void hoistVarSlots(const frontend::NodeList& body, bool declare);
+    // outNames 非空时回填本次建槽的 var 名（供函数声明去重）。
+    void hoistVarSlots(const frontend::NodeList& body, bool declare,
+                       std::unordered_set<std::string>* outNames = nullptr);
     void hoistLexicalSlots(const frontend::NodeList& body,
                            bool globalLexical = false);
     void hoistFunctions(const frontend::NodeList& body, bool annexB = false);

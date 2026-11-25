@@ -127,6 +127,10 @@ class Context : public IContext {
     Value* workerPrototype_ = nullptr;  // %Worker.prototype%
     Value* messagePortPrototype_ = nullptr;  // %MessagePort.prototype%
     Value* generatorPrototype_ = nullptr;  // %GeneratorPrototype%（ADR-045 §8）
+    // %GeneratorFunction.prototype% / %AsyncGeneratorFunction.prototype%：
+    // 生成器函数对象的 [[Prototype]]（其原型为 %Function.prototype%）。
+    Value* generatorFunctionPrototype_ = nullptr;
+    Value* asyncGeneratorFunctionPrototype_ = nullptr;
     Value* asyncIteratorPrototype_ = nullptr;   // %AsyncIteratorPrototype%
     Value* asyncGeneratorPrototype_ = nullptr;  // %AsyncGeneratorPrototype%
     Value* errorPrototype_ = nullptr;   // %Error.prototype%（ADR-038）
@@ -408,6 +412,7 @@ public:
                               bool mapped) override;
     void setFunctionInFieldInitializer(Value* fn,
                                        bool inFieldInitializer) override;
+    void setFunctionArrow(Value* fn, bool arrow) override;
     void setFunctionParamNames(Value* fn,
                                const std::vector<std::string>& names) override;
     Value* createBoundFunction(Value* target, Value* boundThis, size_t argc,
@@ -660,6 +665,18 @@ public:
     }
     void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
     Value* generatorPrototype() const override { return generatorPrototype_; }
+    void setGeneratorFunctionPrototype(Value* proto) override {
+        generatorFunctionPrototype_ = proto;
+    }
+    Value* generatorFunctionPrototype() const override {
+        return generatorFunctionPrototype_;
+    }
+    void setAsyncGeneratorFunctionPrototype(Value* proto) override {
+        asyncGeneratorFunctionPrototype_ = proto;
+    }
+    Value* asyncGeneratorFunctionPrototype() const override {
+        return asyncGeneratorFunctionPrototype_;
+    }
     void setAsyncIteratorPrototype(Value* proto) override {
         asyncIteratorPrototype_ = proto;
     }

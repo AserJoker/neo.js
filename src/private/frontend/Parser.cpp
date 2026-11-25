@@ -635,13 +635,13 @@ NodePtr Parser::parseFunctionExpression(bool async) {
         id = parseIdentifier();
     }
     // 函数名规则（§15.2 各产生式）：生成器名恒禁 yield（+Yield），
-    // async generator 名恒禁 await（+Await）；普通/async 函数名继承外层
-    // 上下文的 await（含 class 静态块的 +Await），但不继承 yield。
+    // async 函数名恒禁 await（+Await）。函数表达式是函数边界，其名字不继承
+    // 外层的 await 上下文（async 函数体 / class 静态块中的 `function await(){}`
+    // 作为表达式合法），只继承外层的 yield 上下文。
     if (id && id->kind() == NodeKind::Identifier) {
         const auto& name = static_cast<const Identifier&>(*id).name;
         const bool forbidYield = generator || (async && inGenerator_);
-        const bool forbidAwait =
-            (async && generator) || (!generator && (inAsync_ || inStaticBlock_));
+        const bool forbidAwait = async;
         if ((forbidYield && name == "yield") ||
             (forbidAwait && name == "await")) {
             error(id->range().start,

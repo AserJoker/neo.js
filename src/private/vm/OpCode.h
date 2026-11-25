@@ -426,11 +426,14 @@ enum class OpCode : uint16_t {
     // u32 argc：尾位置的直接 eval 调用点。callee 是内建 %eval% 时执行直接
     // eval；否则按尾调用（PrepareForTailCall）处理。
     DirectEvalTail,
+    // [fn] → [fn]：箭头函数继承定义点外层环境的 new.target（箭头自身没有
+    // new.target 绑定，§15.3.4）。外层无 new.target 时捕获 undefined。
+    InheritNewTarget,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::DirectEvalTail) + 1;
+    static_cast<size_t>(OpCode::InheritNewTarget) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）
@@ -457,6 +460,8 @@ inline constexpr uint32_t kFunctionArgumentsMapped = 1u << 8;
 inline constexpr uint32_t kFunctionInFieldInitializer = 1u << 9;
 // push_class：派生类（extends 非 null）。
 inline constexpr uint32_t kClassDerived = 1u << 5;
+// push_function：箭头函数（无自身 this/new.target/arguments 绑定）。
+inline constexpr uint32_t kFunctionArrow = 1u << 10;
 
 // 指令名（诊断/测试用）。
 const char* opCodeName(OpCode op);

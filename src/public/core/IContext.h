@@ -564,6 +564,10 @@ public:
     // 早期错误（§15.7.1 / §19.2.1.1）。仅对 Function 类型有效。
     virtual void setFunctionInFieldInitializer(Value* fn, bool inFieldInitializer) = 0;
 
+    // setFunctionArrow: 标记箭头函数（调用时继承定义点外层的 this/new.target，
+    // 且不创建 arguments 对象）。仅对 Function 类型有效。
+    virtual void setFunctionArrow(Value* fn, bool arrow) = 0;
+
     // setFunctionParamNames: 记录形参名字（mapped arguments 的映射表来源）。
     virtual void setFunctionParamNames(
         Value* fn, const std::vector<std::string>& names) = 0;
@@ -929,6 +933,13 @@ public:
     // bootstrap 专用；建立后生成器函数标记会把 fn.prototype 挂到它下面。
     virtual void setGeneratorPrototype(Value* proto) = 0;
     virtual Value* generatorPrototype() const = 0;
+
+    // %GeneratorFunction.prototype% / %AsyncGeneratorFunction.prototype%：
+    // 生成器函数对象的 [[Prototype]]（其原型为 %Function.prototype%）。
+    virtual void setGeneratorFunctionPrototype(Value* proto) = 0;
+    virtual Value* generatorFunctionPrototype() const = 0;
+    virtual void setAsyncGeneratorFunctionPrototype(Value* proto) = 0;
+    virtual Value* asyncGeneratorFunctionPrototype() const = 0;
 
     // %AsyncIteratorPrototype% / %AsyncGeneratorPrototype%（ES2024 §27.6）。
     virtual void setAsyncIteratorPrototype(Value* proto) = 0;

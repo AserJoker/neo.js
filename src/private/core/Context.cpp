@@ -1792,12 +1792,19 @@ void Context::setFunctionGenerator(Value* fn, bool generator) {
     if (!generator) return;
     // 生成器函数不可构造（ES2024 §27.5.1）
     d->constructible = false;
-    // fn.prototype 的 [[Prototype]] 改为 %GeneratorPrototype%
+    // 生成器函数对象的 [[Prototype]] 是 %GeneratorFunction.prototype%
     // （ES2024 §27.5.1.2）。bootstrap 期间尚未建立时跳过。
+    if (generatorFunctionPrototype_ != nullptr) {
+        static_cast<ObjectData*>(fn->data())->prototype =
+            generatorFunctionPrototype_;
+    }
+    // fn.prototype 的 [[Prototype]] 改为 %GeneratorPrototype%，且该对象没有
+    // 自有 constructor 属性（与普通函数不同，§27.5.1.2）。
     if (generatorPrototype_ != nullptr) {
         Value* proto = getProperty(fn, "prototype");
         if (detail::isObjectKind(proto->type()->kind())) {
             (void)setPrototype(proto, generatorPrototype_);
+            (void)deleteProperty(proto, "constructor");
         }
     }
 }
@@ -1811,11 +1818,19 @@ void Context::setFunctionAsyncGenerator(Value* fn, bool asyncGenerator) {
     // 异步生成器同时是生成器函数，且不可构造（ES2024 §27.6）
     d->generator = true;
     d->constructible = false;
-    // fn.prototype 的 [[Prototype]] 改为 %AsyncGeneratorPrototype%
+    // 异步生成器函数对象的 [[Prototype]] 是
+    // %AsyncGeneratorFunction.prototype%（覆盖 setFunctionGenerator 设置的值）。
+    if (asyncGeneratorFunctionPrototype_ != nullptr) {
+        static_cast<ObjectData*>(fn->data())->prototype =
+            asyncGeneratorFunctionPrototype_;
+    }
+    // fn.prototype 的 [[Prototype]] 改为 %AsyncGeneratorPrototype%，
+    // 且该对象没有自有 constructor 属性。
     if (asyncGeneratorPrototype_ != nullptr) {
         Value* proto = getProperty(fn, "prototype");
         if (detail::isObjectKind(proto->type()->kind())) {
             (void)setPrototype(proto, asyncGeneratorPrototype_);
+            (void)deleteProperty(proto, "constructor");
         }
     }
 }
@@ -1839,6 +1854,11 @@ void Context::setFunctionInFieldInitializer(Value* fn,
     if (fn->type()->kind() != TypeKind::Function) return;
     static_cast<FunctionData*>(fn->data())->inFieldInitializer =
         inFieldInitializer;
+}
+
+void Context::setFunctionArrow(Value* fn, bool arrow) {
+    if (fn->type()->kind() != TypeKind::Function) return;
+    static_cast<FunctionData*>(fn->data())->isArrow = arrow;
 }
 
 void Context::setFunctionParamNames(Value* fn,
@@ -3210,6 +3230,10 @@ Value* Context::createCoroutine(Value* target, Value* receiver, size_t argc, Val
     Value* proto = getProperty(target, "prototype");
     if (detail::isObjectKind(proto->type()->kind())) {
         static_cast<ObjectData*>(co->data())->prototype = proto;
+    } else if (generatorPrototype_ != nullptr) {
+        // GetPrototypeFromConstructor 的 intrinsicDefaultProto 是
+        // %GeneratorPrototype%（§27.5.1.2）。
+        static_cast<ObjectData*>(co->data())->prototype = generatorPrototype_;
     } else if (objectPrototype_ != nullptr) {
         static_cast<ObjectData*>(co->data())->prototype = objectPrototype_;
     }
@@ -3259,6 +3283,10 @@ Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc
     Value* proto = getProperty(target, "prototype");
     if (detail::isObjectKind(proto->type()->kind())) {
         static_cast<ObjectData*>(gen->data())->prototype = proto;
+    } else if (asyncGeneratorPrototype_ != nullptr) {
+        // intrinsicDefaultProto 是 %AsyncGeneratorPrototype%（§27.6.1.2）。
+        static_cast<ObjectData*>(gen->data())->prototype =
+            asyncGeneratorPrototype_;
     } else if (objectPrototype_ != nullptr) {
         static_cast<ObjectData*>(gen->data())->prototype = objectPrototype_;
     }

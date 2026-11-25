@@ -132,6 +132,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreSlotRef:  return "store_slot_ref";
         case OpCode::MarkParamInit: return "mark_param_init";
         case OpCode::DirectEvalTail: return "direct_eval_tail";
+        case OpCode::InheritNewTarget: return "inherit_new_target";
         case OpCode::Lt:            return "lt";
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
@@ -432,6 +433,7 @@ const VM::Handler* VM::handlers() {
         &VM::opStoreSlotRef,
         &VM::opMarkParamInit,
         &VM::opDirectEvalTail,
+        &VM::opInheritNewTarget,
     };
     return table;
 }
@@ -2463,6 +2465,9 @@ Value* VM::opPushFunction() {
     if ((flags & kFunctionInFieldInitializer) != 0) {
         ctx_->setFunctionInFieldInitializer(fn, true);
     }
+    if ((flags & kFunctionArrow) != 0) {
+        ctx_->setFunctionArrow(fn, true);
+    }
     if ((flags & kFunctionGenerator) != 0) {
         ctx_->setFunctionGenerator(fn, true);
     }
@@ -2922,6 +2927,24 @@ Value* VM::opDirectEvalTail() {
     data->tailThis = ctx_->createUndefined();
     data->tailArgs = std::move(args);
     return unwindReturn(signal);
+}
+
+Value* VM::opInheritNewTarget() {
+    if (stack_.empty()) {
+        return badBytecode("inherit_new_target: operand stack underflow");
+    }
+    Value* fn = stack_.back();
+    if (fn->type()->kind() != neo::core::TypeKind::Function) return nullptr;
+    auto* d = static_cast<neo::core::FunctionData*>(fn->data());
+    if (d->closureScope == nullptr) return nullptr;
+    // 箭头函数定义点的外层 new.target；顶层/普通调用为 undefined。
+    Value* inherited = ctx_->current() != nullptr
+                           ? ctx_->current()->lookupNewTarget()
+                           : nullptr;
+    d->closureScope->setNewTarget(inherited != nullptr
+                                      ? inherited
+                                      : ctx_->createUndefined());
+    return nullptr;
 }
 
 Value* VM::opDirectEvalSpread() {

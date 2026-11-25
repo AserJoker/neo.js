@@ -645,6 +645,8 @@ struct Code {
         emitU32(argc);
         return pc;
     }
+    // 箭头函数继承外层 new.target。
+    uint32_t inheritNewTarget() { return emitOp(OpCode::InheritNewTarget); }
     // 带展开的直接 eval 调用点：栈上 [callee, argsArray]。
     uint32_t directEvalSpread() {
         return emitOp(OpCode::DirectEvalSpread);
