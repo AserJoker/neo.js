@@ -127,6 +127,10 @@ const char* opCodeName(OpCode op) {
         case OpCode::Inc:           return "inc";
         case OpCode::Dec:           return "dec";
         case OpCode::ToNumeric:     return "to_numeric";
+        case OpCode::ResolveSlot:   return "resolve_slot";
+        case OpCode::LoadSlotRef:   return "load_slot_ref";
+        case OpCode::StoreSlotRef:  return "store_slot_ref";
+        case OpCode::MarkParamInit: return "mark_param_init";
         case OpCode::Lt:            return "lt";
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
@@ -422,6 +426,10 @@ const VM::Handler* VM::handlers() {
         &VM::opThrowTypeError,
         &VM::opToPropertyKey,
         &VM::opToNumeric,
+        &VM::opResolveSlot,
+        &VM::opLoadSlotRef,
+        &VM::opStoreSlotRef,
+        &VM::opMarkParamInit,
     };
     return table;
 }
@@ -1327,9 +1335,53 @@ Value* VM::opResolveWithRef() {
     if (name == nullptr) {
         return badBytecode("resolve_with_ref: name index out of range");
     }
+    // 引用表示为 [base, isWith, hasSlot]：
+    //   isWith  → base 是 with 对象（对象环境记录）；
+    //   否则 hasSlot → base 是声明式绑定槽位；
+    //   都不是 → 运行时按名字重新解析（全局对象/未声明）。
     Value* object = ctx_->resolveWithObject(*name);
     if (object != nullptr && detail::isErrorValue(object)) return fail(object);
-    push(object != nullptr ? object : ctx_->createUndefined());
+    const bool isWith = object != nullptr;
+    Value* slot = nullptr;
+    if (!isWith) {
+        slot = ctx_->resolveBindingSlot(*name);
+        if (slot != nullptr && detail::isErrorValue(slot)) return fail(slot);
+    }
+    const bool hasSlot = slot != nullptr;
+    push(isWith ? object
+                : (hasSlot ? slot : ctx_->createUndefined()));
+    push(ctx_->createBoolean(isWith));
+    push(ctx_->createBoolean(hasSlot));
+    return nullptr;
+}
+
+Value* VM::storeRefValue(Value* base, bool isWith, bool hasSlot,
+                         const std::string& name, Value* value) {
+    Value* result = nullptr;
+    if (isWith) {
+        // 对象环境记录 SetMutableBinding（§9.1.1.4.5）：严格模式下若属性
+        // 已不存在（例如 getter 中 delete），必须抛 ReferenceError，而不是
+        // 在对象上重新创建属性。
+        if (ctx_->hasFlag("strict")) {
+            Value* key = ctx_->createString(name);
+            if (key == ctx_->oomValue()) return fail(key);
+            Value* has = ctx_->hasProperty(base, key);
+            if (detail::isErrorValue(has)) return fail(has);
+            if (!detail::toBoolean(has)) {
+                return fail(detail::referenceError(
+                    ctx_, "Assignment to undeclared identifier '" + name + "'"));
+            }
+        }
+        result = ctx_->setProperty(base, name, value);
+    } else if (hasSlot) {
+        // 声明式绑定：写回 RHS 求值前捕获的槽位，避免 eval 注入更内层
+        // 同名 var 后写错目标。
+        result = ctx_->storeToSlot(base, name, value);
+        if (result == nullptr) result = ctx_->store(name, value);
+    } else {
+        result = ctx_->store(name, value);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
 
@@ -1344,18 +1396,16 @@ Value* VM::opStoreWithRef() {
     if (name == nullptr) {
         return badBytecode("store_with_ref: name index out of range");
     }
-    if (stack_.size() < 2) {
+    if (stack_.size() < 4) {
         return badBytecode("store_with_ref: operand stack underflow");
     }
     Value* value = pop();
-    Value* object = pop();
-    Value* result = nullptr;
-    if (object->type()->kind() != TypeKind::Undefined) {
-        result = ctx_->setProperty(object, *name, value);
-    } else {
-        result = ctx_->store(*name, value);
-    }
-    if (detail::isErrorValue(result)) return fail(result);
+    Value* hasSlot = pop();
+    Value* isWith = pop();
+    Value* base = pop();
+    Value* result = storeRefValue(base, detail::toBoolean(isWith),
+                                  detail::toBoolean(hasSlot), *name, value);
+    if (result != nullptr) return result;
     push(value);
     return nullptr;
 }
@@ -1371,23 +1421,43 @@ Value* VM::opLoadWithRef() {
     if (name == nullptr) {
         return badBytecode("load_with_ref: name index out of range");
     }
-    if (stack_.empty()) {
+    if (stack_.size() < 3) {
         return badBytecode("load_with_ref: operand stack underflow");
     }
-    Value* object = top();
+    Value* hasSlot = pop();
+    Value* isWith = pop();
+    Value* base = pop();
+    const bool withRef = detail::toBoolean(isWith);
+    const bool slotRef = detail::toBoolean(hasSlot);
     Value* result = nullptr;
-    if (object->type()->kind() != TypeKind::Undefined) {
+    if (withRef) {
         Value* key = ctx_->createString(*name);
         if (key == ctx_->oomValue()) return fail(key);
-        result = ctx_->getProperty(object, key);
+        // GetBindingValue（§9.1.1.2.6）：引用解析与取值之间属性可能已被
+        // 删除（例如 @@unscopables getter）。严格模式抛 ReferenceError，
+        // 非严格模式返回 undefined。
+        Value* has = ctx_->hasProperty(base, key);
+        if (detail::isErrorValue(has)) return fail(has);
+        if (!detail::toBoolean(has)) {
+            if (ctx_->hasFlag("strict")) {
+                return fail(detail::referenceError(
+                    ctx_, "'" + *name + "' is not defined"));
+            }
+            result = ctx_->createUndefined();
+        } else {
+            result = ctx_->getProperty(base, key);
+        }
+    } else if (slotRef) {
+        result = ctx_->loadFromSlot(base, *name);
+        if (result == nullptr) result = ctx_->load(*name);
     } else {
         result = ctx_->load(*name);
     }
     if (detail::isErrorValue(result)) return fail(result);
-    // 与 load 一致：绑定槽位是活引用，表达式读取取快照。
-    Value* snapshot = ctx_->cloneValue(result);
-    if (snapshot == ctx_->oomValue()) return fail(snapshot);
-    push(snapshot);
+    push(base);
+    push(isWith);
+    push(hasSlot);
+    push(result);
     return nullptr;
 }
 
@@ -1402,19 +1472,17 @@ Value* VM::opStoreWithRefKeep() {
     if (name == nullptr) {
         return badBytecode("store_with_ref_keep: name index out of range");
     }
-    if (stack_.size() < 3) {
+    if (stack_.size() < 5) {
         return badBytecode("store_with_ref_keep: operand stack underflow");
     }
     Value* value = pop();
     Value* old = pop();
-    Value* object = pop();
-    Value* result = nullptr;
-    if (object->type()->kind() != TypeKind::Undefined) {
-        result = ctx_->setProperty(object, *name, value);
-    } else {
-        result = ctx_->store(*name, value);
-    }
-    if (detail::isErrorValue(result)) return fail(result);
+    Value* hasSlot = pop();
+    Value* isWith = pop();
+    Value* base = pop();
+    Value* result = storeRefValue(base, detail::toBoolean(isWith),
+                                  detail::toBoolean(hasSlot), *name, value);
+    if (result != nullptr) return result;
     push(old);
     return nullptr;
 }
@@ -2261,9 +2329,16 @@ Value* VM::opPushScope() {
 }
 
 Value* VM::opPushVarScope() {
+    // 函数体开始：形参初始化阶段结束，闭包不再需要按形参环境动态捕获。
+    if (Scope* parent = ctx_->current()) parent->clearFlag("param-init");
     Scope* scope = ctx_->pushNewScope(ctx_->current());
     if (scope == nullptr) return ctx_->oomValue();
     scope->setFlag("var-scope");
+    return nullptr;
+}
+
+Value* VM::opMarkParamInit() {
+    if (Scope* scope = ctx_->current()) scope->setFlag("param-init");
     return nullptr;
 }
 
@@ -2573,6 +2648,84 @@ Value* VM::opToNumeric() {
     Value* result = detail::toNumericValue(ctx_, value);
     if (detail::isErrorValue(result)) return fail(result);
     push(result);
+    return nullptr;
+}
+
+Value* VM::opResolveSlot() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("resolve_slot: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("resolve_slot: name index out of range");
+    }
+    Value* slot = ctx_->resolveBindingSlot(*name);
+    if (slot != nullptr && detail::isErrorValue(slot)) return fail(slot);
+    const bool found = slot != nullptr;
+    push(found ? slot : ctx_->createUndefined());
+    push(ctx_->createBoolean(found));
+    return nullptr;
+}
+
+Value* VM::opLoadSlotRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_slot_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_slot_ref: name index out of range");
+    }
+    if (stack_.size() < 2) {
+        return badBytecode("load_slot_ref: operand stack underflow");
+    }
+    Value* flag = pop();
+    Value* slot = pop();
+    Value* result = nullptr;
+    if (detail::toBoolean(flag)) {
+        result = ctx_->loadFromSlot(slot, *name);
+        if (result == nullptr) result = ctx_->load(*name);
+    } else {
+        result = ctx_->load(*name);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    push(slot);
+    push(flag);
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opStoreSlotRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_slot_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_slot_ref: name index out of range");
+    }
+    if (stack_.size() < 3) {
+        return badBytecode("store_slot_ref: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* flag = pop();
+    Value* slot = pop();
+    Value* result = nullptr;
+    if (detail::toBoolean(flag)) {
+        result = ctx_->storeToSlot(slot, *name, value);
+        if (result == nullptr) result = ctx_->store(*name, value);
+    } else {
+        result = ctx_->store(*name, value);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    push(value);
     return nullptr;
 }
 

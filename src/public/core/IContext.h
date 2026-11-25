@@ -1298,6 +1298,21 @@ public:
     // （§13.5.3）；TDZ/未初始化 import 仍返回 ReferenceError。
     virtual Value* loadSoft(std::string_view name) = 0;
 
+    // resolveBindingSlot: 解析声明式绑定（Direct/Import）的共享槽位 Value*。
+    // 用于在 RHS 求值前捕获标识符引用（§13.15.2），避免直接 eval 注入
+    // 更内层同名 var 后写错目标。非声明式（with/全局对象/未找到）返回 nullptr。
+    virtual Value* resolveBindingSlot(std::string_view name) = 0;
+
+    // storeToSlot: 向 resolveBindingSlot 返回的槽位写值，保留 TDZ/const/
+    // import 只读检查。成功返回写入目标（非空）；槽位已不属于任何绑定
+    // （如被 eval 替换）返回 nullptr，调用方回退到 store(name)。
+    virtual Value* storeToSlot(Value* slot, std::string_view name,
+                               Value* source) = 0;
+
+    // loadFromSlot: 读取 resolveBindingSlot 返回的槽位，保留 TDZ 检查。
+    // 槽位已不属于任何绑定返回 nullptr（调用方回退到 load(name)）。
+    virtual Value* loadFromSlot(Value* slot, std::string_view name) = 0;
+
     // —— eval（§19.2.1）——
     // declareVar: eval 的 var 声明——只在变量环境缺失时建 undefined 槽，
     // 已有绑定保持原值。成功返回 nullptr，失败返回错误值。

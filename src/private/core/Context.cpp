@@ -1333,11 +1333,13 @@ Value* Context::classSuperConstructor(Value* classCtor) {
 }
 
 Value* Context::resolveWithObject(std::string_view name) {
-    for (Scope* s = current_; s != nullptr; s = s->parent()) {
-        Value* obj = s->withBindingObject(name);
-        if (obj == nullptr) continue;
-        if (detail::isErrorValue(obj)) return obj;
-        return obj;
+    // 闭包捕获的 with 属性存在 closureScope 的 withBindings_ 中，动态
+    // WithScope 也可能不在当前执行链上；统一走 getWithBindingChain
+    // （它同时处理直接绑定遮蔽与 @@unscopables）。
+    Value* withObject = nullptr;
+    Value* withKey = nullptr;
+    if (current()->getWithBindingChain(name, withObject, withKey)) {
+        return withObject;
     }
     return nullptr;
 }
@@ -3087,6 +3089,11 @@ Value* Context::setClosure(Value* fn, std::string_view name) {
     // 沿当前作用域链查找闭包变量
     Value* v = current()->lookupChain(name);
     if (v == nullptr) {
+        // with 动态名字：Sema 因查找路径穿过 with 而登记为捕获，但创建
+        // 闭包时 with 对象尚未绑定该属性。此时不建立捕获，留待运行期
+        // with 引用操作按对象环境记录重新解析（未声明则按 sloppy 全局
+        // 创建 / strict ReferenceError 处理）。非 with 环境下仍视为错误。
+        if (current()->hasWithScopeInChain()) return fn;
         std::string msg = "Closure variable '" + std::string(name) + "' is not defined";
         return detail::referenceError(this, msg);
     }
@@ -3491,6 +3498,13 @@ Value* Context::declareVar(std::string_view name) {
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
     if (Scope::Binding* existing = target->lookupBinding(name)) {
+        // 形参求值期间（存在形参表达式）直接 eval 引入的 var 不得与形参
+        // 同名（§9.2.12 step 20 注 / §19.2.1.3）。
+        if (target->hasFlag("param-init") && existing->varBinding) {
+            std::string msg = "Identifier '" + std::string(name) +
+                              "' has already been declared";
+            return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+        }
         // 变量环境已有 var 绑定：复用。
         if (existing->varBinding) return nullptr;
         // 全局变量环境：同名词法声明是早期错误（§19.2.1.3 step 3.a）。
@@ -3625,6 +3639,80 @@ Value* Context::checkGlobalLexical(std::string_view name) {
         std::string msg = "Identifier '" + std::string(name) +
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    return nullptr;
+}
+
+Value* Context::resolveBindingSlot(std::string_view name) {
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        switch (s->bindingKind(name)) {
+            case Scope::BindingKind::Direct: {
+                Scope::Binding* binding = s->lookupBinding(name);
+                return binding != nullptr ? binding->value : nullptr;
+            }
+            case Scope::BindingKind::Import:
+                return s->lookup(name);
+            case Scope::BindingKind::With:
+            case Scope::BindingKind::None:
+                break;
+        }
+    }
+    return nullptr;
+}
+
+Value* Context::loadFromSlot(Value* slot, std::string_view name) {
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        const Scope::BindingKind kind = s->bindingKind(name);
+        if (kind == Scope::BindingKind::Import) {
+            if (s->lookup(name) != slot) continue;
+            return cloneValue(slot);
+        }
+        if (kind != Scope::BindingKind::Direct) continue;
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding == nullptr || binding->value != slot) continue;
+        if (!binding->initialized ||
+            (binding->sharedTdz &&
+             slot->type()->kind() == TypeKind::Uninitialized)) {
+            return detail::referenceError(
+                this, "Cannot access '" + std::string(name) +
+                          "' before initialization");
+        }
+        return cloneValue(slot);
+    }
+    return nullptr;
+}
+
+Value* Context::storeToSlot(Value* slot, std::string_view name,
+                            Value* source) {
+    if (isErrorValue(source)) return source;
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        const Scope::BindingKind kind = s->bindingKind(name);
+        if (kind == Scope::BindingKind::Import) {
+            if (s->lookup(name) != slot) continue;
+            return detail::typeError(
+                this, "Assignment to import binding '" + std::string(name) + "'");
+        }
+        if (kind != Scope::BindingKind::Direct) continue;
+        Scope::Binding* binding = s->lookupBinding(name);
+        if (binding == nullptr || binding->value != slot) continue;
+        Value* target = binding->value;
+        if (!binding->initialized ||
+            (binding->sharedTdz &&
+             target->type()->kind() == TypeKind::Uninitialized)) {
+            return detail::referenceError(
+                this, "Cannot access '" + std::string(name) +
+                          "' before initialization");
+        }
+        if (!binding->mutableBinding) {
+            if (binding->assignmentSilent && !hasFlag("strict")) return source;
+            return detail::typeError(
+                this, "Assignment to constant variable '" + std::string(name) + "'");
+        }
+        IData* cloned = cloneForNewValue(source);
+        if (cloned == nullptr) return oomValue_;
+        IData* old = target->replaceMeta(source->type(), cloned);
+        gc_->releaseData(old);
+        return target;
     }
     return nullptr;
 }

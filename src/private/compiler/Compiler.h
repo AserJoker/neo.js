@@ -190,6 +190,8 @@ private:
     void compileAwaitExpression(const frontend::AwaitExpression& node);
     void compileAssignmentExpression(
         const frontend::AssignmentExpression& node);
+    // 标识符是否解析为声明式绑定（局部/捕获/导入）：是则赋值前可捕获槽位。
+    bool isDeclarativeBinding(const frontend::Node& identifier) const;
     // 逻辑赋值（&&= ||= ??=）：栈顶是待测值，弹出并返回“短路保留旧值”跳转。
     uint32_t emitLogicalShortCircuit(frontend::AssignmentOperator op);
     void compileUpdateExpression(const frontend::UpdateExpression& node);

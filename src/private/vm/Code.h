@@ -350,6 +350,22 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t resolveSlot(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::ResolveSlot);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t loadSlotRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::LoadSlotRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t storeSlotRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreSlotRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t markParamInit() { return emitOp(OpCode::MarkParamInit); }
     uint32_t getSuperBase() { return emitOp(OpCode::GetSuperBase); }
     uint32_t getSuperPropFromBase() {
         return emitOp(OpCode::GetSuperPropFromBase);

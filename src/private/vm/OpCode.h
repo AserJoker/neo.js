@@ -412,11 +412,22 @@ enum class OpCode : uint16_t {
     // [v] → [numeric]：ToNumeric（§7.1.3），供后缀 ++/-- 的表达式结果使用
     // （规范要求结果为 ToNumeric(old)，而非原始旧值）。
     ToNumeric,
+    // 声明式绑定引用捕获（§13.15.2）：u32 名字：[] → [slot, isSlot]。
+    // 在 RHS 求值前解析，避免 eval 注入更内层同名 var 后写错目标。
+    ResolveSlot,
+    // u32 名字：[slot, isSlot] → [slot, isSlot, value]。
+    LoadSlotRef,
+    // u32 名字：[slot, isSlot, value] → [value]：写回捕获的槽位。
+    StoreSlotRef,
+    // 标记当前作用域正在初始化形参（存在形参表达式时）。push_var_scope 清除。
+    // 用于：形参中的直接 eval 引入 var 与形参同名 → SyntaxError；形参中创建
+    // 的闭包需捕获环境链以看到 eval 注入的 var。
+    MarkParamInit,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::ToNumeric) + 1;
+    static_cast<size_t>(OpCode::MarkParamInit) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

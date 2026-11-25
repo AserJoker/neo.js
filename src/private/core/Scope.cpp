@@ -246,6 +246,9 @@ Scope::StoreOutcome WithScope::store(IContext* ctx, std::string_view name,
         result = err;
         return StoreOutcome::Error;
     }
+    // 未绑定：该名字不是本 with 环境记录的引用基（ResolveBinding 会继续
+    // 向外查找），交给外层作用域处理。绑定在解析后消失的情况由
+    // storeWithRef 捕获的 withObject 直接处理。
     if (!bound) return StoreOutcome::NotFound;
     result = ctx->setProperty(withObject_, key, source);
     return detail::isErrorValue(result) ? StoreOutcome::Error : StoreOutcome::Handled;

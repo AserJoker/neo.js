@@ -709,6 +709,10 @@ public:
     Value* initialize(std::string_view name, Value* source) override;
     Value* load(std::string_view name) override;
     Value* loadSoft(std::string_view name) override;
+    Value* resolveBindingSlot(std::string_view name) override;
+    Value* storeToSlot(Value* slot, std::string_view name,
+                       Value* source) override;
+    Value* loadFromSlot(Value* slot, std::string_view name) override;
 
     // eval（§19.2.1）
     Value* declareVar(std::string_view name) override;

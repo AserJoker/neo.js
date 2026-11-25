@@ -360,6 +360,15 @@ public:
     // with 对象（非 WithScope 返回 nullptr）。Context::store 据此分派对象属性写入。
     virtual Value* withObject() const { return nullptr; }
 
+    // 作用域链（含自身）上是否存在 with 环境记录。用于区分「with 动态名字
+    // 在闭包创建时尚未绑定」与「真正未解析的闭包变量」。
+    bool hasWithScopeInChain() const {
+        for (const Scope* s = this; s != nullptr; s = s->parent_) {
+            if (s->withObject() != nullptr) return true;
+        }
+        return false;
+    }
+
     // 本作用域是否以 with 对象绑定 name（考虑 @@unscopables）：
     // 是则返回 with 对象，否则 nullptr。用于赋值引用在 RHS 求值前解析。
     virtual Value* withBindingObject(std::string_view /*name*/) const {

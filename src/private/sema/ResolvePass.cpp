@@ -367,6 +367,10 @@ private:
 
         ShadowScope* scope = nodeScope->second;
         ShadowScope* found = nullptr;
+        // with 作用域是动态的：名字是否绑定要到运行时才知道。若查找路径
+        // 穿过 with，则嵌套函数必须在创建时捕获该 with 绑定（withObject +
+        // key），否则调用期作用域链里没有动态 with 作用域。
+        ShadowScope* crossedWith = nullptr;
         for (ShadowScope* current = scope; current != nullptr;
              current = current->parent) {
             if (current->bindings.find(identifier.name) !=
@@ -374,9 +378,19 @@ private:
                 found = current;
                 break;
             }
+            if (crossedWith == nullptr &&
+                current->kind == ShadowScopeKind::With) {
+                crossedWith = current;
+            }
         }
 
         if (!found) {
+            if (crossedWith != nullptr && !ownerStack_.empty()) {
+                const NodeId withOwner = scopeOwner(crossedWith);
+                if (ownerStack_.back() != withOwner) {
+                    registerCaptures(identifier.name, withOwner);
+                }
+            }
             const BindingLocation location =
                 module_ ? BindingLocation::Unresolved
                         : BindingLocation::Global;

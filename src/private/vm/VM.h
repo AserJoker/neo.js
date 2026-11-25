@@ -170,6 +170,10 @@ private:
     neo::core::Value* opStoreWithRef();
     neo::core::Value* opLoadWithRef();
     neo::core::Value* opStoreWithRefKeep();
+    // 引用写回：base 按 isWith/hasSlot 解释；都不成立时回退到作用域链 store。
+    neo::core::Value* storeRefValue(neo::core::Value* base, bool isWith,
+                                    bool hasSlot, const std::string& name,
+                                    neo::core::Value* value);
     neo::core::Value* opGetProp();
     neo::core::Value* opSetProp();
     neo::core::Value* opNewObject();
@@ -246,6 +250,10 @@ private:
     neo::core::Value* opThrowTypeError();
     neo::core::Value* opToPropertyKey();
     neo::core::Value* opToNumeric();
+    neo::core::Value* opResolveSlot();
+    neo::core::Value* opLoadSlotRef();
+    neo::core::Value* opStoreSlotRef();
+    neo::core::Value* opMarkParamInit();
     neo::core::Value* opBindThis();
     neo::core::Value* opLoadThis();
     neo::core::Value* opStoreThis();

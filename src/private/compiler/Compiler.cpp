@@ -3157,11 +3157,19 @@ void Compiler::compileAssignmentExpression(
             code_->storeWithRef(name);
             return;
         }
+        // 声明式绑定：引用在 RHS 前捕获（§13.15.2），避免直接 eval 注入
+        // 更内层同名 var 后写错目标。
+        const bool slotRef = isDeclarativeBinding(*node.left);
+        if (slotRef) code_->resolveSlot(name);
         // (fn) = ... 不是 IdentifierRef，不做 NamedEvaluation。
         if (node.left->isParenthesized()) {
             compileExpression(*node.right);
         } else {
             compileNamedExpression(*node.right, name);
+        }
+        if (slotRef) {
+            code_->storeSlotRef(name);
+            return;
         }
         code_->dup();
         code_->store(name);
@@ -3192,12 +3200,28 @@ void Compiler::compileAssignmentExpression(
         code_->storeWithRef(name);
         return;
     }
-    // 复合赋值：load 旧值 → 右值 → 运算 → dup（表达式值）→ store。
+    // 复合赋值：引用捕获 → 读旧值 → 右值 → 运算 → 写回同一引用。
+    if (isDeclarativeBinding(*node.left)) {
+        code_->resolveSlot(name);
+        code_->loadSlotRef(name);
+        compileExpression(*node.right);
+        if (!emitCompoundBinary(node.op, node)) return;
+        code_->storeSlotRef(name);
+        return;
+    }
     code_->load(name);
     compileExpression(*node.right);
     if (!emitCompoundBinary(node.op, node)) return;
     code_->dup();
     code_->store(name);
+}
+
+bool Compiler::isDeclarativeBinding(const frontend::Node& identifier) const {
+    const auto* binding =
+        sema_.annotations.get<sema::IdentifierBinding>(identifier.id());
+    if (binding == nullptr) return false;
+    return binding->location == sema::BindingLocation::Local ||
+           binding->location == sema::BindingLocation::Captured;
 }
 
 bool Compiler::emitCompoundBinary(frontend::AssignmentOperator op,
@@ -4790,6 +4814,17 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
             error(*param, "compiler: unsupported parameter pattern");
         }
     }
+
+    // 非简单形参列表：形参求值期间标记 param-init，供直接 eval 的 var
+    // 声明检测与形参同名（§9.2.12 step 20 注）。
+    bool hasParameterExpressions = false;
+    for (const frontend::NodePtr& param : params) {
+        if (param && param->kind() != NodeKind::Identifier) {
+            hasParameterExpressions = true;
+            break;
+        }
+    }
+    if (hasParameterExpressions) code_->markParamInit();
 
     // 栈顶是 self，先消费；随后按顺序绑定实参（栈上 argv0 在顶）。
     code_->storeThis();
