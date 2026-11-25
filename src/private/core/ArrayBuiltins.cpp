@@ -162,6 +162,11 @@ Value* arrayIsArray(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
     // IsArray（ES2024 §7.2.2）：Proxy 递归检查 target。
     Value* v = argv[0];
     while (v != nullptr && v->type()->kind() == TypeKind::Proxy) {
+        // 已撤销的 Proxy：IsArray 抛 TypeError（§7.2.2）。
+        if (proxyHandler(v) == nullptr) {
+            return detail::typeError(ctx,
+                                     "Cannot perform IsArray on a revoked proxy");
+        }
         v = proxyTarget(v);
     }
     return ctx->createBoolean(v != nullptr && v->type()->kind() == TypeKind::Array);
@@ -1233,7 +1238,7 @@ Value* arrayFrom(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* thisArg = argOrUndefined(ctx, argc, argv, 2);
 
     Value* arrayCtor = ctx->global()->lookup("Array");
-    bool useDefault = !detail::isCallable(self) || arrayCtor == nullptr ||
+    bool useDefault = !detail::isConstructor(self) || arrayCtor == nullptr ||
                       self->data() == arrayCtor->data();
 
     Value* iteratorMethod =
@@ -1242,25 +1247,44 @@ Value* arrayFrom(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 
     if (iteratorMethod->type()->kind() != TypeKind::Undefined &&
         iteratorMethod->type()->kind() != TypeKind::Null) {
-        std::vector<Value*> list;
-        if (Value* err = detail::iterableToList(ctx, items, list)) return err;
+        // 迭代器分支：Construct(C) 先于 GetIterator（§23.1.2.1），随后逐项
+        // 惰性迭代（mapfn 抛错/定义属性失败都要 IteratorClose）。
         Value* result = useDefault ? ctx->createArray()
                                    : ctx->construct(self, 0, nullptr);
         if (detail::isErrorValue(result)) return result;
-        for (size_t i = 0; i < list.size(); ++i) {
-            Value* value = list[i];
+        Value* iterator = detail::getIterator(ctx, items);
+        if (detail::isErrorValue(iterator)) return iterator;
+        uint32_t k = 0;
+        for (;;) {
+            Value* nextResult = detail::iteratorNext(ctx, iterator);
+            if (detail::isErrorValue(nextResult)) {
+                return detail::iteratorClose(ctx, iterator, nextResult);
+            }
+            Value* doneErr = nullptr;
+            bool done = detail::iteratorComplete(ctx, nextResult, doneErr);
+            if (doneErr != nullptr) {
+                return detail::iteratorClose(ctx, iterator, doneErr);
+            }
+            if (done) break;
+            Value* value = detail::iteratorValue(ctx, nextResult);
+            if (detail::isErrorValue(value)) {
+                return detail::iteratorClose(ctx, iterator, value);
+            }
             if (mapping) {
-                Value* callArgs[2] = {value, ctx->createNumber(static_cast<double>(i))};
+                Value* callArgs[2] = {
+                    value, ctx->createNumber(static_cast<double>(k))};
                 value = ctx->call(mapfn, thisArg, 2, callArgs);
-                if (detail::isErrorValue(value)) return value;
+                if (detail::isErrorValue(value)) {
+                    return detail::iteratorClose(ctx, iterator, value);
+                }
             }
-            if (Value* err = createData(ctx, result,
-                                        indexKey(ctx, static_cast<uint32_t>(i)), value)) {
-                return err;
+            if (Value* err = createData(ctx, result, indexKey(ctx, k), value)) {
+                return detail::iteratorClose(ctx, iterator, err);
             }
+            ++k;
         }
         Value* lenRes = ctx->setProperty(
-            result, "length", ctx->createNumber(static_cast<double>(list.size())));
+            result, "length", ctx->createNumber(static_cast<double>(k)));
         if (detail::isErrorValue(lenRes)) return lenRes;
         return result;
     }
@@ -1292,10 +1316,12 @@ Value* arrayFrom(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 // Array.of(...items)（ES2024 §23.1.2.3）
 Value* arrayOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* arrayCtor = ctx->global()->lookup("Array");
-    Value* result = (!detail::isCallable(self) || arrayCtor == nullptr ||
+    // IsConstructor(C) 为真时 Construct(C, «len»)，否则 ArrayCreate(len)。
+    Value* lenValue = ctx->createNumber(static_cast<double>(argc));
+    Value* result = (!detail::isConstructor(self) || arrayCtor == nullptr ||
                      self->data() == arrayCtor->data())
                         ? ctx->createArray()
-                        : ctx->construct(self, 0, nullptr);
+                        : ctx->construct(self, 1, &lenValue);
     if (detail::isErrorValue(result)) return result;
     for (size_t i = 0; i < argc; ++i) {
         if (Value* err = createData(ctx, result,
@@ -1374,13 +1400,7 @@ bool registerArrayBuiltins(IContext* ctx) {
     }
 
     // —— 3. Array 静态方法 ——
-    Value* isArrayFn = ctx->createNativeFunction(arrayIsArray, 0);
-    if (isArrayFn == ctx->oomValue()) return false;
-    ctx->setFunctionName(isArrayFn, "isArray");
-    if (ctx->defineProperty(arrayFn, "isArray", isArrayFn, true, false, true)
-            ->type()->kind() == TypeKind::Exception) {
-        return false;
-    }
+    if (!defineMethod(ctx, arrayFn, "isArray", arrayIsArray, 1)) return false;
     if (!defineMethod(ctx, arrayFn, "from", arrayFrom, 0, false, 1)) return false;
     if (!defineMethod(ctx, arrayFn, "of", arrayOf, 0, false, 0)) return false;
     // Array[@@species]：getter 返回 this（§23.1.2.5）。
@@ -1397,17 +1417,19 @@ bool registerArrayBuiltins(IContext* ctx) {
     }
 
     // —— 4. Array.prototype 方法 ——
-    if (!defineMethod(ctx, arrayProto, "push", arrayPush, 0, /*strict=*/true)) return false;
+    if (!defineMethod(ctx, arrayProto, "push", arrayPush, 0, /*strict=*/true, 1))
+        return false;
     if (!defineMethod(ctx, arrayProto, "pop", arrayPop, 0, /*strict=*/true)) return false;
     if (!defineMethod(ctx, arrayProto, "shift", arrayShift, 0, /*strict=*/true))
         return false;
-    if (!defineMethod(ctx, arrayProto, "unshift", arrayUnshift, 0, /*strict=*/true))
+    if (!defineMethod(ctx, arrayProto, "unshift", arrayUnshift, 0, /*strict=*/true, 1))
         return false;
     if (!defineMethod(ctx, arrayProto, "toLocaleString", arrayToLocaleString, 0))
         return false;
-    if (!defineMethod(ctx, arrayProto, "join", arrayJoin, 0)) return false;
+    if (!defineMethod(ctx, arrayProto, "join", arrayJoin, 0, false, 1)) return false;
     if (!defineMethod(ctx, arrayProto, "toString", arrayToStringFn, 0)) return false;
-    if (!defineMethod(ctx, arrayProto, "slice", arraySlice, 0, /*strict=*/true)) return false;
+    if (!defineMethod(ctx, arrayProto, "slice", arraySlice, 0, /*strict=*/true, 2))
+        return false;
     if (!defineMethod(ctx, arrayProto, "indexOf", arrayIndexOf, 0, false, 1)) return false;
     if (!defineMethod(ctx, arrayProto, "lastIndexOf", arrayLastIndexOf, 0, false, 1))
         return false;

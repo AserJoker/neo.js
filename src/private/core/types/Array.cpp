@@ -280,19 +280,24 @@ Value* ArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
     if (!isSymbolKeyValue(key)) {
         if (Value* err = detail::propertyKeyString(ctx, key, k)) return err;
         if (k == "length") {
-            if (enumerable || configurable) return ctx->createBoolean(false);
-            const bool wasWritable = d->lengthWritable;
-            if (writable && !wasWritable) return ctx->createBoolean(false);
-            Value* nv = detail::toNumberValue(ctx, value);
-            if (detail::isErrorValue(nv)) return nv;
-            double num = static_cast<NumberData*>(nv->data())->value;
+            // ArraySetLength 步骤 3-5：先 ToUint32(value)、再 ToNumber(value)，
+            // 两者不一致即 RangeError——都发生在描述符校验之前（§10.4.2.4）。
+            Value* uv = detail::toNumberValue(ctx, value);
+            if (detail::isErrorValue(uv)) return uv;
+            double un = static_cast<NumberData*>(uv->data())->value;
             uint32_t newLen = 0;
-            if (!std::isnan(num) && !std::isinf(num) && num != 0.0) {
-                double mod = std::fmod(std::trunc(num), 4294967296.0);
+            if (!std::isnan(un) && !std::isinf(un) && un != 0.0) {
+                double mod = std::fmod(std::trunc(un), 4294967296.0);
                 if (mod < 0.0) mod += 4294967296.0;
                 newLen = static_cast<uint32_t>(mod);
             }
+            Value* nv = detail::toNumberValue(ctx, value);
+            if (detail::isErrorValue(nv)) return nv;
+            double num = static_cast<NumberData*>(nv->data())->value;
             if (static_cast<double>(newLen) != num) return invalidLength(ctx);
+            if (enumerable || configurable) return ctx->createBoolean(false);
+            const bool wasWritable = d->lengthWritable;
+            if (writable && !wasWritable) return ctx->createBoolean(false);
             if (!wasWritable && newLen != d->length_) {
                 return ctx->createBoolean(false);
             }
