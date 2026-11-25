@@ -521,6 +521,7 @@ Value* Context::symbolFor(std::string_view key) {
     // 未登记：创建新 symbol（description = key）并挂 global 保活
     Value* sym = createSymbol(k);
     if (sym == oomValue_) return sym;
+    static_cast<SymbolData*>(sym->data())->registered = true;
     global_->add(sym);
     symbolRegistry_.emplace(k, sym);
     symbolRegistryReverse_.emplace(sym->data(), k);

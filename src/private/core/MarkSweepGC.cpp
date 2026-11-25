@@ -29,8 +29,10 @@ namespace {
 
 // GC 标记访问器实现：标记 Value 并沿 data 子 value 递归；
 // visitScope 沿作用域树（values + children）递归标记。
-// 用单调递增的 epoch 代替布尔标记：本轮已标记过的 Value 其 markEpoch == epoch，
+// 用单调递增的 epoch 代替布尔标记：本轮已标记过的 Value/data 其 markEpoch == epoch，
 // 无需在标记前遍历 values_ 重置标记（STW 下 epoch 唯一）。
+// data 也按 epoch 去重：多个 Value 共享同一 data（clone 引用语义 / copyForStorage）
+// 时，子 value 只需枚举一次，否则「副本数 × 子数」会让标记退化为 O(n²)。
 class Marker : public IGCVisitor {
 public:
     explicit Marker(uint64_t epoch) : epoch_(epoch) {}
@@ -38,8 +40,11 @@ public:
     void visit(Value* v) override {
         if (v->markEpoch() == epoch_) return;
         v->setMarkEpoch(epoch_);
+        IData* data = v->data();
+        if (data->markEpoch() == epoch_) return;
+        data->setMarkEpoch(epoch_);
         // 沿 data 引用链递归标记子 value
-        v->data()->enumerateChildren(this);
+        data->enumerateChildren(this);
     }
 
     void visitScope(Scope* scope) override {
@@ -160,6 +165,11 @@ void MarkSweepGC::collect() {
         }
     }
     values_.resize(write);
+    // 回收后抬高阈值留出增长空间，避免「每次分配都触发全量 GC」的 O(n²) 抖动。
+    // 必须无条件取 max：存活集可能恰好等于阈值（本轮只回收了个位数），
+    // 若仅在 size >= threshold 时抬高，下一轮又立刻触发，退化为逐次全量 GC。
+    const size_t target = values_.size() + values_.size() / 2 + 1024;
+    if (target > countThreshold_) countThreshold_ = target;
 }
 
 void MarkSweepGC::setRootScope(Scope* scope) {

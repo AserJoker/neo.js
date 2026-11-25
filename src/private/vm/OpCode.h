@@ -182,6 +182,9 @@ enum class OpCode : uint16_t {
     Sub,
     Mul,
     Div,
+    // 自增/自减：ToNumeric 后按同一类型加/减 1（BigInt 用 1n）。
+    Inc,
+    Dec,
 
     // 关系运算（if/while 条件所需）
     Lt,

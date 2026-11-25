@@ -34,6 +34,18 @@ namespace {
 
 Value* toObjectOrThrow(IContext* ctx, Value* v);
 
+// 函数对象的内建 tag：生成器/异步函数按 FunctionData 标志区分
+// （对应 %GeneratorFunction.prototype% 等原型上的 @@toStringTag）。
+const char* functionObjectTag(Value* fn) {
+    if (fn == nullptr || fn->type()->kind() != TypeKind::Function) return "Function";
+    auto* fd = static_cast<FunctionData*>(fn->data());
+    if (fd->boundTarget != nullptr) return functionObjectTag(fd->boundTarget);
+    if (fd->generator) return "GeneratorFunction";
+    if (fd->asyncGenerator) return "AsyncGeneratorFunction";
+    if (fd->asyncScript || fd->asyncNative) return "AsyncFunction";
+    return "Function";
+}
+
 // —— Object.prototype 方法 ——
 
 // Object.prototype.toString()（ES2024 §20.1.3.6）：
@@ -52,7 +64,7 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         case TypeKind::String:    tag = "String"; break;
         // BigInt/Symbol 不在内建 tag 列表中，其 "BigInt"/"Symbol" 由原型
         // 上的 @@toStringTag 提供（§20.1.3.6 步骤 13-14）。
-        case TypeKind::Function:  tag = "Function"; break;
+        case TypeKind::Function:  tag = functionObjectTag(self); break;
         case TypeKind::Object:    tag = "Object"; break;
         case TypeKind::Array:     tag = "Array"; break;
         case TypeKind::Arguments: tag = "Arguments"; break;
@@ -87,7 +99,10 @@ Value* objectProtoToString(IContext* ctx, Value* self, size_t /*argc*/, Value* /
         if (isArray) {
             tag = "Array";
         } else if (detail::isCallable(self)) {
-            tag = "Function";
+            // 规范要求经 @@toStringTag 取 GeneratorFunction/AsyncFunction，
+            // 但本引擎尚未实现 %GeneratorFunction% 等固有原型；在实现前按
+            // target 的 FunctionData 近似（已知与 non-str-proxy-function 冲突）。
+            tag = functionObjectTag(target);
         }
     }
     // @@toStringTag 覆盖内建 tag，但仅当值为原始字符串（步骤 15-16）。

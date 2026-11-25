@@ -19,6 +19,7 @@
 #include "core/types/Collection.h"
 #include "core/types/Number.h"
 #include "core/types/String.h"
+#include "core/types/Symbol.h"
 #include "core/types/TypeBehavior.h"
 
 #include <cmath>
@@ -75,7 +76,12 @@ Value* createIterResultObject(IContext* ctx, Value* value, bool done);
 
 bool canBeHeldWeakly(Value* v) {
     TypeKind k = v->type()->kind();
-    return detail::isObjectKind(k) || k == TypeKind::Symbol;
+    if (detail::isObjectKind(k)) return true;
+    // 仅未注册的 Symbol 可被弱引用持有（Symbol.for 的不行）。
+    if (k == TypeKind::Symbol) {
+        return !static_cast<SymbolData*>(v->data())->registered;
+    }
+    return false;
 }
 
 void setEntry(CollectionData* d, Value* key, Value* value) {

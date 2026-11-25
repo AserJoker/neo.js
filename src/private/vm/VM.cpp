@@ -124,6 +124,8 @@ const char* opCodeName(OpCode op) {
         case OpCode::Sub:           return "sub";
         case OpCode::Mul:           return "mul";
         case OpCode::Div:           return "div";
+        case OpCode::Inc:           return "inc";
+        case OpCode::Dec:           return "dec";
         case OpCode::Lt:            return "lt";
         case OpCode::Gt:            return "gt";
         case OpCode::Le:            return "le";
@@ -301,6 +303,8 @@ const VM::Handler* VM::handlers() {
         &VM::opSub,
         &VM::opMul,
         &VM::opDiv,
+        &VM::opInc,
+        &VM::opDec,
         &VM::opLt,
         &VM::opGt,
         &VM::opLe,
@@ -1853,6 +1857,29 @@ Value* VM::binary(BinaryOperator op) {
 
 Value* VM::opAdd() { return binary(BinaryOperator::Add); }
 Value* VM::opSub() { return binary(BinaryOperator::Sub); }
+
+// UpdateExpression（§13.4.4/§13.4.5）：ToNumeric(old) 后按同一数值类型 ±1。
+Value* VM::increment(bool inc) {
+    if (stack_.empty()) {
+        return badBytecode("inc/dec: operand stack underflow");
+    }
+    Value* old = pop();
+    Value* numeric = detail::toNumericValue(ctx_, old);
+    if (detail::isErrorValue(numeric)) return fail(numeric);
+    Value* one = numeric->type()->kind() == TypeKind::BigInt
+                    ? ctx_->createBigInt(neo::bigint::BigInt(1))
+                    : ctx_->createNumber(1.0);
+    if (detail::isErrorValue(one)) return fail(one);
+    Value* result = ctx_->binaryOp(inc ? BinaryOperator::Add : BinaryOperator::Sub,
+                                   numeric, one);
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opInc() { return increment(true); }
+Value* VM::opDec() { return increment(false); }
 Value* VM::opMul() { return binary(BinaryOperator::Mul); }
 Value* VM::opDiv() { return binary(BinaryOperator::Div); }
 

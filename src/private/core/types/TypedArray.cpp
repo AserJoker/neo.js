@@ -4,12 +4,16 @@
 // 整数类型按 2^N 取模，Uint8Clamped 采用 round-half-to-even 后钳位。
 
 #include "core/BigIntOps.h"
+#include "core/ErrorKind.h"
 #include "core/IContext.h"
 #include "core/IGCEngine.h"
 #include "core/Value.h"
 #include "core/types/Array.h"  // parseArrayIndex
 #include "core/types/ArrayBuffer.h"
+#include "core/types/BigInt.h"
+#include "core/types/Boolean.h"
 #include "core/types/Number.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "core/types/TypedArray.h"
 
@@ -31,6 +35,47 @@ uint64_t readRaw(const uint8_t* bytes, size_t index, size_t size) {
 void writeRaw(uint8_t* bytes, size_t index, size_t size, uint64_t value) {
     for (size_t i = 0; i < size; ++i) {
         bytes[index + i] = static_cast<uint8_t>((value >> (8 * i)) & 0xFFu);
+    }
+}
+
+// ToBigInt（ES2024 §7.1.13）：BigInt typed array 元素写入前的转换。
+Value* toBigIntForElement(IContext* ctx, Value* value,
+                          neo::bigint::BigInt& out) {
+    switch (value->type()->kind()) {
+        case TypeKind::BigInt:
+            out = detail::bigIntValue(value);
+            return nullptr;
+        case TypeKind::Boolean:
+            out = neo::bigint::BigInt(static_cast<int64_t>(
+                static_cast<BooleanData*>(value->data())->value ? 1 : 0));
+            return nullptr;
+        case TypeKind::String: {
+            neo::bigint::BigInt parsed;
+            if (!detail::stringToBigInt(
+                    static_cast<StringData*>(value->data())->value, parsed)) {
+                return ctx->createErrorException(
+                    ErrorKind::SyntaxError,
+                    "Cannot convert the string to a BigInt");
+            }
+            out = parsed;
+            return nullptr;
+        }
+        case TypeKind::Number:
+            return detail::typeError(ctx,
+                                     "Cannot convert a Number value to a BigInt");
+        case TypeKind::Symbol:
+            return detail::typeError(ctx,
+                                     "Cannot convert a Symbol value to a BigInt");
+        case TypeKind::Undefined:
+        case TypeKind::Null:
+            return detail::typeError(
+                ctx, "Cannot convert undefined or null to a BigInt");
+        default: {
+            Value* prim =
+                detail::toPrimitive(ctx, value, detail::PreferredType::Number);
+            if (detail::isErrorValue(prim)) return prim;
+            return toBigIntForElement(ctx, prim, out);
+        }
     }
 }
 
@@ -101,10 +146,9 @@ Value* typedArrayValueToRaw(IContext* ctx, TypedArrayKind kind, Value* value,
                             uint64_t& raw) {
     raw = 0;
     if (typedArrayIsBigInt(kind)) {
-        if (value->type()->kind() != TypeKind::BigInt) {
-            return detail::typeError(ctx, "Cannot convert value to a BigInt");
-        }
-        raw = detail::bigIntValue(value).toUint64();
+        neo::bigint::BigInt big;
+        if (Value* err = toBigIntForElement(ctx, value, big)) return err;
+        raw = big.toUint64();
         return nullptr;
     }
 
@@ -161,9 +205,20 @@ Value* typedArrayValueToRaw(IContext* ctx, TypedArrayKind kind, Value* value,
     return nullptr;
 }
 
+Value* typedArrayConvertElement(IContext* ctx, TypedArrayKind kind, Value* value) {
+    if (typedArrayIsBigInt(kind)) {
+        neo::bigint::BigInt big;
+        if (Value* err = toBigIntForElement(ctx, value, big)) return err;
+        return ctx->createBigInt(big);
+    }
+    return detail::toNumberValue(ctx, value);
+}
+
 Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index) {
     ArrayBufferData* buffer = asArrayBuffer(d->buffer);
-    if (buffer == nullptr || index >= d->length) return ctx->createUndefined();
+    if (buffer == nullptr || buffer->detached || index >= d->length) {
+        return ctx->createUndefined();
+    }
     const size_t size = typedArrayElementSize(d->kind);
     const size_t pos = d->byteOffset + index * size;
     return typedArrayRawToValue(ctx, d->kind, readRaw(buffer->data(), pos, size));
@@ -172,7 +227,7 @@ Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index) {
 Value* typedArrayWriteElement(IContext* ctx, TypedArrayData* d, size_t index,
                               Value* value) {
     ArrayBufferData* buffer = asArrayBuffer(d->buffer);
-    if (buffer == nullptr || index >= d->length) return nullptr;
+    if (buffer == nullptr || buffer->detached || index >= d->length) return nullptr;
     uint64_t raw = 0;
     if (Value* err = typedArrayValueToRaw(ctx, d->kind, value, raw)) return err;
     const size_t size = typedArrayElementSize(d->kind);
@@ -187,13 +242,18 @@ bool TypedArrayType::hasIndexedLength(Value* /*self*/) const { return true; }
 
 uint32_t TypedArrayType::indexedLength(Value* self) const {
     TypedArrayData* d = asTypedArray(self);
-    return d == nullptr ? 0 : static_cast<uint32_t>(d->length);
+    if (d == nullptr) return 0;
+    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
+    if (buffer == nullptr || buffer->detached) return 0;
+    return static_cast<uint32_t>(d->length);
 }
 
 Value* TypedArrayType::indexedElement(IContext* ctx, Value* self,
                                       uint32_t index) const {
     TypedArrayData* d = asTypedArray(self);
     if (d == nullptr || index >= d->length) return nullptr;
+    ArrayBufferData* buffer = asArrayBuffer(d->buffer);
+    if (buffer == nullptr || buffer->detached) return nullptr;
     return typedArrayReadElement(ctx, d, index);
 }
 
@@ -219,7 +279,7 @@ Value* TypedArrayType::defineProperty(IContext* ctx, Value* self, Value* key,
                 if (Value* err = typedArrayWriteElement(ctx, d, index, value)) {
                     return err;
                 }
-                return value;
+                return ctx->createBoolean(true);
             }
             if (pk.name == "length") {
                 // [[ArrayLength]] 只读、不可枚举、不可配置。

@@ -63,6 +63,10 @@ Value* typedArrayReadElement(IContext* ctx, TypedArrayData* d, size_t index);
 Value* typedArrayWriteElement(IContext* ctx, TypedArrayData* d, size_t index,
                               Value* value);
 
+// 按元素类型转换一次（ToNumber / ToBigInt），返回转换后的值或错误值。
+// 供 fill 等「值只转换一次」的算法复用。
+Value* typedArrayConvertElement(IContext* ctx, TypedArrayKind kind, Value* value);
+
 // 元素原始位与 JS 值互转（Atomics 原子操作复用同一套转换语义）。
 Value* typedArrayRawToValue(IContext* ctx, TypedArrayKind kind, uint64_t raw);
 Value* typedArrayValueToRaw(IContext* ctx, TypedArrayKind kind, Value* value,

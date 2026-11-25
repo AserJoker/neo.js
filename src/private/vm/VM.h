@@ -198,6 +198,9 @@ private:
     neo::core::Value* opSub();
     neo::core::Value* opMul();
     neo::core::Value* opDiv();
+    neo::core::Value* opInc();
+    neo::core::Value* opDec();
+    neo::core::Value* increment(bool inc);
     neo::core::Value* opLt();
     neo::core::Value* opGt();
     neo::core::Value* opLe();

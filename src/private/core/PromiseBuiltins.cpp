@@ -677,14 +677,15 @@ Value* makeElementFunction(IContext* ctx, NativeFn fn, uint32_t index, Value* ce
 // 从元素函数的 bound args 取出 index / cell / calledCell；重复调用返回 false。
 bool elementPrologue(IContext* ctx, size_t argc, Value* argv[], uint32_t& index,
                      Value*& cell, Value*& value) {
-    if (argc < 4) return false;
+    if (argc < 3) return false;
     Value* calledCell = argv[2];
     if (cellTaken(ctx, calledCell)) return false;
     takeCell(ctx, calledCell);
     index = static_cast<uint32_t>(
         static_cast<NumberData*>(argv[0]->data())->value);
     cell = argv[1];
-    value = argv[3];
+    // then 的回调可以零参调用：缺省 value 按 undefined。
+    value = argc >= 4 ? argv[3] : ctx->createUndefined();
     return true;
 }
 

@@ -4,8 +4,8 @@
 // 业务代码通过 IAllocator* 接口注入使用，不直接接触这些 FFI。
 //
 // 内存配额：alloc 前 tryReserve 原子检查 used+bytes<=limit，超限返回 nullptr 拦截。
-// 记账表 records_ 记录 ptr→真实字节数，free 时查表递减 used。alloc(0) 统一记 1 字节
-// （malloc 返回非空哨兵，free 兼容）。
+// 记账用返回指针前的 AllocHeader（用户字节数 + raw 偏移），free 时 O(1) 读回递减
+// used。alloc(0) 统一记 1 字节（malloc 返回非空哨兵，free 兼容）。
 //
 // 关联 ADR: 008（IAllocator）、010（接口-实现-工厂）、027（FFI 封装）、028（infra §3 配额）
 
@@ -15,6 +15,19 @@
 #include <memory>
 
 namespace neo::infra {
+
+namespace {
+
+// 分配头：紧贴返回指针之前，记录用户字节数与 raw 基址偏移。
+// 普通分配 offset 恒为 sizeof(AllocHeader)；对齐分配因前置 slack 而不同。
+struct AllocHeader {
+    size_t bytes;   // 计入 used_ 的字节数（alloc(0) 记 1）
+    size_t offset;  // 返回指针相对 raw 基址的偏移
+};
+
+constexpr size_t kHeaderSize = sizeof(AllocHeader);
+
+}  // namespace
 
 MallocAllocator::MallocAllocator() = default;
 
@@ -39,36 +52,20 @@ bool MallocAllocator::tryReserve(size_t bytes) {
     }
 }
 
-void MallocAllocator::record(void* p, size_t bytes) {
-    std::lock_guard<std::mutex> lk(guard_);
-    records_[p] = bytes;
-}
-
-size_t MallocAllocator::release(void* p) {
-    size_t bytes = 0;
-    {
-        std::lock_guard<std::mutex> lk(guard_);
-        auto it = records_.find(p);
-        bytes = it->second;
-        records_.erase(it);
-    }
-    // 递减 used_（不会下溢：已登记的 bytes 一定 ≤ used_）
-    used_.fetch_sub(bytes, std::memory_order_acq_rel);
-    return bytes;
-}
-
 void* MallocAllocator::alloc(size_t bytes) {
     // malloc(0) 行为实现定义，统一返回非空哨兵（与 free 兼容），记账记 1
     size_t real = bytes == 0 ? 1 : bytes;
     if (!tryReserve(real)) return nullptr;  // 超限拦截
-    void* p = std::malloc(real);
-    if (p == nullptr) {
+    void* raw = std::malloc(kHeaderSize + real);
+    if (raw == nullptr) {
         // malloc 失败：回滚已预留配额
         used_.fetch_sub(real, std::memory_order_acq_rel);
         return nullptr;
     }
-    record(p, real);
-    return p;
+    auto* h = static_cast<AllocHeader*>(raw);
+    h->bytes = real;
+    h->offset = kHeaderSize;
+    return static_cast<char*>(raw) + kHeaderSize;
 }
 
 void* MallocAllocator::allocAligned(size_t bytes, size_t align) {
@@ -76,33 +73,48 @@ void* MallocAllocator::allocAligned(size_t bytes, size_t align) {
     // aligned_alloc 要求 size 是 align 的整数倍（C11），用倍数对齐
     size_t aligned_bytes = bytes == 0 ? align : ((bytes + align - 1) / align) * align;
     if (!tryReserve(aligned_bytes)) return nullptr;  // 超限拦截
-    void* p;
+    // 预留 header + 对齐 slack；底层对齐取 max(align, alignof(AllocHeader))。
+    const size_t base_align = align > alignof(AllocHeader) ? align : alignof(AllocHeader);
+    size_t total = aligned_bytes + kHeaderSize + base_align;
+    size_t alloc_size = ((total + base_align - 1) / base_align) * base_align;
+    void* raw;
 #if defined(_WIN32)
-    p = _aligned_malloc(aligned_bytes, align);
+    raw = _aligned_malloc(alloc_size, base_align);
 #else
-    p = std::aligned_alloc(align, aligned_bytes);
+    raw = std::aligned_alloc(base_align, alloc_size);
 #endif
-    if (p == nullptr) {
+    if (raw == nullptr) {
         used_.fetch_sub(aligned_bytes, std::memory_order_acq_rel);
         return nullptr;
     }
-    record(p, aligned_bytes);
-    return p;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(raw) + kHeaderSize;
+    const uintptr_t aligned = (base + align - 1) & ~(static_cast<uintptr_t>(align) - 1);
+    auto* h = reinterpret_cast<AllocHeader*>(aligned - kHeaderSize);
+    h->bytes = aligned_bytes;
+    h->offset = aligned - reinterpret_cast<uintptr_t>(raw);
+    return reinterpret_cast<void*>(aligned);
 }
 
 void MallocAllocator::free(void* p) {
     if (p == nullptr) return;
-    release(p);  // 先释放配额记账，再调 FFI free
-    std::free(p);
+    auto* h = reinterpret_cast<AllocHeader*>(static_cast<char*>(p) - kHeaderSize);
+    const size_t bytes = h->bytes;
+    const size_t offset = h->offset;
+    used_.fetch_sub(bytes, std::memory_order_acq_rel);
+    std::free(static_cast<char*>(p) - offset);
 }
 
 void MallocAllocator::freeAligned(void* p) {
     if (p == nullptr) return;
-    release(p);
+    auto* h = reinterpret_cast<AllocHeader*>(static_cast<char*>(p) - kHeaderSize);
+    const size_t bytes = h->bytes;
+    const size_t offset = h->offset;
+    used_.fetch_sub(bytes, std::memory_order_acq_rel);
+    void* raw = static_cast<char*>(p) - offset;
 #if defined(_WIN32)
-    _aligned_free(p);
+    _aligned_free(raw);
 #else
-    std::free(p);
+    std::free(raw);
 #endif
 }
 

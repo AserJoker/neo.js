@@ -68,6 +68,7 @@ class SymbolData : public IData {
 public:
     std::string description;  // 可空（Symbol("") 的描述为空字符串）
     bool hasDescription = true;  // false = [[Description]] 为 undefined
+    bool registered = false;     // Symbol.for 注册表符号（不可作为弱引用键）
 
     explicit SymbolData(std::string_view desc, bool hasDesc = true)
         : description(desc), hasDescription(hasDesc) {}

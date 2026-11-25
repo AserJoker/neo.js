@@ -4,9 +4,11 @@
 // 只能通过 public 的 IAllocator 接口 + createMallocAllocator() 工厂使用。
 // 文件名与实现类名一致（MallocAllocator.h），与 public 接口头 IAllocator.h 不冲突。
 //
-// 内存配额：MallocAllocator 维护原子已用计数 + 记账表（ptr→分配字节数），
-// alloc 前 CAS 检查 used + bytes <= limit，超限返回 nullptr；free 查表递减 used。
-// 记账表用 mutex 保护（free 可能跨线程），used 用 atomic 供 hot path 无锁读。
+// 内存配额：MallocAllocator 维护原子已用计数 + 分配头（返回指针前的 header 记录
+// 用户请求字节数与 raw 偏移），alloc 前 CAS 检查 used + bytes <= limit，超限返回
+// nullptr；free 读 header 递减 used。分配头把记账从「全局 mutex + 哈希表」降为
+// 一次 O(1) 指针偏移读写，避免分配/释放热路径上的锁竞争与哈希开销。
+// used 用 atomic 供 hot path 无锁读。
 //
 // 关联 ADR: 010（接口-实现-工厂）、027（FFI 封装）、028（infra §3 配额）
 
@@ -18,8 +20,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
-#include <unordered_map>
 
 namespace neo::infra {
 
@@ -45,19 +45,8 @@ private:
     // used_ + bytes <= limit_ 才允许；溢出或超限返回 false。
     bool tryReserve(size_t bytes);
 
-    // 记账：登记 ptr→字节数，释放时查表递减 used
-    void record(void* p, size_t bytes);
-    // 释放记账：查表取字节数并递减 used，返回字节数（0 表示未登记，如 nullptr）
-    size_t release(void* p);
-
     std::atomic<size_t> used_  {0};
     std::atomic<size_t> limit_ {SIZE_MAX};
-
-    // 记账表：ptr→真实分配字节数（含对齐填充）。mutex 保护并发读写。
-    // 注：alloc 的记账表 key 用真实指针（malloc/_aligned_malloc 返回值），
-    // free 时按同一 ptr 查表。alloc(0) 返回的哨兵指针也登记 size=1。
-    std::mutex guard_;
-    std::unordered_map<void*, size_t> records_;
 };
 
 }  // namespace neo::infra

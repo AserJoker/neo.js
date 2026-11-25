@@ -361,6 +361,19 @@ inline std::string numberToString(double n) {
     if (std::isinf(n)) return n > 0 ? "Infinity" : "-Infinity";
     if (n == 0.0) return "0";  // +0 和 -0 都 → "0"
 
+    // 整数快路径：数组索引/计数等绝大多数是安全整数，直接整数格式化，
+    // 避免走 scientific → stoi → 字符串重排的慢路径（属性键转换在热路径上）。
+    if (std::trunc(n) == n && n >= -9007199254740992.0 &&
+        n <= 9007199254740992.0) {
+        char ibuf[32];
+        std::to_chars_result ir =
+            n < 0 ? std::to_chars(ibuf, ibuf + sizeof ibuf,
+                                  static_cast<int64_t>(n))
+                  : std::to_chars(ibuf, ibuf + sizeof ibuf,
+                                  static_cast<uint64_t>(n));
+        return std::string(ibuf, ir.ptr);
+    }
+
     const bool negative = n < 0;
     // scientific 形式给出最短可回读的有效数字（如 "1.2345e-03"）。
     char buf[64];

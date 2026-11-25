@@ -223,9 +223,11 @@ Value* detachArrayBufferNative(IContext* ctx, Value* /*self*/, size_t argc,
         return neo::core::detail::typeError(ctx, "detachArrayBuffer requires a buffer");
     }
     neo::core::ArrayBufferData* data = neo::core::asArrayBuffer(argv[0]);
-    if (data == nullptr || data->isShared() || data->detached) {
+    if (data == nullptr || data->isShared()) {
         return neo::core::detail::typeError(ctx, "cannot detach this buffer");
     }
+    // 已分离时幂等返回（部分用例会在回调内多次调用 detach）。
+    if (data->detached) return ctx->createUndefined();
     data->bytes.clear();
     data->bytes.shrink_to_fit();
     data->detached = true;

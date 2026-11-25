@@ -3271,11 +3271,10 @@ void Compiler::compileUpdateExpression(
             code_->dup2();                    // [base, key, base, key]
             code_->getSuperPropFromBase();    // [base, key, old]
             if (!node.prefix) code_->clone();
-            code_->push(1.0);
             if (node.op == frontend::UpdateOperator::Increment) {
-                code_->add();
+                code_->inc();
             } else {
-                code_->sub();
+                code_->dec();
             }
             if (node.prefix) {
                 code_->setSuperPropFromBase();  // [new]
@@ -3291,11 +3290,10 @@ void Compiler::compileUpdateExpression(
         code_->dup2();
         code_->getProp();
         if (!node.prefix) code_->clone();
-        code_->push(1.0);
         if (node.op == frontend::UpdateOperator::Increment) {
-            code_->add();
+            code_->inc();
         } else {
-            code_->sub();
+            code_->dec();
         }
         if (node.prefix) {
             code_->setProp();
@@ -3319,20 +3317,18 @@ void Compiler::compileUpdateExpression(
         code_->resolveWithRef(name);
         code_->loadWithRef(name);  // [obj, old]
         if (node.prefix) {
-            code_->push(1.0);
             if (node.op == frontend::UpdateOperator::Increment) {
-                code_->add();
+                code_->inc();
             } else {
-                code_->sub();
+                code_->dec();
             }
             code_->storeWithRef(name);  // [new]（storeWithRef 已压回新值）
         } else {
             code_->dup();  // [obj, old, old]
-            code_->push(1.0);
             if (node.op == frontend::UpdateOperator::Increment) {
-                code_->add();
+                code_->inc();
             } else {
-                code_->sub();
+                code_->dec();
             }
             code_->storeWithRefKeep(name);  // [old]
         }
@@ -3340,11 +3336,10 @@ void Compiler::compileUpdateExpression(
     }
     code_->load(name);
     if (node.prefix) {
-        code_->push(1.0);
         if (node.op == frontend::UpdateOperator::Increment) {
-            code_->add();
+            code_->inc();
         } else {
-            code_->sub();
+            code_->dec();
         }
         code_->dup();
         code_->store(name);
@@ -3352,11 +3347,10 @@ void Compiler::compileUpdateExpression(
         // 后缀：快照旧值留在栈上作为表达式结果（绑定槽会被 store 原地改写）。
         code_->clone();
         code_->swap();
-        code_->push(1.0);
         if (node.op == frontend::UpdateOperator::Increment) {
-            code_->add();
+            code_->inc();
         } else {
-            code_->sub();
+            code_->dec();
         }
         code_->store(name);
     }

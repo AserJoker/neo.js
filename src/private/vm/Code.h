@@ -402,6 +402,8 @@ struct Code {
     uint32_t sub() { return emitOp(OpCode::Sub); }
     uint32_t mul() { return emitOp(OpCode::Mul); }
     uint32_t div() { return emitOp(OpCode::Div); }
+    uint32_t inc() { return emitOp(OpCode::Inc); }
+    uint32_t dec() { return emitOp(OpCode::Dec); }
 
     // 一元运算：op 为 core::UnaryOperator 的数值。
     uint32_t unary(uint32_t op) {

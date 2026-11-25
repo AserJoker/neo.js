@@ -465,13 +465,31 @@ Value* arraySpeciesCreate(IContext* ctx, Value* original, uint32_t length) {
 template <typename Visitor>
 Value* iterateArrayLike(IContext* ctx, Value* obj, uint32_t len, bool skipHoles,
                         Visitor&& visitor) {
+    // 仅当原型链上不可能有索引属性时，才用「自有元素」快路径。
+    bool fastArray = obj->type()->kind() == TypeKind::Array;
+    if (fastArray) {
+        Value* proto = obj->type()->getPrototype(ctx, obj);
+        if (detail::isErrorValue(proto)) return proto;
+        if (proto != nullptr &&
+            !(proto->type()->kind() == TypeKind::Array &&
+              static_cast<ArrayData*>(proto->data())->elements.empty())) {
+            fastArray = false;
+        }
+    }
     for (uint32_t k = 0; k < len; ++k) {
-        Value* key = indexKey(ctx, k);
+        Value* key = nullptr;
         if (skipHoles) {
             bool present = false;
-            if (Value* err = hasElement(ctx, obj, key, present)) return err;
+            if (fastArray) {
+                // 稀疏数组空洞直接查内部表，避免每轮分配索引字符串。
+                present = static_cast<ArrayData*>(obj->data())->hasElement(k);
+            } else {
+                key = indexKey(ctx, k);
+                if (Value* err = hasElement(ctx, obj, key, present)) return err;
+            }
             if (!present) continue;
         }
+        if (key == nullptr) key = indexKey(ctx, k);
         Value* value = ctx->getProperty(obj, key);
         if (detail::isErrorValue(value)) return value;
         Value* r = visitor(k, value);
@@ -1304,7 +1322,11 @@ void bindGlobal(IContext* ctx, std::string_view name, Value* v) {
 // 定义 prototype 方法（writable/不可枚举/可配置，与 ES 一致）
 bool defineMethod(IContext* ctx, Value* target, const char* name, NativeFn fn,
                   size_t minArgc, bool strict = false, int lengthOverride = -1) {
-    Value* f = ctx->createNativeFunction(fn, minArgc);
+    // 内建方法：不可构造、无自有 prototype。
+    FunctionCreateOptions opts;
+    opts.constructible = false;
+    opts.hasPrototypeProperty = false;
+    Value* f = ctx->createNativeFunction(fn, minArgc, {}, opts);
     if (f == ctx->oomValue()) return false;
     ctx->setFunctionName(f, name);
     // 规范以 Throw=true 调用 [[Set]]/[[Delete]] 的方法需局部严格。

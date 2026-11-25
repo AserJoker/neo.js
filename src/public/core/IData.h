@@ -12,6 +12,8 @@
 #ifndef NEO_CORE_IDATA_H
 #define NEO_CORE_IDATA_H
 
+#include <cstdint>
+
 namespace neo::infra {
 class IAllocator;  // 前向声明：clone 参数
 }
@@ -25,12 +27,18 @@ class IGCVisitor;
 // data 内存走 IAllocator，由 GC 的 allocData 分配、GC sweep 释放。
 class IData {
     int ref_ = 0;  // 多少个 Value 指向此 data
+    // 最近一次 GC 标记到本 data 的代数：多个 Value 共享同一 data 时，
+    // 其子 value 只需枚举一次（否则副本数 × 子数 会让标记退化为 O(n²)）。
+    uint64_t markEpoch_ = 0;
     friend class Value;  // Value 构造/析构操作 ref_
 
 public:
     virtual ~IData() = default;
 
     int ref() const { return ref_; }
+
+    uint64_t markEpoch() const { return markEpoch_; }
+    void setMarkEpoch(uint64_t epoch) { markEpoch_ = epoch; }
 
     // 递减引用计数（撤销 clone 为共享 data 预留的引用；正常增减仍由 Value 负责）
     void refDec() { --ref_; }
