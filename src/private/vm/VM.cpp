@@ -105,6 +105,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreEvalFunction:   return "store_eval_function";
         case OpCode::DirectEvalMethod:    return "direct_eval_method";
         case OpCode::DirectEvalMethodSpread: return "direct_eval_method_spread";
+        case OpCode::DirectEvalMethodTail: return "direct_eval_method_tail";
         case OpCode::StoreWithRefKeep: return "store_with_ref_keep";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
@@ -464,6 +465,7 @@ const VM::Handler* VM::handlers() {
         &VM::opStoreEvalFunction,
         &VM::opDirectEvalMethod,
         &VM::opDirectEvalMethodSpread,
+        &VM::opDirectEvalMethodTail,
     };
     return table;
 }
@@ -3020,6 +3022,43 @@ Value* VM::opDirectEvalMethodSpread() {
     if (detail::isInterruptValue(result)) return result;
     push(result);
     return nullptr;
+}
+
+Value* VM::opDirectEvalMethodTail() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("direct_eval_method_tail: truncated operand");
+    }
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 2) {
+        return badBytecode("direct_eval_method_tail: operand stack underflow");
+    }
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+
+    // with 对象未绑定该名字且被调函数仍是内建 %eval%：直接 eval 在调用方
+    // 作用域执行，不参与尾调用（§19.2.1.1）。
+    if (receiver->type()->kind() == neo::core::TypeKind::Undefined &&
+        fn->data() == ctx_->evalFunction()->data()) {
+        Value* source = argc > 0 ? args[0] : ctx_->createUndefined();
+        Value* result = ctx_->evalSource(source, ctx_->current(), true);
+        if (detail::isErrorValue(result)) return fail(result);
+        if (detail::isInterruptValue(result)) return result;
+        push(result);
+        return nullptr;
+    }
+    // 其余情况（with 对象绑定的方法）尾位置按尾调用处理（§12.3.4.2 step 7）。
+    Value* signal =
+        ctx_->createInterrupt(neo::core::InterruptKind::TailCall, pc_, nullptr);
+    if (detail::isErrorValue(signal)) return signal;
+    auto* data = neo::core::asInterrupt(signal);
+    data->tailFn = fn;
+    data->tailThis = receiver;
+    data->tailArgs = std::move(args);
+    return unwindReturn(signal);
 }
 
 Value* VM::opBindThis() {

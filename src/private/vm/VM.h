@@ -274,6 +274,7 @@ private:
     neo::core::Value* opStoreEvalFunction();
     neo::core::Value* opDirectEvalMethod();
     neo::core::Value* opDirectEvalMethodSpread();
+    neo::core::Value* opDirectEvalMethodTail();
     neo::core::Value* opMarkParamInit();
     neo::core::Value* opDirectEvalTail();
     neo::core::Value* opInheritNewTarget();

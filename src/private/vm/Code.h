@@ -691,6 +691,12 @@ struct Code {
     uint32_t directEvalMethodSpread() {
         return emitOp(OpCode::DirectEvalMethodSpread);
     }
+    // with 内尾位置的标识符调用点。
+    uint32_t directEvalMethodTail(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::DirectEvalMethodTail);
+        emitU32(argc);
+        return pc;
+    }
     uint32_t callMethod(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::CallMethod);
         emitU32(argc);

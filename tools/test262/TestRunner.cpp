@@ -81,6 +81,13 @@ std::string errorNameOf(IContext* ctx, Value* error) {
         }
         case TypeKind::Exception: {
             Value* child = static_cast<ExceptionData*>(error->data())->child;
+            // negative.type 按「抛出异常的构造函数名」匹配（INTERPRETING.md）。
+            // Test262Error 的 prototype 未定义 name，只有构造函数名可用。
+            Value* ctor = ctx->getProperty(child, "constructor");
+            if (ctor != nullptr && ctor->type()->kind() == TypeKind::Function) {
+                std::string ctorName = stringOf(ctx->getProperty(ctor, "name"));
+                if (!ctorName.empty()) return ctorName;
+            }
             std::string name = stringOf(ctx->getProperty(child, "name"));
             return name.empty() ? "Error" : name;
         }

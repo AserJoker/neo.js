@@ -1010,6 +1010,23 @@ void Compiler::compileForInStatement(
             }
         }
     }
+    // Annex B B.3.6：sloppy `for (var x = init in obj)` 的初始化器在 RHS
+    // 之前求值一次，并初始化 var 绑定（后续每轮迭代会覆盖它）。
+    if (!lexical && declaration != nullptr) {
+        for (const frontend::NodePtr& declarator : declaration->declarations) {
+            if (!declarator) continue;
+            const auto& entry =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            if (!entry.init || !entry.id ||
+                entry.id->kind() != NodeKind::Identifier) {
+                continue;
+            }
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*entry.id).name;
+            compileNamedExpression(*entry.init, name);
+            code_->store(name);
+        }
+    }
     compileExpression(*node.right);
     if (lexical) code_->popScope();
     code_->forInKeys();
@@ -2481,8 +2498,13 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         ++argc;
     }
     if (withEvalCall) {
-        // with 内的 eval：运行时判定是否为直接 eval（with 对象未绑定时）。
-        code_->directEvalMethod(argc);
+        // with 内的 eval：运行时判定是否为直接 eval（with 对象未绑定时）；
+        // 尾位置且被 with 对象绑定时按尾调用处理。
+        if (tailCall && !chainOptional) {
+            code_->directEvalMethodTail(argc);
+        } else {
+            code_->directEvalMethod(argc);
+        }
     } else if (isMember || withCall) {
         // with 内的标识符调用已按 [thisArg, fn] 布局压栈，走成员调用路径。
         if (tailCall && !chainOptional) {

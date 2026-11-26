@@ -313,6 +313,26 @@ public:
                             NodeKind::VariableDeclaration) {
                         checkAssignmentTarget(statement.left.get(), context);
                     }
+                    // Annex B 的 `for (var x = init in obj)` 仅允许 sloppy：
+                    // 严格模式下带初始化器是语法错误（§14.7.5.1）。
+                    if (statement.left &&
+                        statement.left->kind() ==
+                            NodeKind::VariableDeclaration) {
+                        auto& declaration = static_cast<VariableDeclaration&>(
+                            *statement.left);
+                        for (const NodePtr& declarator :
+                             declaration.declarations) {
+                            if (!declarator) continue;
+                            auto& entry =
+                                static_cast<VariableDeclarator&>(*declarator);
+                            if (entry.init) {
+                                context.error(
+                                    entry.init->range().start,
+                                    "for-in loop variable declaration may not "
+                                    "have an initializer in strict mode");
+                            }
+                        }
+                    }
                 }
                 break;
             }
