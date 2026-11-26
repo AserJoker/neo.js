@@ -116,8 +116,19 @@ NodePtr RegexParser::parseTerm() {
     if (quantifier == QuantResult::Error) return nullptr;
     if (quantifier == QuantResult::Spec) {
         if (assertion) {
-            fail(spec.offset, "Nothing to repeat");
-            return nullptr;
+            // Annex B B.1.4：非 unicode 模式下 QuantifiableAssertion
+            // （`(?=...)` / `(?!...)`）可带量词。
+            bool quantifiable = false;
+            if (!(flags_.unicode || flags_.unicodeSets) && dialect_.annexB &&
+                atom->kind == NodeKind::Group) {
+                const auto& group = static_cast<const Group&>(*atom);
+                quantifiable = group.groupKind == Group::Kind::Lookahead ||
+                               group.groupKind == Group::Kind::NegativeLookahead;
+            }
+            if (!quantifiable) {
+                fail(spec.offset, "Nothing to repeat");
+                return nullptr;
+            }
         }
         auto node = std::make_unique<Quantifier>(spec.offset, spec.min,
                                                  spec.max, spec.greedy);
@@ -898,9 +909,11 @@ bool RegexParser::parseClassEscape(ClassItem& item) {
                     fail(start, "Invalid decimal escape");
                     return false;
                 }
+                // LegacyOctalEscapeSequence 最多 3 位八进制且含前导 0，
+                // 故前导 0 之后最多再取 2 位（`\0111` = `\011` + '1'）。
                 std::uint32_t value = 0;
                 std::uint32_t count = 0;
-                while (count < 3 && !atEnd()) {
+                while (count < 2 && !atEnd()) {
                     const std::uint32_t digit = peek();
                     if (digit < '0' || digit > '7') break;
                     value = value * 8u + (digit - '0');
@@ -1063,12 +1076,16 @@ NodePtr RegexParser::parseAtomEscape() {
         }
         case 'c': {
             advance();
-            if (atEnd() || !isAsciiLetter(peek())) {
-                fail(start, "Invalid control escape");
-                return nullptr;
+            if (!atEnd() && isAsciiLetter(peek())) {
+                const std::uint32_t letter = advance();
+                return std::make_unique<Character>(start, letter % 32);
             }
-            const std::uint32_t letter = advance();
-            return std::make_unique<Character>(start, letter % 32);
+            // Annex B：非 unicode 模式下 `\c` 后无控制字母时退化为字面量 'c'。
+            if (!(flags_.unicode || flags_.unicodeSets) && dialect_.annexB) {
+                return std::make_unique<Character>(start, 'c');
+            }
+            fail(start, "Invalid control escape");
+            return nullptr;
         }
         case 'x': {
             advance();
@@ -1139,9 +1156,11 @@ NodePtr RegexParser::parseAtomEscape() {
                     fail(start, "Invalid decimal escape");
                     return nullptr;
                 }
+                // LegacyOctalEscapeSequence 最多 3 位八进制且含前导 0，
+                // 故前导 0 之后最多再取 2 位（`\0111` = `\011` + '1'）。
                 std::uint32_t value = 0;
                 std::uint32_t count = 0;
-                while (count < 3 && !atEnd()) {
+                while (count < 2 && !atEnd()) {
                     const std::uint32_t digit = peek();
                     if (digit < '0' || digit > '7') break;
                     value = value * 8u + (digit - '0');
@@ -1157,12 +1176,8 @@ NodePtr RegexParser::parseAtomEscape() {
     }
 
     if (cp >= '1' && cp <= '9') {
-        // Annex B：非 unicode 模式下 \8 / \9 是身份转义（字面量 8/9）。
-        if ((cp == '8' || cp == '9') && !(flags_.unicode || flags_.unicodeSets) &&
-            dialect_.annexB) {
-            advance();
-            return std::make_unique<Character>(start, cp);
-        }
+        // 先按 DecimalEscape 解析；组数不足时由 validateBackrefs 退化为
+        // Annex B 的 LegacyOctalEscapeSequence（\8/\9 退化为字面量 8/9）。
         if (!dialect_.allowBackrefs) {
             fail(start, "Backreferences are disabled");
             return nullptr;
