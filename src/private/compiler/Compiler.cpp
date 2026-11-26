@@ -154,6 +154,9 @@ void Compiler::compileProgram() {
     code_->isScriptProgram = true;
     code_->strict = strict_;
     globalCode_ = true;
+    // GlobalDeclarationInstantiation：所有声明校验（lex/var/function）先于
+    // 任何绑定创建，冲突时脚本不留下部分绑定。
+    checkGlobalScriptDeclarations(program_.body);
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
@@ -5317,6 +5320,84 @@ void Compiler::compileAnnexBFunction(
         code_->load(name);
         code_->storeVar(name);
         code_->popScope();
+    }
+}
+
+void Compiler::checkGlobalScriptDeclarations(const frontend::NodeList& body) {
+    // 1. lexNames：与既有 var/lexical/受限全局属性冲突 → SyntaxError。
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr) continue;
+        if (declaration->kind() == NodeKind::ClassDeclaration) {
+            const auto& klass =
+                static_cast<const frontend::ClassDeclaration&>(*declaration);
+            if (klass.id && klass.id->kind() == NodeKind::Identifier) {
+                code_->checkGlobalLexical(
+                    static_cast<const frontend::Identifier&>(*klass.id).name);
+            }
+            continue;
+        }
+        if (declaration->kind() != NodeKind::VariableDeclaration) continue;
+        const auto& variables =
+            static_cast<const frontend::VariableDeclaration&>(*declaration);
+        if (variables.variableKind == frontend::VariableKind::Var) continue;
+        for (const frontend::NodePtr& declarator : variables.declarations) {
+            if (!declarator ||
+                declarator->kind() != NodeKind::VariableDeclarator) {
+                continue;
+            }
+            const auto& decl =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            if (!decl.id) continue;
+            std::vector<std::string> names;
+            collectPatternNames(*decl.id, names);
+            for (const std::string& name : names) {
+                code_->checkGlobalLexical(name);
+            }
+        }
+    }
+
+    // 2. varNames（含函数声明名）：与既有 lexical 冲突 → SyntaxError；
+    //    CanDeclareGlobalVar 失败 → TypeError。
+    std::vector<std::string> varNames;
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement) continue;
+        collectVarNames(*statement, varNames);
+        if (!strict_) collectAnnexBFunctionNames(*statement, varNames, true);
+        const Node* declaration = declarationOf(*statement);
+        if (declaration != nullptr &&
+            declaration->kind() == NodeKind::FunctionDeclaration) {
+            const auto& function =
+                static_cast<const frontend::FunctionDeclaration&>(*declaration);
+            if (function.id && function.id->kind() == NodeKind::Identifier) {
+                varNames.push_back(
+                    static_cast<const frontend::Identifier&>(*function.id).name);
+            }
+        }
+    }
+    std::unordered_set<std::string> seen;
+    for (const std::string& name : varNames) {
+        if (!seen.insert(name).second) continue;
+        code_->checkGlobalVar(name);
+    }
+
+    // 3. 函数声明：CanDeclareGlobalFunction（不可配置属性冲突 → TypeError）。
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier ||
+            !function.body) {
+            continue;
+        }
+        code_->checkGlobalFunction(
+            static_cast<const frontend::Identifier&>(*function.id).name);
     }
 }
 

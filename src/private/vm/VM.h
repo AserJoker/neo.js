@@ -269,6 +269,7 @@ private:
     neo::core::Value* opStoreSlotRef();
     neo::core::Value* opResolveRef();
     neo::core::Value* opStoreRef();
+    neo::core::Value* opCheckGlobalVar();
     neo::core::Value* opCheckGlobalFunction();
     neo::core::Value* opStoreEvalFunction();
     neo::core::Value* opDirectEvalMethod();

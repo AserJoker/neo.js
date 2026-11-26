@@ -3809,8 +3809,12 @@ Value* Context::declareGlobalFunction(std::string_view name, bool configurable) 
 }
 
 Value* Context::checkGlobalFunction(std::string_view name) {
-    // 仅 eval 的变量环境是全局对象记录时需要 CanDeclareGlobalFunction。
-    if (evalVarScope_ != global_) return nullptr;
+    // 仅变量环境是全局对象记录时需要 CanDeclareGlobalFunction：
+    // eval 走 evalVarScope_；脚本顶层由 VM 在脚本作用域上打 "global-script" 标记。
+    if (evalVarScope_ != global_ &&
+        !(evalVarScope_ == nullptr && current()->hasFlag("global-script"))) {
+        return nullptr;
+    }
     if (global_->lookupBinding(name) != nullptr) {
         std::string msg = "Identifier '" + std::string(name) +
                           "' has already been declared";
@@ -3845,6 +3849,12 @@ Value* Context::storeEvalFunction(std::string_view name, Value* value) {
 }
 
 Value* Context::checkGlobalLexical(std::string_view name) {
+    // HasLexicalDeclaration：同名 let/const/class 已存在。
+    if (global_->lookupBinding(name) != nullptr) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
     Value* key = createString(name);
     if (key == oomValue_) return key;
     PropertyKey pk;
@@ -3860,6 +3870,34 @@ Value* Context::checkGlobalLexical(std::string_view name) {
         std::string msg = "Identifier '" + std::string(name) +
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    return nullptr;
+}
+
+Value* Context::checkGlobalVar(std::string_view name) {
+    // HasLexicalDeclaration：var/函数声明不得与既有 let/const/class 同名。
+    if (global_->lookupBinding(name) != nullptr) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    // CanDeclareGlobalVar：已有自有属性即可；否则要求全局对象可扩展。
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    if (exists) return nullptr;
+    Value* ext = globalObject_->type()->isExtensible(this, globalObject_);
+    if (detail::isErrorValue(ext)) return ext;
+    if (!detail::toBoolean(ext)) {
+        return detail::typeError(this, "Cannot define global variable '" +
+                                           std::string(name) + "'");
     }
     return nullptr;
 }

@@ -439,6 +439,9 @@ enum class OpCode : uint16_t {
     ResolveRef,
     // u32 名字：[slot, hasSlot, resolvable, value] → [value]：写回捕获的引用。
     StoreRef,
+    // u32 名字：[]：全局 var 声明的 HasLexicalDeclaration + CanDeclareGlobalVar
+    // 预检（脚本 GlobalDeclarationInstantiation，不创建属性）。
+    CheckGlobalVar,
     // u32 名字：[]：eval 全局函数声明的 CanDeclareGlobalFunction 预检。
     CheckGlobalFunction,
     // u32 名字：[value] → []：eval 函数声明写入（全局走 CreateGlobalFunctionBinding）。

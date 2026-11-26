@@ -100,6 +100,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::LoadWithRefMethod: return "load_with_ref_method";
         case OpCode::ResolveRef:    return "resolve_ref";
         case OpCode::StoreRef:      return "store_ref";
+        case OpCode::CheckGlobalVar:      return "check_global_var";
         case OpCode::CheckGlobalFunction: return "check_global_function";
         case OpCode::StoreEvalFunction:   return "store_eval_function";
         case OpCode::DirectEvalMethod:    return "direct_eval_method";
@@ -458,6 +459,7 @@ const VM::Handler* VM::handlers() {
         &VM::opLoadWithRefMethod,
         &VM::opResolveRef,
         &VM::opStoreRef,
+        &VM::opCheckGlobalVar,
         &VM::opCheckGlobalFunction,
         &VM::opStoreEvalFunction,
         &VM::opDirectEvalMethod,
@@ -703,9 +705,17 @@ Value* VM::run(uint32_t entryPc) {
     // 脚本默认 sloppy：为本次执行建立临时作用域，只有源码含 "use strict"
     // 时才标注 strict。作用域只承载执行模式，声明仍落 GlobalScope/global object。
     Scope* scriptScope = nullptr;
-    if (code_->isScriptProgram && ctx_->current() == ctx_->global()) {
-        scriptScope = ctx_->pushNewScope(ctx_->global());
+    // entryPc == 0 表示脚本顶层入口（同一 Code 内的函数体入口 pc 非 0，
+    // 不能误判为脚本全局代码）。
+    if (code_->isScriptProgram && entryPc == 0) {
+        // 脚本（含 $262.evalScript 嵌套执行）都建立带 "global-script" 标记的
+        // 执行作用域：声明仍落 GlobalScope/global object，标记供
+        // GlobalDeclarationInstantiation 预检判定变量环境。
+        scriptScope = ctx_->pushNewScope(ctx_->current());
         if (scriptScope == nullptr) return ctx_->oomValue();
+        // 标记脚本全局代码：GlobalDeclarationInstantiation 预检据此判定
+        // 变量环境是全局对象记录（严格 eval 的自有作用域不带此标记）。
+        scriptScope->setFlag("global-script");
         if (code_->strict) scriptScope->setFlag("strict");
     }
     pc_ = entryPc;
@@ -2892,6 +2902,22 @@ Value* VM::opStoreRef() {
     }
     if (detail::isErrorValue(result)) return fail(result);
     push(value);
+    return nullptr;
+}
+
+Value* VM::opCheckGlobalVar() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("check_global_var: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("check_global_var: name index out of range");
+    }
+    Value* result = ctx_->checkGlobalVar(*name);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
 

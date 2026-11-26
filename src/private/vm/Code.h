@@ -380,6 +380,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t checkGlobalVar(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::CheckGlobalVar);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t checkGlobalFunction(std::string_view name) {
         uint32_t pc = emitOp(OpCode::CheckGlobalFunction);
         emitU32(addString(std::string(name)));

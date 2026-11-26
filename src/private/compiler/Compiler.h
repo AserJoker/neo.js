@@ -275,6 +275,7 @@ private:
     void hoistLexicalSlots(const frontend::NodeList& body,
                            bool globalLexical = false);
     void hoistFunctions(const frontend::NodeList& body, bool annexB = false);
+    void checkGlobalScriptDeclarations(const frontend::NodeList& body);
     void checkEvalGlobalFunctions(const frontend::NodeList& body);
     void hoistEvalFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
