@@ -3984,6 +3984,51 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                         }
                     }
                 }
+                // 绑定目标为标识符且有初始化器：ResolveBinding(target) 必须先于
+                // GetV（§13.15.5.3 步骤 1→2→3）。with 环境下这次解析会触发
+                // HasBinding，故用 with 感知的引用捕获。
+                if (!lexical && prop.value &&
+                    prop.value->kind() == NodeKind::AssignmentPattern) {
+                    const auto& ap =
+                        static_cast<const frontend::AssignmentPattern&>(
+                            *prop.value);
+                    if (ap.left && ap.left->kind() == NodeKind::Identifier) {
+                        const std::string& name =
+                            static_cast<const frontend::Identifier&>(*ap.left)
+                                .name;
+                        const std::string keySlot =
+                            prop.computed
+                                ? keySlots[index]
+                                : "*dest-srckey-" + std::to_string(tempId) +
+                                      "-" + std::to_string(index) + "*";
+                        // 1. 源 PropertyName（computed 需 ToPropertyKey）。
+                        compilePropertyKey(prop);
+                        if (prop.computed) code_->toPropertyKey();
+                        code_->define(keySlot);
+                        // 2. ResolveBinding(target)。
+                        code_->resolveWithRef(name);
+                        // 3. GetV。
+                        code_->load(objectName);
+                        code_->load(keySlot);
+                        code_->getProp();
+                        // 4. 默认值。
+                        code_->dup();
+                        code_->pushUndefined();
+                        code_->strictEqual();
+                        uint32_t keep = code_->jfalse();
+                        code_->pop();
+                        if (ap.right) {
+                            compileNamedExpression(*ap.right, name);
+                        } else {
+                            code_->pushUndefined();
+                        }
+                        code_->patchU32(keep + 2, code_->here());
+                        // 5. 写回捕获的引用。
+                        code_->storeWithRef(name);
+                        code_->pop();
+                        continue;
+                    }
+                }
                 code_->load(objectName);
                 compilePropertyKey(prop);
                 if (prop.computed) {

@@ -1423,7 +1423,18 @@ Value* VM::storeRefValue(Value* base, bool isWith, bool hasSlot,
         result = ctx_->storeToSlot(base, name, value);
         if (result == nullptr) result = ctx_->store(name, value);
     } else {
-        result = ctx_->store(name, value);
+        // 解析阶段已确认既非 with 绑定也非声明式绑定：只剩全局对象记录或
+        // 未声明。直接写全局对象，避免再次沿作用域链解析而重复触发 with
+        // 代理的 HasBinding（InitializeReferencedBinding 复用已捕获引用）。
+        Value* key = ctx_->createString(name);
+        if (key == ctx_->oomValue()) return fail(key);
+        Value* has = ctx_->hasProperty(ctx_->globalObject(), key);
+        if (detail::isErrorValue(has)) return fail(has);
+        if (!detail::toBoolean(has) && ctx_->hasFlag("strict")) {
+            return fail(detail::referenceError(
+                ctx_, "Assignment to undeclared identifier '" + name + "'"));
+        }
+        result = ctx_->setProperty(ctx_->globalObject(), key, value);
     }
     if (detail::isErrorValue(result)) return fail(result);
     return nullptr;

@@ -3039,9 +3039,11 @@ Value* Context::deleteIdentifier(std::string_view name) {
     if (current()->getWithBindingChain(name, withObject, withKey)) {
         return deleteProperty(withObject, withKey);
     }
-    // 声明绑定（函数内 var/形参、全局 let/const）不可删除。
-    if (current()->lookupBindingChain(name) != nullptr) {
-        return createBoolean(false);
+    // 声明绑定（函数内 var/形参、全局 let/const）不可删除；只有 sloppy
+    // 直接 eval 新建的 var/函数绑定可删除（§19.2.1.3）。
+    for (Scope* s = current(); s != nullptr; s = s->parent()) {
+        if (s->deleteBinding(name)) return createBoolean(true);
+        if (s->lookupBinding(name) != nullptr) return createBoolean(false);
     }
     // 全局对象记录：只有自有属性可删；不存在视为已删除（返回 true）。
     Value* key = createString(name);
@@ -3710,6 +3712,11 @@ Value* Context::declareVar(std::string_view name) {
     // 直接 eval 新增 var：先于该 var 创建的闭包也须沿运行时环境链看到它。
     if (evalVarScope_ != nullptr && target == evalVarScope_ &&
         target != global_) {
+        // eval 新建的绑定可删除（CreateMutableBinding 的 deletable=true）：
+        // `delete name` 移除后，闭包沿环境链查找即得到 ReferenceError。
+        if (Scope::Binding* created = target->lookupBinding(name)) {
+            created->deletable = true;
+        }
         captureClosuresInScopeTree(target);
     }
     return nullptr;

@@ -66,6 +66,9 @@ public:
         // 不可变但非 const 的绑定（具名函数表达式内部名字）：非严格模式下
         // 赋值静默失败，严格模式才抛 TypeError。
         bool assignmentSilent = false;
+        // 可删除绑定：sloppy 直接 eval 新建的 var/函数绑定（CreateMutableBinding
+        // 的 deletable=true），`delete name` 可移除该绑定（§19.2.1.3）。
+        bool deletable = false;
     };
 
 private:
@@ -341,6 +344,15 @@ public:
             if (const Binding* b = s->lookupBinding(name)) return b;
         }
         return nullptr;
+    }
+
+    // 删除本作用域的可删除绑定（eval 新建的 var/函数）。非可删除绑定或
+    // 不存在时返回 false，调用方继续沿链查找。
+    bool deleteBinding(std::string_view name) {
+        auto it = namedValues_.find(std::string(name));
+        if (it == namedValues_.end() || !it->second.deletable) return false;
+        namedValues_.erase(it);
+        return true;
     }
 
     // 定义导入绑定：name 别名到导出方的同一个 Value* 槽位，写入恒拒绝。
