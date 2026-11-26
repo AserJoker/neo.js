@@ -571,13 +571,12 @@ inline Value* addValues(IContext* ctx, Value* l, Value* r) {
 //   BigInt 与 Number 混用抛 TypeError；BigInt 除零抛 RangeError。
 // op 为 '-'、'*'、'/' 之一。
 inline Value* numericOp(IContext* ctx, char op, Value* l, Value* r) {
-    Value* lp = toPrimitive(ctx, l, PreferredType::Number);
-    if (isErrorValue(lp)) return lp;
-    Value* rp = toPrimitive(ctx, r, PreferredType::Number);
-    if (isErrorValue(rp)) return rp;
-    Value* ln = toNumericValue(ctx, lp);
+    // 规范顺序：ToNumeric(lval) 完整求值后再 ToNumeric(rval)。
+    // 不能先对两侧都做 ToPrimitive——否则左侧 ToNumeric 抛错前，右侧的
+    // valueOf 已被调用（求值顺序可观测）。
+    Value* ln = toNumericValue(ctx, l);
     if (isErrorValue(ln)) return ln;
-    Value* rn = toNumericValue(ctx, rp);
+    Value* rn = toNumericValue(ctx, r);
     if (isErrorValue(rn)) return rn;
     const TypeKind lk = ln->type()->kind();
     const TypeKind rk = rn->type()->kind();

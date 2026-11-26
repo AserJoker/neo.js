@@ -345,6 +345,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t loadWithRefMethod(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::LoadWithRefMethod);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t storeWithRefKeep(std::string_view name) {
         uint32_t pc = emitOp(OpCode::StoreWithRefKeep);
         emitU32(addString(std::string(name)));

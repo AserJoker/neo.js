@@ -498,21 +498,23 @@ inline Value* unaryOpValues(IContext* ctx, UnaryOperator op, Value* v) {
         case UnaryOperator::Plus:
             return toNumberValue(ctx, v);
         case UnaryOperator::Minus: {
-            if (v->type()->kind() == TypeKind::BigInt) {
-                return createBigIntValue(ctx, -bigIntValue(v));
-            }
-            Value* n = toNumberValue(ctx, v);
+            // 规范：ToNumeric(GetValue(expr)) 后再按 T 分派，对象包装的 BigInt
+            // 须先经 ToPrimitive 得到 bigint，而不是直接 ToNumber 抛错。
+            Value* n = toNumericValue(ctx, v);
             if (isErrorValue(n)) return n;
+            if (n->type()->kind() == TypeKind::BigInt) {
+                return createBigIntValue(ctx, -bigIntValue(n));
+            }
             return ctx->createNumber(-static_cast<NumberData*>(n->data())->value);
         }
         case UnaryOperator::LogicalNot:
             return ctx->createBoolean(!toBoolean(v));
         case UnaryOperator::BitNot: {
-            if (v->type()->kind() == TypeKind::BigInt) {
-                return createBigIntValue(ctx, ~bigIntValue(v));
-            }
-            Value* n = toNumberValue(ctx, v);
+            Value* n = toNumericValue(ctx, v);
             if (isErrorValue(n)) return n;
+            if (n->type()->kind() == TypeKind::BigInt) {
+                return createBigIntValue(ctx, ~bigIntValue(n));
+            }
             uint32_t u = static_cast<uint32_t>(
                 toInt32(static_cast<NumberData*>(n->data())->value));
             return ctx->createNumber(static_cast<double>(fromUint32(~u)));

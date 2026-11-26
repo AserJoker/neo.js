@@ -429,11 +429,15 @@ enum class OpCode : uint16_t {
     // [fn] → [fn]：箭头函数继承定义点外层环境的 new.target（箭头自身没有
     // new.target 绑定，§15.3.4）。外层无 new.target 时捕获 undefined。
     InheritNewTarget,
+    // u32 名字：[base, isWith, hasSlot] → [thisArg, fn]：with 环境记录内的
+    // 标识符调用。命中 with 对象时 thisArg 为该对象（WithBaseObject），
+    // 否则为 undefined。随后按 call_method 布局调用。
+    LoadWithRefMethod,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::InheritNewTarget) + 1;
+    static_cast<size_t>(OpCode::LoadWithRefMethod) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

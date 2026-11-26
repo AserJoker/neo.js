@@ -182,6 +182,7 @@ private:
     neo::core::Value* opResolveWithRef();
     neo::core::Value* opStoreWithRef();
     neo::core::Value* opLoadWithRef();
+    neo::core::Value* opLoadWithRefMethod();
     neo::core::Value* opStoreWithRefKeep();
     // 引用写回：base 按 isWith/hasSlot 解释；都不成立时回退到作用域链 store。
     neo::core::Value* storeRefValue(neo::core::Value* base, bool isWith,

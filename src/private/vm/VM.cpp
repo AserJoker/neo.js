@@ -97,6 +97,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::ResolveWithRef: return "resolve_with_ref";
         case OpCode::StoreWithRef:  return "store_with_ref";
         case OpCode::LoadWithRef:   return "load_with_ref";
+        case OpCode::LoadWithRefMethod: return "load_with_ref_method";
         case OpCode::StoreWithRefKeep: return "store_with_ref_keep";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
@@ -448,6 +449,7 @@ const VM::Handler* VM::handlers() {
         &VM::opMarkParamInit,
         &VM::opDirectEvalTail,
         &VM::opInheritNewTarget,
+        &VM::opLoadWithRefMethod,
     };
     return table;
 }
@@ -1481,6 +1483,61 @@ Value* VM::opLoadWithRef() {
     return nullptr;
 }
 
+Value* VM::opLoadWithRefMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("load_with_ref_method: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("load_with_ref_method: name index out of range");
+    }
+    if (stack_.size() < 3) {
+        return badBytecode("load_with_ref_method: operand stack underflow");
+    }
+    Value* hasSlot = pop();
+    Value* isWith = pop();
+    Value* base = pop();
+    const bool withRef = detail::toBoolean(isWith);
+    const bool slotRef = detail::toBoolean(hasSlot);
+    Value* fn = nullptr;
+    // WithBaseObject（§9.1.1.2.1）：命中 with 对象时 this 为该对象。
+    Value* thisArg = ctx_->createUndefined();
+    if (withRef) {
+        Value* key = ctx_->createString(*name);
+        if (key == ctx_->oomValue()) return fail(key);
+        Value* has = ctx_->hasProperty(base, key);
+        if (detail::isErrorValue(has)) return fail(has);
+        if (!detail::toBoolean(has)) {
+            if (ctx_->hasFlag("strict")) {
+                return fail(detail::referenceError(
+                    ctx_, "'" + *name + "' is not defined"));
+            }
+            fn = ctx_->createUndefined();
+        } else {
+            fn = ctx_->getProperty(base, key);
+        }
+        thisArg = base;
+    } else if (slotRef) {
+        fn = ctx_->loadFromSlot(base, *name);
+        if (fn == nullptr) fn = ctx_->load(*name);
+    } else {
+        // 解析阶段已确认既非 with 绑定也非声明式绑定：只剩全局对象记录
+        // 或未声明。直接查 global，避免再次触发 with 代理的 HasBinding。
+        fn = ctx_->global()->lookup(*name);
+        if (fn == nullptr) {
+            return fail(detail::referenceError(
+                ctx_, "'" + *name + "' is not defined"));
+        }
+    }
+    if (detail::isErrorValue(fn)) return fail(fn);
+    push(thisArg);
+    push(fn);
+    return nullptr;
+}
+
 Value* VM::opStoreWithRefKeep() {
     const std::vector<uint8_t>& bytes = code_->bytecode;
     if (bytes.size() - pc_ < 4) {
@@ -1982,15 +2039,8 @@ Value* VM::opGe() { return binary(BinaryOperator::GreaterThanOrEqual); }
 Value* VM::opStrictEqual() { return binary(BinaryOperator::StrictEqual); }
 
 Value* VM::opIn() {
-    if (stack_.size() < 2) {
-        return badBytecode("in: operand stack underflow");
-    }
-    Value* right = pop();
-    Value* left = pop();
-    Value* result = ctx_->hasProperty(right, left);
-    if (detail::isErrorValue(result)) return fail(result);
-    push(result);
-    return nullptr;
+    // 走统一二元运算入口：inOperator 负责 RHS 必须是对象的 TypeError 检查。
+    return binary(BinaryOperator::In);
 }
 
 Value* VM::opInstanceOf() {

@@ -2056,7 +2056,9 @@ NodePtr Parser::parseAssignmentExpression() {
     if (!assignmentOperator(current_.kind, op)) return left;
 
     // 解构赋值左侧先按字面量解析，再重解释为模式；复合赋值仍只接受简单目标。
-    if (op == AssignmentOperator::Assign &&
+    // 括号包裹的字面量不是合法赋值目标（AssignmentTargetType of
+    // ParenthesizedExpression 仍为 invalid），不能重解释为模式。
+    if (op == AssignmentOperator::Assign && !left->isParenthesized() &&
         (left->kind() == NodeKind::ArrayExpression ||
          left->kind() == NodeKind::ObjectExpression)) {
         left = convertToAssignmentPattern(std::move(left));
@@ -2111,7 +2113,12 @@ NodePtr Parser::parseConditionalExpression() {
     if (!match(TokenKind::Question)) return test;
 
     const SourceLocation start = test->range().start;
+    // ConditionalExpression 的真分支是 AssignmentExpression[+In]：即使处于
+    // for 头部等 [~In] 上下文，也允许 `in` 运算符（§13.14 语法）。
+    const bool savedAllowIn = allowIn_;
+    allowIn_ = true;
     NodePtr consequent = parseAssignmentExpression();
+    allowIn_ = savedAllowIn;
     if (consequent == nullptr) return nullptr;
     if (!expect(TokenKind::Colon, "':'")) return nullptr;
     NodePtr alternate = parseAssignmentExpression();

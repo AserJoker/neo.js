@@ -541,14 +541,18 @@ bool Compiler::isAnonymousFunctionDefinition(const frontend::Node& node) {
 
 void Compiler::compileNamedExpression(const frontend::Node& node,
                                       std::string_view name) {
+    if (node.kind() == NodeKind::ClassExpression) {
+        // 匿名 class 的推断名须在静态字段初始化前生效，故传入编译入口；
+        // 具名 class 不参与推断。class 可能有静态 name 方法占用自有
+        // "name"，用 setFuncNameIfAbsent 不覆盖。
+        const auto& cls = static_cast<const frontend::ClassExpression&>(node);
+        const bool infer = cls.id == nullptr && !name.empty();
+        compileClassExpression(cls, infer ? name : std::string_view{});
+        return;
+    }
     compileExpression(node);
     if (name.empty() || !isAnonymousFunctionDefinition(node)) return;
-    if (node.kind() == NodeKind::ClassExpression) {
-        // class 可能有静态 name 方法占用自有 "name"，不得覆盖。
-        code_->setFuncNameIfAbsent(name);
-    } else {
-        code_->setFuncName(name);
-    }
+    code_->setFuncName(name);
 }
 
 void Compiler::compileNamedExpressionForKey(const frontend::Node& node,
@@ -2333,11 +2337,23 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         return;
     }
 
-    bool isMember = node.callee->kind() == NodeKind::MemberExpression;
+    // `(a?.b)()`：括号内可选链的 callee 是 ChainExpression。括号不破坏引用
+    // 语义，调用仍须保留 receiver（this），故展开到内层成员访问。
+    const frontend::Node* calleeNode = node.callee.get();
+    bool calleeFromChain = false;
+    if (calleeNode != nullptr &&
+        calleeNode->kind() == NodeKind::ChainExpression) {
+        calleeNode =
+            static_cast<const frontend::ChainExpression&>(*calleeNode)
+                .expression.get();
+        calleeFromChain = true;
+    }
+    bool isMember = calleeNode != nullptr &&
+                    calleeNode->kind() == NodeKind::MemberExpression;
     bool chainOptional = node.optional;
     if (isMember) {
         const auto& member =
-            static_cast<const frontend::MemberExpression&>(*node.callee);
+            static_cast<const frontend::MemberExpression&>(*calleeNode);
         chainOptional = chainOptional || member.optional;
         if (!member.object) {
             error(node, "compiler: member call missing object");
@@ -2378,23 +2394,54 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         }
         // receiver 只求值一次：栈上保留一份作为 thisArg，另一份用于取方法。
         compileExpression(*member.object);
-        if (member.optional) emitOptionalGuard();
-        code_->dup();
-        compileMemberKey(member);
-        code_->getProp();
+        if (member.optional && calleeFromChain) {
+            // `(a?.b)()`：括号内的可选链短路只产出 undefined，外层调用
+            // 仍继续（对 undefined 调用会抛 TypeError），不能跳到链尾。
+            code_->dup();
+            uint32_t cont = code_->jNotNullish();
+            code_->pop();
+            code_->pushUndefined();  // thisArg
+            code_->pushUndefined();  // fn
+            uint32_t callSite = code_->jmp();
+            code_->patchU32(cont + 2, code_->here());
+            code_->dup();
+            compileMemberKey(member);
+            code_->getProp();
+            code_->patchU32(callSite + 2, code_->here());
+        } else {
+            if (member.optional) emitOptionalGuard();
+            code_->dup();
+            compileMemberKey(member);
+            code_->getProp();
+        }
         // `obj.m?.()`：fn 为 nullish 时 receiver 与 fn 都要丢弃。
         if (node.optional) emitOptionalGuard(1);
-    } else {
-        compileExpression(*node.callee);
-        if (node.optional) emitOptionalGuard();
+    }
+    // with 内的标识符调用：引用可能命中 with 对象，此时 this 必须是该对象
+    // （WithBaseObject，§9.1.1.2.1）。用 resolve_with_ref + load_with_ref_method
+    // 产出 [thisArg, fn]，按成员调用布局执行。
+    bool withCall = false;
+    if (!isMember) {
+        if (withDepth_ > 0 && !node.optional && calleeNode != nullptr &&
+            calleeNode->kind() == NodeKind::Identifier) {
+            const std::string& name =
+                static_cast<const frontend::Identifier&>(*calleeNode).name;
+            code_->resolveWithRef(name);
+            code_->loadWithRefMethod(name);
+            withCall = true;
+        } else {
+            compileExpression(*calleeNode);
+            if (node.optional) emitOptionalGuard();
+        }
     }
 
     // 直接 eval 候选点：无成员访问、非可选调用。VM 在执行期校验被调函数
-    // 是否仍是内建 %eval%（被遮蔽时回退普通调用）。
+    // 是否仍是内建 %eval%（被遮蔽时回退普通调用）。with 路径已按引用调用，
+    // 不再走直接 eval。
     const bool directEvalCandidate =
-        !isMember && !node.optional &&
-        node.callee->kind() == NodeKind::Identifier &&
-        static_cast<const frontend::Identifier&>(*node.callee).name == "eval";
+        !isMember && !node.optional && !withCall && calleeNode != nullptr &&
+        calleeNode->kind() == NodeKind::Identifier &&
+        static_cast<const frontend::Identifier&>(*calleeNode).name == "eval";
 
     bool hasSpread = false;
     for (const frontend::NodePtr& argument : node.arguments) {
@@ -2405,7 +2452,7 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     }
     if (hasSpread) {
         compileArgumentsArray(node.arguments);
-        if (isMember) {
+        if (isMember || withCall) {
             code_->callMethodSpread();
         } else if (directEvalCandidate) {
             code_->directEvalSpread();
@@ -2421,7 +2468,9 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*argument);
         ++argc;
     }
-    if (isMember) {
+    if (isMember || withCall) {
+        // with 内的标识符调用已按 [thisArg, fn] 布局压栈，走成员调用路径。
+        // 尾位置同样复用 tail_call_method（with 内的 eval 不是直接 eval）。
         if (tailCall && !chainOptional) {
             code_->tailCallMethod(argc);
         } else {
@@ -3996,7 +4045,8 @@ void Compiler::compileClassDeclaration(
     if (!leaveValue) code_->pop();
 }
 
-void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
+void Compiler::compileClassExpression(const frontend::ClassExpression& node,
+                                      std::string_view inferredName) {
     if (!node.body || node.body->kind() != NodeKind::ClassBody) {
         error(node, "compiler: class expression missing body");
         code_->pushUndefined();
@@ -4006,23 +4056,30 @@ void Compiler::compileClassExpression(const frontend::ClassExpression& node) {
     if (node.id && node.id->kind() == NodeKind::Identifier) {
         name = static_cast<const frontend::Identifier&>(*node.id).name;
     }
-    if (node.superClass) {
-        compileExpression(*node.superClass);
-    } else {
-        code_->pushUndefined();
-    }
     const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
     // 具名 class 表达式在类体内建立不可变的 ClassName 绑定（§15.7.14）。
+    // classScope 必须在求值 heritage 之前建立：heritage 中创建的闭包要能
+    // 捕获到这个（稍后初始化的）类名绑定。
     if (!name.empty()) {
         code_->pushScope();
         code_->pushUninitialized();
         code_->define(name, false, false);
+    }
+    if (node.superClass) {
+        compileExpression(*node.superClass);
+    } else {
+        code_->pushUndefined();
     }
     privateScopes_.push_back(collectPrivateElements(body));
     compileClassConstructor(body, node.superClass != nullptr, name);
     if (!name.empty()) {
         code_->dup();
         code_->initialize(name);
+    }
+    // 匿名 class 的名字推断（NamedEvaluation）必须在静态字段初始化器执行前
+    // 完成，否则 `static f = this.name` 观察到空名字（§15.7.14 step 18）。
+    if (name.empty() && !inferredName.empty()) {
+        code_->setFuncNameIfAbsent(inferredName);
     }
     compileClassElements(body);
     privateScopes_.pop_back();
