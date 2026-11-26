@@ -63,6 +63,9 @@ struct ShadowBinding {
     bool mutableBinding;
     bool initialized;  // false 表示 TDZ
     frontend::SourceRange range;
+    // LexicalFunction 是否为普通函数声明（非 async/generator）。
+    // Annex B 只允许 sloppy 下普通块级函数重复声明。
+    bool plainFunction = false;
 };
 
 struct ShadowScope {

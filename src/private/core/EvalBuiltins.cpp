@@ -87,7 +87,8 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
     if (direct && currentFunction_ != nullptr &&
         currentFunction_->type()->kind() == TypeKind::Function) {
         auto* d = static_cast<FunctionData*>(currentFunction_->data());
-        semaOptions.allowsNewTarget = true;
+        // §19.2.1.1：eval 代码位于箭头函数代码内时不得含 new.target。
+        semaOptions.allowsNewTarget = !d->isArrow;
         // class 字段初始化器内的直接 eval：ContainsArguments 为语法错误
         // （§19.2.1.1 Additional Early Error Rules for Eval Inside Initializer）。
         if (d->inFieldInitializer) semaOptions.allowsArguments = false;
@@ -191,8 +192,12 @@ Value* Context::evalSource(Value* source, Scope* callerScope, bool direct) {
     }
     if (direct) entry->markDynamic();
     current_ = entry;
-    // 间接 eval 在全局环境中执行：新建函数的模块根取 GlobalScope。
-    if (!direct) root_ = global_;
+    // 间接 eval 在全局环境中执行：新建函数的模块根取 GlobalScope，
+    // this 绑定也取全局环境（GlobalScope 的 this = 全局对象）。
+    if (!direct) {
+        root_ = global_;
+        currentFunctionEnv_ = global_;
+    }
 
     // eval 内创建的函数可能逃逸并长期引用 Code，故 Code 由 Context 持有。
     vm::Code* code = compiled.code.release();

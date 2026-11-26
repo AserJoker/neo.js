@@ -370,6 +370,26 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t resolveRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::ResolveRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t storeRef(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreRef);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t checkGlobalFunction(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::CheckGlobalFunction);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
+    uint32_t storeEvalFunction(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreEvalFunction);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
     uint32_t markParamInit() { return emitOp(OpCode::MarkParamInit); }
     uint32_t getSuperBase() { return emitOp(OpCode::GetSuperBase); }
     uint32_t getSuperPropFromBase() {
@@ -655,6 +675,16 @@ struct Code {
     // 带展开的直接 eval 调用点：栈上 [callee, argsArray]。
     uint32_t directEvalSpread() {
         return emitOp(OpCode::DirectEvalSpread);
+    }
+    // with 内的标识符调用点：栈上 [receiver, callee, args...]。
+    uint32_t directEvalMethod(uint32_t argc) {
+        uint32_t pc = emitOp(OpCode::DirectEvalMethod);
+        emitU32(argc);
+        return pc;
+    }
+    // with 内带展开的标识符调用点：[receiver, callee, argsArray]。
+    uint32_t directEvalMethodSpread() {
+        return emitOp(OpCode::DirectEvalMethodSpread);
     }
     uint32_t callMethod(uint32_t argc) {
         uint32_t pc = emitOp(OpCode::CallMethod);

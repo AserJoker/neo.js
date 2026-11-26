@@ -875,7 +875,8 @@ inline Value* primitiveGetProperty(IContext* ctx, Value* self, Value* key) {
     }
     Value* wrapper = ctx->createPrimitiveWrapper(self);
     if (wrapper->type()->kind() == TypeKind::Exception) return wrapper;
-    return ctx->getProperty(wrapper, key);
+    // receiver 保持原始值：严格模式访问器中的 this 不应被 ToObject。
+    return ctx->getSuperPropertyFromBase(wrapper, key, self);
 }
 
 inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,
@@ -887,11 +888,18 @@ inline Value* primitiveSetProperty(IContext* ctx, Value* self, Value* key,
                           std::string(self->type()->name());
         return typeError(ctx, msg);
     }
-    // 其余原始值：ToObject 后写入的是临时包装对象，sloppy 静默丢弃（§10.1.9）。
-    if (value != nullptr && !ctx->hasFlag("strict")) return value;
-    std::string msg = "Cannot set property '" + keyToString(key) + "' of " +
-                      std::string(self->type()->name());
-    return typeError(ctx, msg);
+    // value == nullptr 是 defineProperty 的哨兵：原始值上不能定义自有属性。
+    if (value == nullptr) {
+        return typeError(ctx, "Cannot define property '" + keyToString(key) +
+                                  "' of " + std::string(self->type()->name()));
+    }
+    // 其余原始值：PutValue 先 ToObject(base)，再以原始值为 receiver 执行 [[Set]]。
+    // 这样原型链上的 setter / Proxy set trap 仍会被触发（§6.2.5.6）。
+    Value* wrapper = ctx->createPrimitiveWrapper(self);
+    if (wrapper->type()->kind() == TypeKind::Exception) return wrapper;
+    // setPropertyWithReceiver 已按严格性处理 [[Set]] 失败（sloppy 返回 RHS，
+    // strict 抛 TypeError），成功时返回写入值；这里直接透传。
+    return ctx->setSuperPropertyFromBase(wrapper, key, value, self);
 }
 
 // —— 非对象类型原型操作（ADR-018 §1）——

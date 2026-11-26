@@ -51,31 +51,64 @@ bool ArgumentsType::indexedLengthWritable(Value* self) const {
     return static_cast<ArgumentsData*>(self->data())->lengthWritable;
 }
 
+Value* ArgumentsType::getOwnProperty(IContext* ctx, Value* self,
+                                     const PropertyKey& key, bool& exists,
+                                     Property& out) const {
+    auto* d = static_cast<ArgumentsData*>(self->data());
+    if (!key.isSymbol) {
+        // length 是普通数据属性：writable=true, enumerable=false,
+        // configurable=true（§10.4.4.1），与 Array.length 不同。
+        if (key.name == "length") {
+            if (d->lengthDeleted) return nullptr;
+            auto it = d->properties.find("length");
+            if (it != d->properties.end()) {
+                out = it->second;
+                exists = true;
+                return nullptr;
+            }
+            Value* len = ctx->createNumber(static_cast<double>(d->length));
+            if (len == ctx->oomValue()) return len;
+            out = Property{len, d->lengthWritable, false, true, nullptr, nullptr};
+            exists = true;
+            return nullptr;
+        }
+        uint32_t index = 0;
+        if (parseArrayIndex(key.name, index)) {
+            auto it = d->properties.find(key.name);
+            if (it != d->properties.end()) {
+                // 已收紧特性/解除映射后以普通属性为准；映射仍有效时值实时
+                // 取自形参绑定（§10.4.4.1 [[GetOwnProperty]]）。
+                out = it->second;
+                const bool mapped =
+                    index < d->mappedNames.size() &&
+                    !d->mappedNames[index].empty();
+                if (mapped) {
+                    Value* v = indexedElement(ctx, self, index);
+                    if (v != nullptr) out.value = v;
+                }
+                exists = true;
+                return nullptr;
+            }
+        }
+    }
+    return ObjectType::getOwnProperty(ctx, self, key, exists, out);
+}
+
 Value* ArgumentsType::defineProperty(IContext* ctx, Value* self, Value* key,
                                      Value* value, bool writable,
                                      bool enumerable, bool configurable) {
     auto* d = static_cast<ArgumentsData*>(self->data());
-    // arguments.length 是普通可写数据属性（enumerable=false, configurable=true）。
     if (key != nullptr && key->type()->kind() != TypeKind::Symbol &&
         detail::keyToString(key) == "length") {
-        if (enumerable) return ctx->createBoolean(false);
-        Value* nv = detail::toNumberValue(ctx, value);
-        if (detail::isErrorValue(nv)) return nv;
-        double num = static_cast<NumberData*>(nv->data())->value;
-        if (num >= 0 && num <= 4294967295.0 && num == std::trunc(num)) {
-            if (!d->lengthWritable && static_cast<uint32_t>(num) != d->length) {
-                return ctx->createBoolean(false);
-            }
-            d->length = static_cast<uint32_t>(num);
-        }
+        d->lengthDeleted = false;
         d->lengthWritable = writable;
-        return ctx->createBoolean(true);
     }
     uint32_t index = 0;
     if (mappedIndex(d, key, index)) {
         // 保持完整可写特性的普通数据更新：只写回形参绑定，属性视图由
         // indexedElement 实时反映。其余描述符变更解除映射后走普通属性。
-        if (writable && enumerable && configurable) {
+        if (writable && enumerable && configurable &&
+            d->properties.count(detail::keyToString(key)) == 0) {
             Value* stored =
                 ctx->storeBinding(d->scope, d->mappedNames[index], value);
             if (detail::isErrorValue(stored)) return stored;
@@ -107,11 +140,18 @@ Value* ArgumentsType::defineAccessor(IContext* ctx, Value* self, Value* key,
 
 Value* ArgumentsType::deleteProperty(IContext* ctx, Value* self, Value* key) {
     auto* d = static_cast<ArgumentsData*>(self->data());
-    uint32_t index = 0;
-    if (mappedIndex(d, key, index)) {
-        d->mappedNames[index].clear();
+    if (key != nullptr && key->type()->kind() != TypeKind::Symbol &&
+        detail::keyToString(key) == "length") {
+        d->lengthDeleted = true;
     }
-    return ObjectType::deleteProperty(ctx, self, key);
+    Value* result = ObjectType::deleteProperty(ctx, self, key);
+    if (detail::isErrorValue(result)) return result;
+    // 删除成功才解除映射；不可配置属性删除失败时映射保持（§10.4.4.3）。
+    if (detail::toBoolean(result)) {
+        uint32_t index = 0;
+        if (mappedIndex(d, key, index)) d->mappedNames[index].clear();
+    }
+    return result;
 }
 
 ArgumentsData::~ArgumentsData() {

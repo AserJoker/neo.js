@@ -751,6 +751,8 @@ public:
     Value* declareGlobalVar(std::string_view name, bool configurable) override;
     Value* declareGlobalFunction(std::string_view name,
                                  bool configurable) override;
+    Value* checkGlobalFunction(std::string_view name) override;
+    Value* storeEvalFunction(std::string_view name, Value* value) override;
     Value* checkGlobalLexical(std::string_view name) override;
     Value* evalSource(Value* source, Scope* callerScope, bool direct) override;
     Value* evalFunction() const override { return evalFunction_; }

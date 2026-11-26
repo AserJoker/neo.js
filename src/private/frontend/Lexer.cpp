@@ -348,6 +348,11 @@ bool Lexer::scanNumber(Token& token) {
                 return true;
             }
 
+            if (unicode::isIdentifierStart(stream_.peek()) ||
+                isDecimalDigit(stream_.peek())) {
+                error_ = "Invalid numeric literal";
+                return false;
+            }
             bigint::BigInt value;
             if (!bigint::BigInt::parse(digits, radix, value)) {
                 error_ = "Invalid numeric literal";
@@ -421,6 +426,11 @@ bool Lexer::scanNumber(Token& token) {
             }
         }
 
+        if (unicode::isIdentifierStart(stream_.peek()) ||
+            isDecimalDigit(stream_.peek())) {
+            error_ = "Invalid numeric literal";
+            return false;
+        }
         bigint::BigInt value;
         if (!bigint::BigInt::parse(intDigits, octal ? 8 : 10, value)) {
             error_ = "Invalid numeric literal";
@@ -465,6 +475,11 @@ bool Lexer::scanNumber(Token& token) {
             return false;
         }
         stream_.advance();
+        if (unicode::isIdentifierStart(stream_.peek()) ||
+            isDecimalDigit(stream_.peek())) {
+            error_ = "Invalid numeric literal";
+            return false;
+        }
         token.kind = TokenKind::BigIntLiteral;
         token.text = std::move(intDigits);
         token.numericRadix = 10;
@@ -477,6 +492,14 @@ bool Lexer::scanNumber(Token& token) {
     if (result.ec == std::errc::result_out_of_range) {
         value = std::strtod(number.c_str(), nullptr);
     } else if (result.ec != std::errc{}) {
+        error_ = "Invalid numeric literal";
+        return false;
+    }
+
+    // §12.9.3：NumericLiteral 后紧跟 IdentifierStart 或十进制数字是语法错误
+    // （如 `3in []`）。
+    if (unicode::isIdentifierStart(stream_.peek()) ||
+        isDecimalDigit(stream_.peek())) {
         error_ = "Invalid numeric literal";
         return false;
     }
@@ -500,7 +523,9 @@ bool Lexer::scanString(Token& token) {
             stream_.advance();
             break;
         }
-        if (unicode::isLineTerminator(cp)) {
+        // §12.9.4（ES2019 json-superset）：字符串字面量内只禁止 U+000A/U+000D，
+        // U+2028/U+2029 可字面出现。
+        if (cp == '\n' || cp == '\r') {
             error_ = "Unterminated string literal";
             return false;
         }
@@ -637,15 +662,14 @@ bool Lexer::scanStringEscape(std::string& out, bool templateMode,
             token.legacyOctalEscape = true;
             int value = 0;
             int count = 0;
-            while (count < 3 && stream_.peek() >= '0' &&
+            // LegacyOctalEscapeSequence：首字符 4-7 时最多两位八进制
+            // （FourToSeven OctalDigit），1-3 时最多三位。
+            const int maxDigits = (cp <= '3') ? 3 : 2;
+            while (count < maxDigits && stream_.peek() >= '0' &&
                    stream_.peek() <= '7') {
                 value = value * 8 + static_cast<int>(stream_.peek() - '0');
                 stream_.advance();
                 ++count;
-            }
-            if (value > 0xFF) {
-                error_ = "Octal escape sequence out of range";
-                return false;
             }
             unicode::encodeCodePoint(static_cast<uint32_t>(value), out);
             return true;

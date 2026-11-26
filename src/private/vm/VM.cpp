@@ -98,6 +98,12 @@ const char* opCodeName(OpCode op) {
         case OpCode::StoreWithRef:  return "store_with_ref";
         case OpCode::LoadWithRef:   return "load_with_ref";
         case OpCode::LoadWithRefMethod: return "load_with_ref_method";
+        case OpCode::ResolveRef:    return "resolve_ref";
+        case OpCode::StoreRef:      return "store_ref";
+        case OpCode::CheckGlobalFunction: return "check_global_function";
+        case OpCode::StoreEvalFunction:   return "store_eval_function";
+        case OpCode::DirectEvalMethod:    return "direct_eval_method";
+        case OpCode::DirectEvalMethodSpread: return "direct_eval_method_spread";
         case OpCode::StoreWithRefKeep: return "store_with_ref_keep";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
@@ -450,6 +456,12 @@ const VM::Handler* VM::handlers() {
         &VM::opDirectEvalTail,
         &VM::opInheritNewTarget,
         &VM::opLoadWithRefMethod,
+        &VM::opResolveRef,
+        &VM::opStoreRef,
+        &VM::opCheckGlobalFunction,
+        &VM::opStoreEvalFunction,
+        &VM::opDirectEvalMethod,
+        &VM::opDirectEvalMethodSpread,
     };
     return table;
 }
@@ -2817,6 +2829,159 @@ Value* VM::opStoreSlotRef() {
     }
     if (detail::isErrorValue(result)) return fail(result);
     push(value);
+    return nullptr;
+}
+
+Value* VM::opResolveRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("resolve_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("resolve_ref: name index out of range");
+    }
+    Value* slot = ctx_->resolveBindingSlot(*name);
+    if (slot != nullptr && detail::isErrorValue(slot)) return fail(slot);
+    const bool hasSlot = slot != nullptr;
+    bool resolvable = hasSlot;
+    if (!resolvable) {
+        Value* key = ctx_->createString(*name);
+        if (key == ctx_->oomValue()) return fail(key);
+        Value* has = ctx_->hasProperty(ctx_->globalObject(), key);
+        if (detail::isErrorValue(has)) return fail(has);
+        resolvable = detail::toBoolean(has);
+    }
+    push(hasSlot ? slot : ctx_->createUndefined());
+    push(ctx_->createBoolean(hasSlot));
+    push(ctx_->createBoolean(resolvable));
+    return nullptr;
+}
+
+Value* VM::opStoreRef() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_ref: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_ref: name index out of range");
+    }
+    if (stack_.size() < 4) {
+        return badBytecode("store_ref: operand stack underflow");
+    }
+    Value* value = pop();
+    Value* resolvable = pop();
+    Value* hasSlot = pop();
+    Value* slot = pop();
+    Value* result = nullptr;
+    if (detail::toBoolean(hasSlot)) {
+        result = ctx_->storeToSlot(slot, *name, value);
+        if (result == nullptr) result = ctx_->store(*name, value);
+    } else if (detail::toBoolean(resolvable)) {
+        result = ctx_->store(*name, value);
+    } else if (ctx_->hasFlag("strict")) {
+        return fail(detail::referenceError(
+            ctx_, "Assignment to undeclared identifier '" + *name + "'"));
+    } else {
+        result = ctx_->store(*name, value);
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    push(value);
+    return nullptr;
+}
+
+Value* VM::opCheckGlobalFunction() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("check_global_function: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("check_global_function: name index out of range");
+    }
+    Value* result = ctx_->checkGlobalFunction(*name);
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opStoreEvalFunction() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_eval_function: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_eval_function: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("store_eval_function: operand stack underflow");
+    }
+    Value* result = ctx_->storeEvalFunction(*name, pop());
+    if (result != nullptr && detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opDirectEvalMethod() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("direct_eval_method: truncated operand");
+    }
+    uint32_t argc = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    if (stack_.size() < static_cast<size_t>(argc) + 2) {
+        return badBytecode("direct_eval_method: operand stack underflow");
+    }
+    std::vector<Value*> args(argc);
+    for (uint32_t i = argc; i > 0; --i) args[i - 1] = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+
+    Value* result = nullptr;
+    // with 对象未绑定该名字时 receiver 为 undefined；此时若被调函数仍是
+    // 内建 %eval%，按直接 eval 在调用方作用域执行（§19.2.1.1）。
+    if (receiver->type()->kind() == neo::core::TypeKind::Undefined &&
+        fn->data() == ctx_->evalFunction()->data()) {
+        Value* source = argc > 0 ? args[0] : ctx_->createUndefined();
+        result = ctx_->evalSource(source, ctx_->current(), true);
+    } else {
+        result = ctx_->call(fn, receiver, argc, args.data());
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
+    return nullptr;
+}
+
+Value* VM::opDirectEvalMethodSpread() {
+    if (stack_.size() < 3) {
+        return badBytecode("direct_eval_method_spread: operand stack underflow");
+    }
+    Value* argsArray = pop();
+    Value* fn = pop();
+    Value* receiver = pop();
+    std::vector<Value*> args;
+    if (Value* err = readArrayElements(ctx_, argsArray, args)) return fail(err);
+    Value* result = nullptr;
+    if (receiver->type()->kind() == neo::core::TypeKind::Undefined &&
+        fn->data() == ctx_->evalFunction()->data()) {
+        Value* source = !args.empty() ? args[0] : ctx_->createUndefined();
+        result = ctx_->evalSource(source, ctx_->current(), true);
+    } else {
+        result = ctx_->call(fn, receiver, static_cast<size_t>(args.size()),
+                            args.data());
+    }
+    if (detail::isErrorValue(result)) return fail(result);
+    if (detail::isInterruptValue(result)) return result;
+    push(result);
     return nullptr;
 }
 

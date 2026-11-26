@@ -531,6 +531,15 @@ std::string escapeRegExpPattern(const std::string& source) {
     for (std::size_t i = 0; i < source.size(); ++i) {
         const unsigned char byte = static_cast<unsigned char>(source[i]);
         switch (byte) {
+            case '\\':
+                // 已转义的 `/` 原样保留：`\/` 不能再转义成 `\\/`。
+                if (i + 1 < source.size() && source[i + 1] == '/') {
+                    out += "\\/";
+                    ++i;
+                } else {
+                    out.push_back('\\');
+                }
+                break;
             case '/':
                 out += "\\/";
                 break;

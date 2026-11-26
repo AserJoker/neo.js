@@ -64,6 +64,8 @@ private:
     bool parseGroupName(std::string& name);
     bool parseDecimal(std::uint32_t& out);
     bool parseHex(std::uint32_t digits, std::uint32_t& out);
+    // u 模式下把 `\uD8xx\uDCxx` 合成一个码点。
+    void combineLeadSurrogate(std::uint32_t& value);
     QuantResult tryParseQuantifierSpec(QuantSpec& spec);
 
     // —— 输入 ——

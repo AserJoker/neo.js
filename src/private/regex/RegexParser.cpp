@@ -160,13 +160,29 @@ NodePtr RegexParser::parseAtom() {
             return nullptr;
         case ']':
         case '}':
-        case '{':
             if (flags_.unicode || flags_.unicodeSets) {
                 fail(start, "Lone quantifier brackets");
                 return nullptr;
             }
             advance();
             return std::make_unique<Character>(start, cp);
+        case '{': {
+            if (flags_.unicode || flags_.unicodeSets) {
+                fail(start, "Lone quantifier brackets");
+                return nullptr;
+            }
+            // Annex B 的 InvalidBracedQuantifier 优先于 ExtendedPatternCharacter：
+            // 能构成 {n}/{n,}/{n,m} 的 `{` 在 Atom 位置是语法错误。
+            QuantSpec spec;
+            const QuantResult quantifier = tryParseQuantifierSpec(spec);
+            if (quantifier == QuantResult::Error) return nullptr;
+            if (quantifier == QuantResult::Spec) {
+                fail(start, "Nothing to repeat");
+                return nullptr;
+            }
+            advance();
+            return std::make_unique<Character>(start, cp);
+        }
         default:
             advance();
             return std::make_unique<Character>(start, cp);
@@ -647,6 +663,7 @@ bool RegexParser::parseVClassEscape(ClassItem& item, bool& singleCodePoint,
                 ok = true;
             } else {
                 ok = parseHex(4, value);
+                if (ok) combineLeadSurrogate(value);
             }
             if (!ok) {
                 fail(start, "Invalid escape");
@@ -851,6 +868,7 @@ bool RegexParser::parseClassEscape(ClassItem& item) {
                 ok = true;
             } else {
                 ok = parseHex(4, value);
+                if (ok) combineLeadSurrogate(value);
             }
             if (!ok) {
                 if (flags_.unicode || flags_.unicodeSets) {
@@ -1097,6 +1115,7 @@ NodePtr RegexParser::parseAtomEscape() {
             }
             std::uint32_t value = 0;
             if (parseHex(4, value)) {
+                combineLeadSurrogate(value);
                 return std::make_unique<Character>(start, value);
             }
             if (flags_.unicode || flags_.unicodeSets) {
@@ -1259,6 +1278,21 @@ bool RegexParser::parseHex(std::uint32_t digits, std::uint32_t& out) {
     }
     out = value;
     return true;
+}
+
+void RegexParser::combineLeadSurrogate(std::uint32_t& value) {
+    if (!(flags_.unicode || flags_.unicodeSets)) return;
+    if (value < 0xD800u || value > 0xDBFFu) return;
+    const std::size_t saved = pos_;
+    if (peek() != '\\' || peekNext() != 'u') return;
+    advance();
+    advance();
+    std::uint32_t trail = 0;
+    if (parseHex(4, trail) && trail >= 0xDC00u && trail <= 0xDFFFu) {
+        value = 0x10000u + ((value - 0xD800u) << 10) + (trail - 0xDC00u);
+    } else {
+        pos_ = saved;
+    }
 }
 
 RegexParser::QuantResult RegexParser::tryParseQuantifierSpec(

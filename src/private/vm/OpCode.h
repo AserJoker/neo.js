@@ -433,11 +433,27 @@ enum class OpCode : uint16_t {
     // 标识符调用。命中 with 对象时 thisArg 为该对象（WithBaseObject），
     // 否则为 undefined。随后按 call_method 布局调用。
     LoadWithRefMethod,
+    // u32 名字：[] → [slot, hasSlot, resolvable]：在 RHS 求值前捕获标识符
+    // 引用。hasSlot 表示声明式绑定；否则 resolvable 表示全局对象当前是否有
+    // 该属性（§13.15.2 步骤 5a 的 IsUnresolvableReference 在 RHS 之后判定）。
+    ResolveRef,
+    // u32 名字：[slot, hasSlot, resolvable, value] → [value]：写回捕获的引用。
+    StoreRef,
+    // u32 名字：[]：eval 全局函数声明的 CanDeclareGlobalFunction 预检。
+    CheckGlobalFunction,
+    // u32 名字：[value] → []：eval 函数声明写入（全局走 CreateGlobalFunctionBinding）。
+    StoreEvalFunction,
+    // u32 argc：[receiver, callee, args...] → [result]：with 环境内的标识符
+    // 调用点。receiver 为 undefined 且 callee 是内建 %eval% 时按直接 eval
+    // 执行（with 对象未绑定该名字），否则按普通方法调用。
+    DirectEvalMethod,
+    // [receiver, callee, argsArray] → [result]：DirectEvalMethod 的展开版。
+    DirectEvalMethodSpread,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::LoadWithRefMethod) + 1;
+    static_cast<size_t>(OpCode::DirectEvalMethodSpread) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

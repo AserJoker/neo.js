@@ -2235,6 +2235,15 @@ Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
     if (obj == oomValue_) return obj;
     static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
 
+    // length 是普通数据属性（writable/enumerable=false/configurable=true），
+    // 存进属性容器以便 delete / 重定义（§10.4.4.1）。
+    {
+        Value* lengthValue = createNumber(static_cast<double>(argc));
+        if (lengthValue == oomValue_) return lengthValue;
+        Value* r = defineProperty(obj, "length", lengthValue, true, false, true);
+        if (detail::isErrorValue(r)) return r;
+    }
+
     if (mapped) {
         auto* fd = static_cast<FunctionData*>(callee->data());
         size_t count = fd->paramNames.size() < argc ? fd->paramNames.size() : argc;
@@ -2259,7 +2268,8 @@ Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
     } else {
         Value* thrower = throwTypeError();
         if (thrower == oomValue_) return thrower;
-        Value* r = defineAccessor(obj, "callee", thrower, thrower, false, true);
+        // 严格模式 arguments.callee 是不可配置的抛错访问器（§10.4.4.6）。
+        Value* r = defineAccessor(obj, "callee", thrower, thrower, false, false);
         if (detail::isErrorValue(r)) return r;
     }
 
@@ -3654,6 +3664,19 @@ Value* Context::declareVar(std::string_view name) {
                           "' has already been declared";
         return detail::errorOf(this, ErrorKind::SyntaxError, msg);
     }
+    // 形参求值期间（存在形参表达式）直接 eval 的变量环境是参数环境：
+    // 普通函数不能在这里声明 `arguments`（参数环境无 arguments 绑定，
+    // §19.2.1.3）；箭头函数没有 arguments 对象，允许创建该绑定。
+    const bool arrowFunction =
+        currentFunction_ != nullptr &&
+        currentFunction_->type()->kind() == TypeKind::Function &&
+        static_cast<FunctionData*>(currentFunction_->data())->isArrow;
+    if (!arrowFunction && target->hasFlag("param-init") &&
+        name == "arguments") {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
     if (Scope::Binding* existing = target->lookupBinding(name)) {
         // 形参求值期间（存在形参表达式）直接 eval 引入的 var 不得与形参
         // 同名（§9.2.12 step 20 注 / §19.2.1.3）。
@@ -3783,6 +3806,42 @@ Value* Context::declareGlobalFunction(std::string_view name, bool configurable) 
     if (value == oomValue_) return value;
     Value* r = defineProperty(globalObject_, key, value, true, true, configurable);
     return detail::isErrorValue(r) ? r : nullptr;
+}
+
+Value* Context::checkGlobalFunction(std::string_view name) {
+    // 仅 eval 的变量环境是全局对象记录时需要 CanDeclareGlobalFunction。
+    if (evalVarScope_ != global_) return nullptr;
+    if (global_->lookupBinding(name) != nullptr) {
+        std::string msg = "Identifier '" + std::string(name) +
+                          "' has already been declared";
+        return detail::errorOf(this, ErrorKind::SyntaxError, msg);
+    }
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    PropertyKey pk;
+    if (Value* err = neo::core::toPropertyKey(this, key, pk)) return err;
+    bool exists = false;
+    Property out;
+    if (Value* err = globalObject_->type()->getOwnProperty(
+            this, globalObject_, pk, exists, out)) {
+        return err;
+    }
+    if (!exists || out.configurable) return nullptr;
+    const bool data = out.getter == nullptr && out.setter == nullptr;
+    if (data && out.writable && out.enumerable) return nullptr;
+    return detail::typeError(this, "Cannot redefine global function '" +
+                                       std::string(name) + "'");
+}
+
+Value* Context::storeEvalFunction(std::string_view name, Value* value) {
+    if (evalVarScope_ == global_) {
+        // CreateGlobalFunctionBinding：可重配置既有全局属性，再写函数对象。
+        Value* declared = declareGlobalFunction(name, true);
+        if (declared != nullptr && detail::isErrorValue(declared)) {
+            return declared;
+        }
+    }
+    return store(name, value);
 }
 
 Value* Context::checkGlobalLexical(std::string_view name) {

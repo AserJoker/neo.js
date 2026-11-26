@@ -267,6 +267,12 @@ private:
     neo::core::Value* opResolveSlot();
     neo::core::Value* opLoadSlotRef();
     neo::core::Value* opStoreSlotRef();
+    neo::core::Value* opResolveRef();
+    neo::core::Value* opStoreRef();
+    neo::core::Value* opCheckGlobalFunction();
+    neo::core::Value* opStoreEvalFunction();
+    neo::core::Value* opDirectEvalMethod();
+    neo::core::Value* opDirectEvalMethodSpread();
     neo::core::Value* opMarkParamInit();
     neo::core::Value* opDirectEvalTail();
     neo::core::Value* opInheritNewTarget();

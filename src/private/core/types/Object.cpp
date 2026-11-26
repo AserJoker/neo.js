@@ -605,6 +605,13 @@ Value* setPropertyWithReceiver(IContext* ctx, Value* obj, Value* key, Value* val
     if (!detail::toBoolean(r)) {
         if (!ctx->hasFlag("strict")) return value;
         std::string name = pk.isSymbol ? detail::valueToString(key) : pk.name;
+        // 原始值 receiver 无法创建自有属性：消息带上接收者类型名。
+        if (receiver != nullptr &&
+            !detail::isObjectKind(receiver->type()->kind())) {
+            return detail::typeError(ctx, "Cannot set property '" + name +
+                                              "' of " +
+                                              std::string(receiver->type()->name()));
+        }
         return detail::typeError(ctx, "Cannot set property '" + name + "'");
     }
     return value;

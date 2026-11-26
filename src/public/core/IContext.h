@@ -1350,6 +1350,12 @@ public:
     // 校验/重配置全局对象属性，函数对象随后由 store 写入。
     virtual Value* declareGlobalFunction(std::string_view name,
                                          bool configurable) = 0;
+    // checkGlobalFunction: CanDeclareGlobalFunction（纯校验，不创建属性）。
+    // 仅当 eval 变量环境是全局对象记录时生效，否则 no-op。
+    virtual Value* checkGlobalFunction(std::string_view name) = 0;
+    // storeEvalFunction: eval 的函数声明写入。全局变量环境走
+    // CreateGlobalFunctionBinding（可重配置既有属性），否则普通 store。
+    virtual Value* storeEvalFunction(std::string_view name, Value* value) = 0;
     // checkGlobalLexical: HasRestrictedGlobalProperty。全局 let/const 名与
     // 全局对象上不可配置的自有属性冲突时返回 SyntaxError。
     virtual Value* checkGlobalLexical(std::string_view name) = 0;

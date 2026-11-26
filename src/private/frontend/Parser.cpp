@@ -1667,6 +1667,13 @@ NodePtr Parser::parseForInStatement(NodePtr left, SourceLocation start) {
     // let/const 以及解构模式一律不得带初始化器。
     if (left->kind() == NodeKind::VariableDeclaration) {
         auto& declaration = static_cast<VariableDeclaration&>(*left);
+        // ForDeclaration ::= LetOrConst ForBinding（单个 declarator）。
+        if (declaration.variableKind != VariableKind::Var &&
+            declaration.declarations.size() != 1) {
+            error(left->range().start,
+                  "for-in loop variable declaration may not have more than one binding");
+            return nullptr;
+        }
         for (const NodePtr& declarator : declaration.declarations) {
             auto& entry = static_cast<VariableDeclarator&>(*declarator);
             if (entry.init == nullptr) continue;
@@ -1705,6 +1712,13 @@ NodePtr Parser::parseForOfStatement(NodePtr left, SourceLocation start,
     // for-of 头部声明一律不得带初始化器（含 var）。
     if (left->kind() == NodeKind::VariableDeclaration) {
         auto& declaration = static_cast<VariableDeclaration&>(*left);
+        // ForDeclaration ::= LetOrConst ForBinding（单个 declarator）。
+        if (declaration.variableKind != VariableKind::Var &&
+            declaration.declarations.size() != 1) {
+            error(left->range().start,
+                  "for-of loop variable declaration may not have more than one binding");
+            return nullptr;
+        }
         for (const NodePtr& declarator : declaration.declarations) {
             auto& entry = static_cast<VariableDeclarator&>(*declarator);
             if (entry.init != nullptr) {

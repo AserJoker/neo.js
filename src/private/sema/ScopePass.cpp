@@ -319,9 +319,11 @@ private:
         } else if (syntheticBlockFunctions_.count(node.id()) != 0) {
             ShadowScope* block = createScope(ShadowScopeKind::Block, current());
             pushScope(node.id(), block);
-            if (hasName) declareFunction(binding);
+            if (hasName) {
+                declareFunction(binding, !function.async && !function.generator);
+            }
         } else if (hasName) {
-            declareFunction(binding);
+            declareFunction(binding, !function.async && !function.generator);
         }
 
         enterFunction(node);
@@ -628,7 +630,7 @@ private:
         declareBinding(target, binding, kind, true, true);
     }
 
-    void declareFunction(const BindingName& binding) {
+    void declareFunction(const BindingName& binding, bool plainFunction = false) {
         ShadowScope* scope = current();
         ShadowBindingKind kind = ShadowBindingKind::LexicalFunction;
         switch (scope->kind) {
@@ -646,7 +648,7 @@ private:
                 break;
         }
 
-        declareBinding(scope, binding, kind, true, true);
+        declareBinding(scope, binding, kind, true, true, plainFunction);
 
         // Annex B B.3.2 仅适用于 sloppy 的块级函数声明。
         if (kind == ShadowBindingKind::LexicalFunction && !strict()) {
@@ -656,10 +658,11 @@ private:
 
     void declareBinding(ShadowScope* scope, const BindingName& binding,
                         ShadowBindingKind kind, bool mutableBinding,
-                        bool initialized) {
+                        bool initialized, bool plainFunction = false) {
         const auto it = scope->bindings.find(binding.name);
         if (it != scope->bindings.end()) {
-            if (isDuplicateAllowed(it->second.kind, kind)) {
+            if (isDuplicateAllowed(it->second.kind, kind,
+                                   it->second.plainFunction, plainFunction)) {
                 if (kind == ShadowBindingKind::Function) {
                     it->second.kind = ShadowBindingKind::Function;
                     it->second.initialized = true;
@@ -691,7 +694,7 @@ private:
         scope->bindings.emplace(
             binding.name,
             ShadowBinding{binding.name, kind, mutableBinding, initialized,
-                          binding.range});
+                          binding.range, plainFunction});
     }
 
     void duplicateError(const BindingName& binding) {
@@ -701,7 +704,9 @@ private:
     }
 
     bool isDuplicateAllowed(ShadowBindingKind existing,
-                            ShadowBindingKind incoming) const {
+                            ShadowBindingKind incoming,
+                            bool existingPlain = false,
+                            bool incomingPlain = false) const {
         if (existing == ShadowBindingKind::Param &&
             incoming == ShadowBindingKind::Param) {
             // 重复参数的严格性由 StrictnessPass 判定。
@@ -717,9 +722,11 @@ private:
              existing == ShadowBindingKind::Function)) {
             return true;
         }
-        // sloppy 块级重复函数声明合法（Annex B）；strict 下报错。
+        // Annex B 只允许 sloppy 下「普通」块级函数重复声明；async/generator
+        // 声明参与 LexicallyDeclaredNames 重复检查，strict 下同样报错。
         if (existing == ShadowBindingKind::LexicalFunction &&
-            incoming == ShadowBindingKind::LexicalFunction && !strict()) {
+            incoming == ShadowBindingKind::LexicalFunction && !strict() &&
+            existingPlain && incomingPlain) {
             return true;
         }
         return false;

@@ -164,6 +164,9 @@ void Compiler::compileProgram() {
 void Compiler::compileEvalProgram() {
     strict_ = options_.evalStrict;
     globalCode_ = false;
+    // EvalDeclarationInstantiation：函数声明的 CanDeclareGlobalFunction 预检
+    // 必须先于任何 var/函数绑定创建（否则冲突时已创建的全局 var 残留）。
+    checkEvalGlobalFunctions(program_.body);
     // sloppy direct eval：var/函数声明进入调用方变量环境（declare_var 只建
     // 缺失的槽，不覆盖已有绑定）；let/const 进入 eval 自己的词法作用域。
     if (!options_.evalStrict) {
@@ -2421,6 +2424,7 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     // （WithBaseObject，§9.1.1.2.1）。用 resolve_with_ref + load_with_ref_method
     // 产出 [thisArg, fn]，按成员调用布局执行。
     bool withCall = false;
+    bool withEvalCall = false;
     if (!isMember) {
         if (withDepth_ > 0 && !node.optional && calleeNode != nullptr &&
             calleeNode->kind() == NodeKind::Identifier) {
@@ -2429,6 +2433,9 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
             code_->resolveWithRef(name);
             code_->loadWithRefMethod(name);
             withCall = true;
+            // with 内的 `eval(...)`：若 with 对象未绑定该名字，运行时按
+            // 直接 eval 执行（引用不是属性引用）；绑定到对象时按方法调用。
+            withEvalCall = name == "eval";
         } else {
             compileExpression(*calleeNode);
             if (node.optional) emitOptionalGuard();
@@ -2452,7 +2459,9 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
     }
     if (hasSpread) {
         compileArgumentsArray(node.arguments);
-        if (isMember || withCall) {
+        if (withEvalCall) {
+            code_->directEvalMethodSpread();
+        } else if (isMember || withCall) {
             code_->callMethodSpread();
         } else if (directEvalCandidate) {
             code_->directEvalSpread();
@@ -2468,9 +2477,11 @@ void Compiler::compileCallExpression(const frontend::CallExpression& node) {
         compileExpression(*argument);
         ++argc;
     }
-    if (isMember || withCall) {
+    if (withEvalCall) {
+        // with 内的 eval：运行时判定是否为直接 eval（with 对象未绑定时）。
+        code_->directEvalMethod(argc);
+    } else if (isMember || withCall) {
         // with 内的标识符调用已按 [thisArg, fn] 布局压栈，走成员调用路径。
-        // 尾位置同样复用 tail_call_method（with 内的 eval 不是直接 eval）。
         if (tailCall && !chainOptional) {
             code_->tailCallMethod(argc);
         } else {
@@ -3229,7 +3240,13 @@ void Compiler::compileAssignmentExpression(
         // 声明式绑定：引用在 RHS 前捕获（§13.15.2），避免直接 eval 注入
         // 更内层同名 var 后写错目标。
         const bool slotRef = isDeclarativeBinding(*node.left);
-        if (slotRef) code_->resolveSlot(name);
+        if (slotRef) {
+            code_->resolveSlot(name);
+        } else {
+            // 全局/未声明引用同样在 RHS 前捕获：严格模式下未声明引用即使被
+            // RHS 创建了同名全局属性也须抛 ReferenceError（§13.15.2 步骤 5a）。
+            code_->resolveRef(name);
+        }
         // (fn) = ... 不是 IdentifierRef，不做 NamedEvaluation。
         if (node.left->isParenthesized()) {
             compileExpression(*node.right);
@@ -3238,10 +3255,9 @@ void Compiler::compileAssignmentExpression(
         }
         if (slotRef) {
             code_->storeSlotRef(name);
-            return;
+        } else {
+            code_->storeRef(name);
         }
-        code_->dup();
-        code_->store(name);
         return;
     }
 
@@ -4979,31 +4995,31 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     strict_ = strict;
     // 形参建槽（argument_scope）：先全部置 TDZ，再按从左到右的顺序初始化，
     // 使默认值引用自身/后续形参时抛 ReferenceError（§10.2.1.2）。
+    // sloppy 下重复形参共享同一绑定，只建一次槽。
+    std::unordered_set<std::string> definedParams;
+    auto defineParam = [&](const std::string& name) {
+        if (!definedParams.insert(name).second) return;
+        code_->pushUninitialized();
+        code_->define(name, true, false, true);
+    };
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
-            code_->pushUninitialized();
-            code_->define(id.name, true, false, true);
+            defineParam(id.name);
         } else if (param->kind() == NodeKind::RestElement) {
             const auto& rest = static_cast<const frontend::RestElement&>(*param);
             if (rest.argument) {
                 std::vector<std::string> names;
                 collectPatternNames(*rest.argument, names);
-                for (const std::string& name : names) {
-                    code_->pushUninitialized();
-                    code_->define(name, true, false, true);
-                }
+                for (const std::string& name : names) defineParam(name);
             }
         } else if (param->kind() == NodeKind::ArrayPattern ||
                    param->kind() == NodeKind::ObjectPattern ||
                    param->kind() == NodeKind::AssignmentPattern) {
             std::vector<std::string> names;
             collectPatternNames(*param, names);
-            for (const std::string& name : names) {
-                code_->pushUninitialized();
-                code_->define(name, true, false, true);
-            }
+            for (const std::string& name : names) defineParam(name);
         } else {
             error(*param, "compiler: unsupported parameter pattern");
         }
@@ -5023,11 +5039,17 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
     // 栈顶是 self，先消费；随后按顺序绑定实参（栈上 argv0 在顶）。
     code_->storeThis();
     if (initInstanceElements) code_->initInstanceElements();
+    // 重复形参共享绑定：后续同名参数用 store 覆盖（最后一个实参生效）。
+    std::unordered_set<std::string> initializedParams;
     for (const frontend::NodePtr& param : params) {
         if (!param) continue;
         if (param->kind() == NodeKind::Identifier) {
             const auto& id = static_cast<const frontend::Identifier&>(*param);
-            code_->initialize(id.name);
+            if (initializedParams.insert(id.name).second) {
+                code_->initialize(id.name);
+            } else {
+                code_->store(id.name);
+            }
         } else if (param->kind() == NodeKind::RestElement) {
             const auto& rest = static_cast<const frontend::RestElement&>(*param);
             code_->restArgs();
@@ -5063,7 +5085,10 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
 
     if (body.kind() == NodeKind::BlockStatement) {
         const auto& block = static_cast<const frontend::BlockStatement&>(body);
+        const auto* savedParamNames = paramNames_;
+        paramNames_ = &definedParams;
         hoistScope(block.body, true);
+        paramNames_ = savedParamNames;
         for (const frontend::NodePtr& statement : block.body) {
             if (statement) compileStatement(*statement);
         }
@@ -5173,6 +5198,8 @@ void Compiler::hoistVarSlots(const frontend::NodeList& body, bool declare,
         if (outNames != nullptr) outNames->insert(name);
         // 函数已有隐式 arguments 绑定：var arguments 是 no-op（§10.2.1.2）。
         if (hasArgumentsBinding_ && name == "arguments") continue;
+        // var 与形参同名：不新建槽、不覆盖形参值（§10.2.1.2）。
+        if (paramNames_ != nullptr && paramNames_->count(name) != 0) continue;
         if (declare) {
             code_->declareVar(name);
         } else if (globalCode_) {
@@ -5293,9 +5320,46 @@ void Compiler::compileAnnexBFunction(
     }
 }
 
+void Compiler::checkEvalGlobalFunctions(const frontend::NodeList& body) {
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier ||
+            !function.body) {
+            continue;
+        }
+        code_->checkGlobalFunction(
+            static_cast<const frontend::Identifier&>(*function.id).name);
+    }
+}
+
 void Compiler::hoistEvalFunctions(const frontend::NodeList& body) {
     // sloppy eval：函数声明进入变量环境；declareVar 只补缺失槽，
-    // 随后 store 覆盖为函数对象（允许与已有 var/function 同名）。
+    // 随后 storeEvalFunction 覆盖为函数对象（全局走 CreateGlobalFunctionBinding）。
+    for (const frontend::NodePtr& statement : body) {
+        const Node* declaration = statement ? declarationOf(*statement)
+                                            : nullptr;
+        if (declaration == nullptr ||
+            declaration->kind() != NodeKind::FunctionDeclaration) {
+            continue;
+        }
+        const auto& function =
+            static_cast<const frontend::FunctionDeclaration&>(*declaration);
+        if (!function.id || function.id->kind() != NodeKind::Identifier ||
+            !function.body) {
+            continue;
+        }
+        code_->checkGlobalFunction(
+            static_cast<const frontend::Identifier&>(*function.id).name);
+    }
+    // sloppy eval：函数声明进入变量环境；declareVar 只补缺失槽，
+    // 随后 storeEvalFunction 覆盖为函数对象（全局走 CreateGlobalFunctionBinding）。
     for (const frontend::NodePtr& statement : body) {
         const Node* declaration = statement ? declarationOf(*statement)
                                             : nullptr;
@@ -5315,7 +5379,7 @@ void Compiler::hoistEvalFunctions(const frontend::NodeList& body) {
         compileFunctionObject(*declaration, function.params, *function.body,
                               false, name, function.generator,
                               function.async);
-        code_->store(name);
+        code_->storeEvalFunction(name);
     }
 }
 

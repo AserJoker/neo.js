@@ -275,6 +275,7 @@ private:
     void hoistLexicalSlots(const frontend::NodeList& body,
                            bool globalLexical = false);
     void hoistFunctions(const frontend::NodeList& body, bool annexB = false);
+    void checkEvalGlobalFunctions(const frontend::NodeList& body);
     void hoistEvalFunctions(const frontend::NodeList& body);
     void collectVarNames(const frontend::Node& statement,
                          std::vector<std::string>& names);
@@ -333,6 +334,8 @@ private:
     bool inFieldInitializer_ = false;
     // 当前函数有隐式 arguments 绑定：var arguments 是 no-op，不重复建槽。
     bool hasArgumentsBinding_ = false;
+    // 当前函数形参名：var 声明与形参同名时是 no-op（§10.2.1.2）。
+    const std::unordered_set<std::string>* paramNames_ = nullptr;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
     bool strict_ = false;
     // 当前代码是否是脚本全局代码：var/函数声明落到 global object 属性，
