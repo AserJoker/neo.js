@@ -25,6 +25,7 @@
 #include "core/types/Exception.h"
 #include "core/types/Interrupt.h"
 #include "core/types/Number.h"
+#include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 
 namespace neo::core {
@@ -461,6 +462,30 @@ Value* asyncIterator(IContext* /*ctx*/, Value* self, size_t /*argc*/,
 
 // —— 注册辅助 ——
 
+// %AsyncGeneratorFunction%(...args)（ES2024 §27.4.1）：前 n-1 个参数是形参源码，
+// 最后一个参数是函数体源码，在全局环境创建异步生成器函数。
+Value* asyncGeneratorFunctionCtor(IContext* ctx, Value* /*self*/, size_t argc,
+                                  Value* argv[]) {
+    std::string params;
+    std::string body;
+    for (size_t i = 0; i < argc; ++i) {
+        Value* text = ctx->toString(argv[i]);
+        if (detail::isErrorValue(text)) return text;
+        const std::string& str = static_cast<StringData*>(text->data())->value;
+        if (i + 1 == argc) {
+            body = str;
+        } else {
+            if (!params.empty()) params += ",";
+            params += str;
+        }
+    }
+    std::string source =
+        "(async function* anonymous(" + params + "\n) {\n" + body + "\n})";
+    Value* src = ctx->createString(source);
+    if (src == ctx->oomValue()) return src;
+    return ctx->evalSource(src, nullptr, false);
+}
+
 bool defineMethod(IContext* ctx, Value* obj, const char* name, NativeFn fn,
                   size_t length) {
     Value* m = ctx->createNativeFunction(fn, 0);
@@ -518,8 +543,36 @@ bool registerAsyncGeneratorBuiltins(IContext* ctx) {
         }
     }
     ctx->setAsyncGeneratorFunctionPrototype(asyncGenFuncProto);
+    // prototype：%AsyncGeneratorPrototype%，writable=false / enumerable=false /
+    // configurable=true（§27.4.3.2）。
     if (ctx->defineProperty(asyncGenFuncProto, "prototype", asyncGenProto,
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+
+    // —— %AsyncGeneratorFunction%（§27.4.1）——
+    Value* asyncGenFuncCtor =
+        ctx->createNativeFunction(asyncGeneratorFunctionCtor, 0);
+    if (asyncGenFuncCtor == ctx->oomValue()) return false;
+    ctx->setFunctionName(asyncGenFuncCtor, "AsyncGeneratorFunction");
+    ctx->setFunctionConstructor(asyncGenFuncCtor, asyncGeneratorFunctionCtor);
+    if (ctx->defineProperty(asyncGenFuncCtor, "length", ctx->createNumber(1.0),
+                            false, false, true)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    // %AsyncGeneratorFunction%.prototype = %AsyncGeneratorFunction.prototype%
+    // （writable=false / enumerable=false / configurable=false）。
+    if (ctx->defineProperty(asyncGenFuncCtor, "prototype", asyncGenFuncProto,
                             false, false, false)
+            ->type()->kind() == TypeKind::Exception) {
+        return false;
+    }
+    // %AsyncGeneratorFunction.prototype%.constructor = %AsyncGeneratorFunction%
+    // （writable=false / enumerable=false / configurable=true）。
+    if (ctx->defineProperty(asyncGenFuncProto, "constructor", asyncGenFuncCtor,
+                            false, false, true)
             ->type()->kind() == TypeKind::Exception) {
         return false;
     }
