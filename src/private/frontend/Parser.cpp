@@ -518,6 +518,9 @@ NodePtr Parser::parseLabeledStatement() {
     // await/yield 在对应上下文中不能作 LabelIdentifier；含转义的保留字也不行。
     if ((inAsync_ && label == "await") ||
         (inGenerator_ && label == "yield") ||
+        // class static block 内 `await` 不能作 LabelIdentifier（不跨函数/
+        // 静态块边界，inStaticBlock_ 在进入函数时已重置）。
+        (inStaticBlock_ && label == "await") ||
         (current_.hasEscape && isReservedWord(label))) {
         error(current_.start,
               "'" + label + "' is not a valid label identifier here");
@@ -585,7 +588,9 @@ NodePtr Parser::parseFunctionDeclaration(bool async) {
     // 上下文的 await（含 class 静态块的 +Await），但不继承 yield。
     if (id && id->kind() == NodeKind::Identifier) {
         const auto& name = static_cast<const Identifier&>(*id).name;
-        const bool forbidYield = generator || (async && inGenerator_);
+        // BindingIdentifier[?Yield] 只继承外层生成器上下文；顶层非严格
+        // `function* yield(){}` 合法（严格模式由 StrictnessPass 拒绝）。
+        const bool forbidYield = inGenerator_;
         const bool forbidAwait =
             (async && generator) || (!generator && (inAsync_ || inStaticBlock_));
         if ((forbidYield && name == "yield") ||
@@ -634,13 +639,12 @@ NodePtr Parser::parseFunctionExpression(bool async) {
     if (at(TokenKind::Identifier)) {
         id = parseIdentifier();
     }
-    // 函数名规则（§15.2 各产生式）：生成器名恒禁 yield（+Yield），
-    // async 函数名恒禁 await（+Await）。函数表达式是函数边界，其名字不继承
-    // 外层的 await 上下文（async 函数体 / class 静态块中的 `function await(){}`
-    // 作为表达式合法），只继承外层的 yield 上下文。
+    // 函数名规则（§15.2 各产生式）：FunctionExpression 是函数边界，名字与
+    // 形参/体都用 [~Yield, ~Await]，不继承外层上下文（生成器体内的
+    // `(function yield(){})` 合法）；GeneratorExpression 的名字恒为 +Yield。
     if (id && id->kind() == NodeKind::Identifier) {
         const auto& name = static_cast<const Identifier&>(*id).name;
-        const bool forbidYield = generator || (async && inGenerator_);
+        const bool forbidYield = generator;
         const bool forbidAwait = async;
         if ((forbidYield && name == "yield") ||
             (forbidAwait && name == "await")) {

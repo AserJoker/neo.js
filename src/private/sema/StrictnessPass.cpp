@@ -440,6 +440,8 @@ public:
             case NodeKind::FunctionDeclaration:
             case NodeKind::FunctionExpression:
             case NodeKind::ArrowFunctionExpression:
+            case NodeKind::ClassDeclaration:
+            case NodeKind::ClassExpression:
             case NodeKind::ClassBody:
                 pop();
                 break;
@@ -605,6 +607,9 @@ private:
     }
 
     void handleClass(Node& node, SemaContext& context) {
+        // ClassDefinitionEvaluation 整体是严格模式代码：heritage、计算键、
+        // 方法/字段初始化器都在严格模式下求值（§15.7.14）。
+        push(true);
         Node* id = nullptr;
         if (node.kind() == NodeKind::ClassDeclaration) {
             id = static_cast<ClassDeclaration&>(node).id.get();

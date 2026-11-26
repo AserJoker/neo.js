@@ -3900,6 +3900,71 @@ void Compiler::compileBindingPattern(const frontend::Node& pattern,
                     code_->pop();
                     continue;
                 }
+                // `{ [k]: obj[key] = default } = src`：目标 Reference 同样须在
+                // GetV 之前求值；ToPropertyKey 推迟到 PutValue（§13.15.5.4/6）。
+                if (!lexical && prop.value &&
+                    prop.value->kind() == NodeKind::AssignmentPattern) {
+                    const auto& ap = static_cast<const frontend::AssignmentPattern&>(
+                        *prop.value);
+                    if (ap.left &&
+                        ap.left->kind() == NodeKind::MemberExpression) {
+                        const auto& member =
+                            static_cast<const frontend::MemberExpression&>(
+                                *ap.left);
+                        if (!member.optional && member.object &&
+                            !(member.property &&
+                              member.property->kind() ==
+                                  NodeKind::PrivateIdentifier)) {
+                            const std::string srcKeySlot =
+                                prop.computed
+                                    ? keySlots[index]
+                                    : "*dest-srckey-" + std::to_string(tempId) +
+                                          "-" + std::to_string(index) + "*";
+                            const std::string objSlot =
+                                "*dest-tobj-" + std::to_string(tempId) + "-" +
+                                std::to_string(index) + "*";
+                            const std::string keySlot =
+                                "*dest-tkey-" + std::to_string(tempId) + "-" +
+                                std::to_string(index) + "*";
+                            const std::string valSlot =
+                                "*dest-tval-" + std::to_string(tempId) + "-" +
+                                std::to_string(index) + "*";
+                            // 1. 源 PropertyName。
+                            compilePropertyKey(prop);
+                            if (prop.computed) code_->toPropertyKey();
+                            code_->define(srcKeySlot);
+                            // 2. 目标 Reference（object 与 key 表达式，键未定型）。
+                            compileExpression(*member.object);
+                            code_->define(objSlot);
+                            compileMemberKey(member);
+                            code_->define(keySlot);
+                            // 3. GetV。
+                            code_->load(objectName);
+                            code_->load(srcKeySlot);
+                            code_->getProp();
+                            // 4. 默认值。
+                            code_->dup();
+                            code_->pushUndefined();
+                            code_->strictEqual();
+                            uint32_t keep = code_->jfalse();
+                            code_->pop();
+                            if (ap.right) {
+                                compileExpression(*ap.right);
+                            } else {
+                                code_->pushUndefined();
+                            }
+                            code_->patchU32(keep + 2, code_->here());
+                            // 5. PutValue（此处才 ToPropertyKey 目标键）。
+                            code_->define(valSlot);
+                            code_->load(objSlot);
+                            code_->load(keySlot);
+                            code_->load(valSlot);
+                            code_->setProp();
+                            code_->pop();
+                            continue;
+                        }
+                    }
+                }
                 code_->load(objectName);
                 compilePropertyKey(prop);
                 if (prop.computed) {
@@ -4027,21 +4092,35 @@ void Compiler::compileClassDeclaration(
     if (node.id && node.id->kind() == NodeKind::Identifier) {
         name = static_cast<const frontend::Identifier&>(*node.id).name;
     }
+    const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
+    // 具名 class 声明同样建立独立的 classScope 与不可变类名绑定
+    // （§15.7.14 step 2-4）：heritage、静态初始化器与方法都闭包到它，
+    // 而不是外层可变的 let 绑定。
+    if (!name.empty()) {
+        code_->pushScope();
+        code_->pushUninitialized();
+        code_->define(name, false, false);
+    }
     if (node.superClass) {
         compileExpression(*node.superClass);
     } else {
         code_->pushUndefined();
     }
-    const auto& body = static_cast<const frontend::ClassBody&>(*node.body);
     privateScopes_.push_back(collectPrivateElements(body));
     compileClassConstructor(body, node.superClass != nullptr, name);
-    // 静态元素执行期间类名必须可见：先初始化绑定，再定义元素。
+    // 静态元素执行期间类名必须可见：先初始化内层绑定，再定义元素。
     if (!name.empty()) {
         code_->dup();
         code_->initialize(name);
     }
     compileClassElements(body);
     privateScopes_.pop_back();
+    if (!name.empty()) {
+        code_->popScope();
+        // 内层 classScope 已退出：把类值写入外层的 let/const 绑定。
+        code_->dup();
+        code_->initialize(name);
+    }
     if (!leaveValue) code_->pop();
 }
 
@@ -4601,6 +4680,10 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                 uint32_t entryPc = code_->here();
                 code_->storeThis();
                 code_->pushScope();
+                // static block 是独立执行上下文（函数体语义）：其 let/var 不得
+                // 提升为全局词法/全局 var，否则会与同名外层绑定冲突。
+                const bool savedGlobalCode = globalCode_;
+                globalCode_ = false;
                 hoistScope(block.body, true);
                 // static block 是独立执行上下文：不写外层 eval 完成值槽。
                 const bool savedEvalCompletion = evalCompletion_;
@@ -4609,6 +4692,7 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                     if (statement) compileStatement(*statement);
                 }
                 evalCompletion_ = savedEvalCompletion;
+                globalCode_ = savedGlobalCode;
                 code_->pushUndefined();
                 code_->ret();
                 uint32_t afterBody = code_->here();
@@ -4627,6 +4711,10 @@ void Compiler::compileClassElements(const frontend::ClassBody& body) {
                 // set_owner_class 消费 fn/ctor 并压回 fn → [ctor, receiver, fn]。
                 code_->swap();
                 code_->setOwnerClass();
+                // static block 的 homeObject 是类构造器本身，super 基对象取其
+                // [[Prototype]]（父类）（§15.7.14 ClassStaticBlockDefinition）。
+                // 栈 [ctor, receiver, fn]：set_home_object 取 size-3 作 homeObject。
+                code_->setHomeObject();
                 // this = class 构造器；丢弃返回值。
                 code_->callMethod(0);
                 code_->pop();
