@@ -283,6 +283,9 @@ public:
                          bool checkStrict = true) override;
     void popScope() override;
 
+    // popScope 的确定性释放（ADR-065 §3）：释放本作用域唯一持有的 Value。
+    void releaseScopeValues(Scope* scope);
+
     // 调用栈（ADR-037）：纯展示信息，不参与变量解析
     void pushFrame(const SourcePosition& callSite, std::string_view fnName) override;
     void popFrame() override {
@@ -303,6 +306,12 @@ public:
     Value* createBigInt(const neo::bigint::BigInt& value,
                         std::string_view name = {}) override;
     Value* createString(std::string_view s, std::string_view name = {}) override;
+    Value* createEphemeralUndefined() override;
+    Value* createEphemeralNull() override;
+    Value* createEphemeralBoolean(bool b) override;
+    Value* createEphemeralNumber(double n) override;
+    Value* createEphemeralBigInt(const neo::bigint::BigInt& value) override;
+    Value* createEphemeralString(std::string_view s) override;
     Value* createSymbol(std::string_view description = {},
                         std::string_view name = {},
                         bool hasDescription = true) override;
@@ -802,6 +811,9 @@ private:
 
     // 创建 Value 并跟踪（data 已分配）。失败返回 OOM 哨兵，回收游离 data（ADR-031）。
     Value* createTracked(IType* type, IData* data, std::string_view name);
+    // 创建 Value 但不登记到 current scope（表达式临时值，ADR-065 §6）。
+    // data 已分配；失败返回 OOM 哨兵并回收游离 data。
+    Value* createEphemeral(IType* type, IData* data);
     // 为新 Value 接管而克隆 data。
     // 简单类型：clone 分配新 data（ref=0），由新 Value 构造计入引用。
     // 复杂对象：clone 共享 data 并 ref++（ADR-019 §2），与新 Value 构造的引用重复，

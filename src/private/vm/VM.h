@@ -21,6 +21,7 @@
 #define NEO_VM_VM_H
 
 #include "core/CallStack.h"
+#include "core/IGCEngine.h"
 #include "core/OperatorKind.h"
 #include "core/Value.h"
 #include "vm/Code.h"
@@ -37,11 +38,15 @@ class Scope;
 
 namespace neo::vm {
 
-class VM {
+class VM : public neo::core::IGCRootProvider {
 public:
     // ctx 借用；code 借用（生命周期由 Module / script Function 持有）。
     // 入口作用域取 ctx->current()，root 取 ctx->root()。
     VM(neo::core::IContext* ctx, const Code* code);
+    ~VM() override;
+
+    // GC 根：操作数栈上的 Value 不在作用域树上，由本 VM 主动标记。
+    void visitRoots(neo::core::IGCVisitor* visitor) override;
 
     // 从 entryPc 执行到 ret/hlt/失败，返回执行结果值。
     // 函数调用即「借用同一份 Code + 从函数地址（entryPc）开始执行」，
@@ -82,10 +87,18 @@ private:
     // 分派表（OpCode → 成员函数指针）。
     static const Handler* handlers();
 
+    // pop 把值从 GC 根（操作数栈）摘下。后续调用可能触发分配/GC，故 pop 时
+    // 自动 pin 住，并在下一条指令开始时统一解除（ADR-065 §6）。
     neo::core::Value* pop() {
         neo::core::Value* value = stack_.back();
         stack_.pop_back();
+        value->pinRefInc();
+        borrowed_.push_back(value);
         return value;
+    }
+    void releaseBorrowed() {
+        for (neo::core::Value* v : borrowed_) v->pinRefDec();
+        borrowed_.clear();
     }
     neo::core::Value* top() const { return stack_.back(); }
 
@@ -312,6 +325,8 @@ private:
     // 当前指令的起始字节偏移：处理函数推进 pc 后，异常位置仍能反查到本条指令。
     uint32_t instructionPc_ = 0;
     std::vector<neo::core::Value*> stack_;
+    // 本指令期间从栈 pop 出来、被 C++ 局部借用的值（已 pin，下条指令解除）。
+    std::vector<neo::core::Value*> borrowed_;
     std::vector<LabelFrame> labelStack_;
     std::vector<TryFrame> tryStack_;
     // yield* 委托中的被委托迭代器（nullptr = 不在委托中）。

@@ -75,22 +75,6 @@ namespace {
 // 注：不直接用 IType::hasObjectLayout()——成员函数会在 ObjectType 成员里遮蔽同名自由函数。
 
 // 键是否 symbol（symbol 走 symbols 容器）
-// 暂时钉住 data-owned 副本：创建后到挂入 data 字段前若发生 GC，
-// 未登记的副本会被回收（ADR-065 §4 跨域复制的分配窗口）。
-struct PinGuard {
-    Value* value = nullptr;
-    explicit PinGuard(Value* v = nullptr) { reset(v); }
-    ~PinGuard() {
-        if (value != nullptr) value->pinRefDec();
-    }
-    void reset(Value* v) {
-        if (value != nullptr) value->pinRefDec();
-        value = v;
-        if (value != nullptr) value->pinRefInc();
-    }
-    PinGuard(const PinGuard&) = delete;
-    PinGuard& operator=(const PinGuard&) = delete;
-};
 
 // symbol 键 → symbols 容器的哈希键（SymbolData* 身份）
 inline const void* symbolIdentity(Value* key) {

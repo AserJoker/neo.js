@@ -29,7 +29,10 @@ public:
     Value* createValue(IType* type, IData* data) override;
     void   collect() override;
     void   setRootScope(Scope* scope) override;
+    void   addRootProvider(IGCRootProvider* provider) override;
+    void   removeRootProvider(IGCRootProvider* provider) override;
     void   releaseData(IData* d) override;
+    void   releaseValue(Value* v) override;
 
     size_t valueCount() const override;
     size_t collectedCount() const override;
@@ -48,6 +51,8 @@ private:
     infra::IAllocator* alloc_;  // 注入，不持有所有权
     Scope* rootScope_ = nullptr;  // 根作用域树（Context 的 global，借用，不拥有）
     std::vector<Value*> values_;  // GC 持有所有 Value 的跟踪表
+    // GC 图之外的活跃根（VM 操作数栈等），非拥有。
+    std::vector<IGCRootProvider*> rootProviders_;
     size_t collectedCount_ = 0;  // 累计回收数
     uint64_t markEpoch_ = 0;     // 当前标记代数（每轮 collect 递增，Value 记录最近标记代数）
 

@@ -379,6 +379,8 @@ Scope::~Scope() {
         child->destroySelf();         // 虚析构 + 释放子 Scope 对象内存
     }
     // 3. 清空自己的 values（Value 的回收由 GC 的可达性标记决定）
+    //    不递减 scopeRef（ADR-065）：destroySelf 可能在 GC sweep 期间被
+    //    FunctionData 析构调用，此时 values_ 中的 Value 可能已被先释放。
     values_.clear();
     namedValues_.clear();
     importBindings_.clear();

@@ -97,6 +97,7 @@
 #include <new>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace neo::core {
@@ -393,6 +394,25 @@ Value* Context::pushWithScope(Value* obj, Scope** outScope, bool checkStrict) {
     return nullptr;
 }
 
+// popScope 提前释放（ADR-065 §3）：仅释放「本作用域是唯一持有者」的 Value。
+// 判据：scopeRef == 本作用域出现次数 && pinRef == 0 && age != 0。
+// age != 0 表示该 Value 至少活过一轮 GC，排除仍在当前求值窗口内的临时值。
+void Context::releaseScopeValues(Scope* scope) {
+    const std::vector<Value*>& values = scope->values();
+    if (values.empty()) return;
+    std::unordered_map<Value*, size_t> local;
+    local.reserve(values.size());
+    for (Value* v : values) ++local[v];
+    for (const auto& entry : local) {
+        Value* v = entry.first;
+        if (v == nullptr || v->dead()) continue;
+        if (v->scopeRef() != entry.second) continue;  // 其他作用域仍持有
+        if (v->pinRef() != 0) continue;               // 手工钉住
+        if (v->markEpoch() == 0) continue;            // 创建窗口内，保守跳过
+        gc_->releaseValue(v);
+    }
+}
+
 void Context::popScope() {
     // root/global 不可 pop（模块根与全局是持久作用域）
     if (current_ == root_ || current_ == global_) return;
@@ -409,6 +429,8 @@ void Context::popScope() {
         top->detachFromParentTree();
         return;
     }
+    // 先确定性释放唯一持有的 Value（ADR-065），再销毁作用域。
+    releaseScopeValues(top);
     // 销毁弹出的 scope：虚析构 + 递归释放子树 + 从父摘除自己
     top->destroySelf();
 }
@@ -481,6 +503,41 @@ Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
     }
     trackValue(current(), v, name);
     return v;
+}
+
+Value* Context::createEphemeral(IType* type, IData* data) {
+    assertOwnerThread();
+    if (data == nullptr) return oomValue_;
+    Value* v = gc_->createValue(type, data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    return v;
+}
+
+Value* Context::createEphemeralUndefined() {
+    return createEphemeral(getUndefinedType(), gc_->allocData<UndefinedData>());
+}
+
+Value* Context::createEphemeralNull() {
+    return createEphemeral(getNullType(), gc_->allocData<NullData>());
+}
+
+Value* Context::createEphemeralBoolean(bool b) {
+    return createEphemeral(getBooleanType(), gc_->allocData<BooleanData>(b));
+}
+
+Value* Context::createEphemeralNumber(double n) {
+    return createEphemeral(getNumberType(), gc_->allocData<NumberData>(n));
+}
+
+Value* Context::createEphemeralBigInt(const neo::bigint::BigInt& value) {
+    return createEphemeral(getBigIntType(), gc_->allocData<BigIntData>(value));
+}
+
+Value* Context::createEphemeralString(std::string_view s) {
+    return createEphemeral(getStringType(), gc_->allocData<StringData>(s));
 }
 
 Value* Context::createUndefined(std::string_view name) {

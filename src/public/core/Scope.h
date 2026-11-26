@@ -268,7 +268,11 @@ public:
     // —— Value 跟踪 ——
     // 跟踪一个 Value（仅登记，不改变其引用计数；可达性由 GC 从 global 树标记）。
     // 同一 Value 多次 add 会多次登记（GC 标记幂等，无副作用）。
-    void add(Value* v) { values_.push_back(v); }
+    // scopeRef 按出现次数计数（ADR-065），供 popScope 判定「本作用域是否唯一持有者」。
+    void add(Value* v) {
+        values_.push_back(v);
+        v->scopeRefInc();
+    }
     void addClosure(Value* v) { closures_.push_back(v); }
     const std::vector<Value*>& closures() const { return closures_; }
 
@@ -277,6 +281,7 @@ public:
         for (auto it = values_.begin(); it != values_.end(); ++it) {
             if (*it == v) {
                 values_.erase(it);
+                v->scopeRefDec();
                 for (auto cit = closures_.begin(); cit != closures_.end(); ++cit) {
                     if (*cit == v) {
                         closures_.erase(cit);
@@ -479,6 +484,8 @@ public:
     // 清空整棵子树的 Value 跟踪（不触碰引用计数，不释放 Scope 内存）。
     // GC 析构时先调用：让所有 Value 不可达，同时保持作用域内存存活，
     // 避免 FunctionData 析构沿 parent 链访问已释放的作用域。
+    // 注意（ADR-065）：GC teardown 期间 Value 可能已先被 sweep 释放，
+    // 此处不递减 scopeRef（之后不再 pop，计数只作提示）。
     void clearTrackedValuesRecursive() {
         values_.clear();
         for (Scope* child : children_) child->clearTrackedValuesRecursive();

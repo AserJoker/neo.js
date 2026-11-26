@@ -28,6 +28,9 @@ class Value {
     IType* type_;          // meta：类型描述（单例/共享，GC 不管理 Type 生命周期）
     IData* data_;          // data：数据负载（引用计数管理，ADR-015）
     int   pinRef_ = 0;     // 手工钉住计数（>0 即额外 GC 根，ADR-044）
+    // 被 Scope::values_ 登记的出现次数（ADR-065 两域所有权）。
+    // 仅作 popScope 提前释放的提示，不参与 GC 根判定。
+    uint32_t scopeRef_ = 0;
 
 public:
     // 构造时 data->ref++（建立"Value 指向 data"引用关系）
@@ -49,6 +52,21 @@ public:
     void pinRefInc() { ++pinRef_; }
     void pinRefDec() { --pinRef_; }
 
+    // 作用域登记计数（ADR-065）：Scope::add 递增、remove 递减。
+    // 最高位借作 dead 标记（popScope 已析构、等待 GC 释放内存），
+    // 使 Value 保持 32 字节布局。
+    static constexpr uint32_t kDeadBit = 0x80000000u;
+    bool dead() const { return (scopeRef_ & kDeadBit) != 0; }
+    void markDead() { scopeRef_ |= kDeadBit; }
+    uint32_t scopeRef() const { return scopeRef_ & ~kDeadBit; }
+    void scopeRefInc() {
+        if (!dead()) ++scopeRef_;
+    }
+    void scopeRefDec() {
+        uint32_t n = scopeRef();
+        if (n > 0) scopeRef_ = (scopeRef_ & kDeadBit) | (n - 1);
+    }
+
     // 替换 meta+data（赋值语义，ADR-030 阶段 5）：
     // 旧 data ref--，新 data ref++，type_ 和 data_ 同时替换。
     // Value 本体不变（指针地址不变），仅内部 meta+data 被替换。
@@ -64,6 +82,41 @@ public:
 
 private:
     uint64_t markEpoch_ = 0;  // 最近一次标记的 GC 代数（0 = 从未标记）
+};
+
+// 借用值的临时 GC 根（ADR-065 §5）：C++ 局部变量不是 GC 根，从 VM 栈 / 作用域
+// 弹出后跨「可能触发分配」的调用（getProperty / call / binaryOp…）持有的值，
+// 须用 PinGuard 钉住，否则中途 GC 可能把它当作不可达回收。
+// RAII：构造 pinRefInc、析构 pinRefDec；reset 切换目标（先解除旧值）。
+class PinGuard {
+public:
+    PinGuard() = default;
+    explicit PinGuard(Value* v) : value_(v) {
+        if (value_ != nullptr) value_->pinRefInc();
+    }
+    ~PinGuard() { release(); }
+
+    PinGuard(const PinGuard&) = delete;
+    PinGuard& operator=(const PinGuard&) = delete;
+
+    void reset(Value* v) {
+        if (v == value_) return;
+        release();
+        value_ = v;
+        if (value_ != nullptr) value_->pinRefInc();
+    }
+
+    Value* get() const { return value_; }
+
+private:
+    void release() {
+        if (value_ != nullptr) {
+            value_->pinRefDec();
+            value_ = nullptr;
+        }
+    }
+
+    Value* value_ = nullptr;
 };
 
 }  // namespace neo::core

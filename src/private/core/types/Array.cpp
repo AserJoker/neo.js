@@ -30,22 +30,6 @@ Value* invalidLength(IContext* ctx) {
     return detail::rangeError(ctx, "Invalid array length");
 }
 
-// 暂时钉住 data-owned 副本，避免挂入 data 前被 GC 回收（ADR-065 §4）。
-struct PinGuard {
-    Value* value = nullptr;
-    explicit PinGuard(Value* v = nullptr) { reset(v); }
-    ~PinGuard() {
-        if (value != nullptr) value->pinRefDec();
-    }
-    void reset(Value* v) {
-        if (value != nullptr) value->pinRefDec();
-        value = v;
-        if (value != nullptr) value->pinRefInc();
-    }
-    PinGuard(const PinGuard&) = delete;
-    PinGuard& operator=(const PinGuard&) = delete;
-};
-
 }  // namespace
 
 // —— 索引键解析 ——

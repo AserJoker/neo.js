@@ -257,7 +257,21 @@ VM::VM(IContext* ctx, const Code* code)
     : ctx_(ctx),
       code_(code),
       entryScope_(ctx->current()),
-      rootScope_(ctx->root()) {}
+      rootScope_(ctx->root()) {
+    ctx_->gc()->addRootProvider(this);
+}
+
+VM::~VM() {
+    releaseBorrowed();
+    ctx_->gc()->removeRootProvider(this);
+}
+
+void VM::visitRoots(neo::core::IGCVisitor* visitor) {
+    if (visitor == nullptr) return;
+    for (Value* v : stack_) {
+        if (v != nullptr) visitor->visit(v);
+    }
+}
 
 const VM::Handler* VM::handlers() {
     static const Handler table[kOpCodeCount] = {
@@ -701,6 +715,8 @@ Value* VM::execute() {
 
     const Handler* table = handlers();
     while (pc_ < bytes.size()) {
+        // 上一条指令借用的操作数到此已用完（结果要么在栈上，要么已挂到 data/绑定）。
+        releaseBorrowed();
         // 停止标记：worker terminate / 调试器复用。每条指令后检查一次；
         // 终止是不可捕获的控制信号，不进入 try 展开。
         if (ctx_->isStopRequested()) {
@@ -761,7 +777,8 @@ Value* VM::execute() {
 // —— 字面量 ——
 
 Value* VM::opPushUndefined() {
-    push(ctx_->createUndefined());
+    // 表达式临时值：只由操作数栈（GC 根）保活，不登记 current scope。
+    push(ctx_->createEphemeralUndefined());
     return nullptr;
 }
 
@@ -771,17 +788,17 @@ Value* VM::opPushUninitialized() {
 }
 
 Value* VM::opPushNull() {
-    push(ctx_->createNull());
+    push(ctx_->createEphemeralNull());
     return nullptr;
 }
 
 Value* VM::opPushTrue() {
-    push(ctx_->createBoolean(true));
+    push(ctx_->createEphemeralBoolean(true));
     return nullptr;
 }
 
 Value* VM::opPushFalse() {
-    push(ctx_->createBoolean(false));
+    push(ctx_->createEphemeralBoolean(false));
     return nullptr;
 }
 
@@ -795,7 +812,7 @@ Value* VM::opPushNumber() {
     if (index >= code_->numbers.size()) {
         return badBytecode("push_number: constant index out of range");
     }
-    push(ctx_->createNumber(code_->numbers[index]));
+    push(ctx_->createEphemeralNumber(code_->numbers[index]));
     return nullptr;
 }
 
@@ -810,7 +827,7 @@ Value* VM::opPushString() {
     if (value == nullptr) {
         return badBytecode("push_string: constant index out of range");
     }
-    push(ctx_->createString(*value));
+    push(ctx_->createEphemeralString(*value));
     return nullptr;
 }
 
@@ -831,7 +848,7 @@ Value* VM::opPushBigInt() {
     if (!neo::bigint::BigInt::parse(*digits, static_cast<int>(radix), value)) {
         return badBytecode("push_bigint: invalid literal");
     }
-    push(ctx_->createBigInt(value));
+    push(ctx_->createEphemeralBigInt(value));
     return nullptr;
 }
 
@@ -1940,9 +1957,11 @@ Value* VM::increment(bool inc) {
     Value* numeric = detail::toNumericValue(ctx_, old);
     if (detail::isErrorValue(numeric)) return fail(numeric);
     Value* one = numeric->type()->kind() == TypeKind::BigInt
-                    ? ctx_->createBigInt(neo::bigint::BigInt(1))
-                    : ctx_->createNumber(1.0);
+                    ? ctx_->createEphemeralBigInt(neo::bigint::BigInt(1))
+                    : ctx_->createEphemeralNumber(1.0);
     if (detail::isErrorValue(one)) return fail(one);
+    // one 仅由 C++ 局部持有，binaryOp 可能触发分配/GC，须钉住。
+    neo::core::PinGuard onePin(one);
     Value* result = ctx_->binaryOp(inc ? BinaryOperator::Add : BinaryOperator::Sub,
                                    numeric, one);
     if (detail::isErrorValue(result)) return fail(result);
@@ -2427,16 +2446,28 @@ Value* VM::opCommitIterationEnv() {
     }
     for (const std::string* name : names) {
         const Scope::Binding* source = current->lookupBinding(*name);
-        if (source == nullptr) continue;
+        if (source == nullptr || source->value == nullptr) continue;
         Scope::Binding* target = parent->lookupBinding(*name);
         if (target == nullptr) continue;
-        // 下一轮种子必须是新 Value：本次迭代的 Value 可能已被闭包捕获，
-        // update 的原地赋值不能改到闭包看到的值。
-        Value* seed = ctx_->cloneValue(source->value);
-        if (seed == ctx_->oomValue()) return seed;
-        target->value = seed;
+        Value* old = target->value;
+        Value* value = source->value;
+        if (value->scopeRef() == 1 && value->pinRef() == 0) {
+            // 未被闭包捕获（只登记在本次迭代作用域）：直接把同一 Value
+            // 移交给父作用域，避免每轮 clone 一个种子在循环作用域累积。
+            current->remove(value);
+            target->value = value;
+            parent->add(value);
+        } else {
+            // 已被闭包捕获：下一轮必须是新 Value，update 的原地赋值
+            // 不能改到闭包看到的值。
+            Value* seed = ctx_->cloneValue(value);
+            if (seed == ctx_->oomValue()) return seed;
+            target->value = seed;
+            parent->add(seed);
+        }
         target->initialized = source->initialized;
-        parent->add(seed);
+        // 上一轮种子已被替换：从父作用域摘除，避免每轮累积一个 Value。
+        if (old != nullptr && old != target->value) parent->remove(old);
     }
     ctx_->popScope();
     return nullptr;

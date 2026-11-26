@@ -40,6 +40,14 @@ public:
     virtual void visitScope(Scope* scope) = 0;
 };
 
+// GC 根提供者：GC 图之外的活跃根（如 VM 操作数栈）在 collect 标记阶段
+// 主动把自己的引用交给 visitor。注册方须保证生命周期覆盖注册期。
+class IGCRootProvider {
+public:
+    virtual ~IGCRootProvider() = default;
+    virtual void visitRoots(IGCVisitor* visitor) = 0;
+};
+
 // GC 引擎抽象接口
 class IGCEngine {
 public:
@@ -71,10 +79,20 @@ public:
     // Context 在 bootstrap 后设置 global scope，并保持其生命周期长于 GC。
     virtual void setRootScope(Scope* scope) = 0;
 
+    // 注册/注销额外的根提供者（VM 操作数栈等）。非拥有，调用方负责注销。
+    virtual void addRootProvider(IGCRootProvider* provider) = 0;
+    virtual void removeRootProvider(IGCRootProvider* provider) = 0;
+
     // 回收已从 Value 摘除的 data（赋值 replaceMeta 后调用）：
     // ref 归 0 则析构 + free，否则无操作（仍被其他 Value 共享）。
     // GC 的 collect 只遍历存活 Value 当前持有的 data，摘除后的游离 data 需显式回收。
     virtual void releaseData(IData* d) = 0;
+
+    // 提前释放一个确定死亡的 Value（ADR-065 §3，仅 popScope 调用）：
+    // 析构 Value（data ref--，归 0 则析构+free data）并标 dead；
+    // Value 本体内存由下一次 collect 的 sweep 释放（deferred free）。
+    // 调用方须保证该 Value 不再被任何作用域/data/VM 栈引用。
+    virtual void releaseValue(Value* v) = 0;
 
     // —— 装饰性查询接口 ——
     virtual size_t valueCount() const = 0;       // 当前存活的 Value 总数

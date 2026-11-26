@@ -92,6 +92,27 @@ Value* indexKey(IContext* ctx, uint32_t index) {
     return ctx->createString(std::to_string(index));
 }
 
+// 索引键（支持到 2^53-1）：splice 的数组类对象长度可超过 2^32-1。
+Value* indexKeyFromDouble(IContext* ctx, double index) {
+    return ctx->createString(detail::numberToString(index));
+}
+
+// ArrayCreate(length)（ES2024 §10.4.2.2）：length > 2^32-1 抛 RangeError。
+Value* arrayCreateLength(IContext* ctx, double length) {
+    if (!std::isfinite(length) || length < 0.0 ||
+        length > static_cast<double>(kArrayMaxLength) ||
+        std::floor(length) != length) {
+        return detail::rangeError(ctx, "Invalid array length");
+    }
+    Value* arr = ctx->createArray();
+    if (arr == ctx->oomValue()) return arr;
+    if (length > 0.0) {
+        static_cast<ArrayData*>(arr->data())->setLength(
+            static_cast<uint32_t>(length));
+    }
+    return arr;
+}
+
 // DeletePropertyOrThrow：[[Delete]] 返回 false 时抛 TypeError。
 Value* deletePropertyOrThrow(IContext* ctx, Value* obj, Value* key) {
     Value* r = ctx->deleteProperty(obj, key);
@@ -116,18 +137,20 @@ double toIntegerOrInfinity(IContext* ctx, Value* v, Value*& err) {
     return std::trunc(n);
 }
 
-// 把相对索引（可负）归一化到 [0, len]
-uint32_t clampIndex(double idx, uint32_t len) {
+// 把相对索引（可负）归一化到 [0, len]（len 为完整 ToLength，最大 2^53-1）。
+double clampIndexDouble(double idx, double len) {
     if (idx < 0.0) {
-        double fromEnd = static_cast<double>(len) + idx;
-        return fromEnd <= 0.0 ? 0u : static_cast<uint32_t>(fromEnd);
+        double fromEnd = len + idx;
+        return fromEnd <= 0.0 ? 0.0 : fromEnd;
     }
-    if (idx >= static_cast<double>(len)) return len;
-    return static_cast<uint32_t>(idx);
+    return idx >= len ? len : idx;
 }
 
 // HasProperty 的布尔读取；失败返回错误值（定义见迭代方法区）。
 Value* hasElement(IContext* ctx, Value* obj, Value* key, bool& out);
+
+// ArraySpeciesCreate（定义见构造函数区）。
+Value* arraySpeciesCreate(IContext* ctx, Value* original, double length);
 
 // —— 构造函数 ——
 
@@ -178,14 +201,17 @@ Value* arrayIsArray(IContext* ctx, Value* /*self*/, size_t argc, Value* argv[]) 
 Value* arrayPush(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "push");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len + static_cast<double>(argc) > 9007199254740991.0) {
+        return detail::typeError(ctx, "Invalid array length");
+    }
     for (size_t i = 0; i < argc; ++i) {
-        Value* r = ctx->setProperty(obj, indexKey(ctx, len + static_cast<uint32_t>(i)),
-                                    argv[i]);
+        Value* r = ctx->setProperty(
+            obj, indexKeyFromDouble(ctx, len + static_cast<double>(i)), argv[i]);
         if (detail::isErrorValue(r)) return r;
     }
-    double newLen = static_cast<double>(len) + static_cast<double>(argc);
+    double newLen = len + static_cast<double>(argc);
     Value* r = ctx->setProperty(obj, "length", ctx->createNumber(newLen));
     if (detail::isErrorValue(r)) return r;
     return ctx->createNumber(newLen);
@@ -195,17 +221,17 @@ Value* arrayPush(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* arrayPop(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     Value* obj = toObject(ctx, self, "pop");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (len == 0) {
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) {
         Value* r = ctx->setProperty(obj, "length", ctx->createNumber(0));
         return detail::isErrorValue(r) ? r : ctx->createUndefined();
     }
-    Value* key = indexKey(ctx, len - 1);
+    Value* key = indexKeyFromDouble(ctx, len - 1.0);
     Value* value = ctx->getProperty(obj, key);
     if (detail::isErrorValue(value)) return value;
     if (Value* err = deletePropertyOrThrow(ctx, obj, key)) return err;
-    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1));
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1.0));
     if (detail::isErrorValue(r)) return r;
     return value;
 }
@@ -214,17 +240,18 @@ Value* arrayPop(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) 
 Value* arrayShift(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     Value* obj = toObject(ctx, self, "shift");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (len == 0) {
+    // 完整 ToLength（2^53-1）：截断到 2^32-1 会漏掉近上限索引并造成超长循环。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) {
         Value* r = ctx->setProperty(obj, "length", ctx->createNumber(0));
         return detail::isErrorValue(r) ? r : ctx->createUndefined();
     }
     Value* first = ctx->getProperty(obj, indexKey(ctx, 0));
     if (detail::isErrorValue(first)) return first;
-    for (uint32_t k = 1; k < len; ++k) {
-        Value* fromKey = indexKey(ctx, k);
-        Value* toKey = indexKey(ctx, k - 1);
+    for (double k = 1.0; k < len; k += 1.0) {
+        Value* fromKey = indexKeyFromDouble(ctx, k);
+        Value* toKey = indexKeyFromDouble(ctx, k - 1.0);
         Value* has = ctx->hasProperty(obj, fromKey);
         if (detail::isErrorValue(has)) return has;
         if (detail::toBoolean(has)) {
@@ -236,8 +263,10 @@ Value* arrayShift(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]
             if (Value* err = deletePropertyOrThrow(ctx, obj, toKey)) return err;
         }
     }
-    if (Value* err = deletePropertyOrThrow(ctx, obj, indexKey(ctx, len - 1))) return err;
-    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1));
+    if (Value* err = deletePropertyOrThrow(ctx, obj, indexKeyFromDouble(ctx, len - 1.0))) {
+        return err;
+    }
+    Value* r = ctx->setProperty(obj, "length", ctx->createNumber(len - 1.0));
     if (detail::isErrorValue(r)) return r;
     return first;
 }
@@ -246,13 +275,19 @@ Value* arrayShift(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]
 Value* arrayUnshift(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "unshift");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    uint32_t argCount = static_cast<uint32_t>(argc);
-    if (argCount > 0) {
-        for (uint32_t k = len; k > 0; --k) {
-            Value* fromKey = indexKey(ctx, k - 1);
-            Value* toKey = indexKey(ctx, k + argCount - 1);
+    // 完整 ToLength（2^53-1）：截断到 2^32-1 会漏掉近上限索引并造成超长循环。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    const double argCount = static_cast<double>(argc);
+    if (argCount > 0.0) {
+        // §23.1.3.34 step 4.a：len + argCount > 2^53-1 抛 TypeError。
+        constexpr double kMaxSafeInteger = 9007199254740991.0;
+        if (len + argCount > kMaxSafeInteger) {
+            return detail::typeError(ctx, "Invalid array length");
+        }
+        for (double k = len; k > 0.0; k -= 1.0) {
+            Value* fromKey = indexKeyFromDouble(ctx, k - 1.0);
+            Value* toKey = indexKeyFromDouble(ctx, k + argCount - 1.0);
             Value* has = ctx->hasProperty(obj, fromKey);
             if (detail::isErrorValue(has)) return has;
             if (detail::toBoolean(has)) {
@@ -264,12 +299,13 @@ Value* arrayUnshift(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
                 if (Value* err = deletePropertyOrThrow(ctx, obj, toKey)) return err;
             }
         }
-        for (uint32_t j = 0; j < argCount; ++j) {
-            Value* r = ctx->setProperty(obj, indexKey(ctx, j), argv[j]);
+        for (size_t j = 0; j < argc; ++j) {
+            Value* r = ctx->setProperty(obj, indexKeyFromDouble(ctx, static_cast<double>(j)),
+                                        argv[j]);
             if (detail::isErrorValue(r)) return r;
         }
     }
-    double newLen = static_cast<double>(len) + static_cast<double>(argCount);
+    double newLen = len + argCount;
     Value* r = ctx->setProperty(obj, "length", ctx->createNumber(newLen));
     if (detail::isErrorValue(r)) return r;
     return ctx->createNumber(newLen);
@@ -346,61 +382,71 @@ Value* arrayToStringFn(IContext* ctx, Value* self, size_t /*argc*/, Value* /*arg
 Value* arraySlice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "slice");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
     Value* err = nullptr;
-    uint32_t start = 0;
+    double start = 0.0;
     if (argc > 0) {
         double raw = toIntegerOrInfinity(ctx, argv[0], err);
         if (err != nullptr) return err;
-        start = clampIndex(raw, len);
+        start = clampIndexDouble(raw, len);
     }
-    uint32_t end = len;
+    double end = len;
     if (argc > 1 && argv[1]->type()->kind() != TypeKind::Undefined) {
         double raw = toIntegerOrInfinity(ctx, argv[1], err);
         if (err != nullptr) return err;
-        end = clampIndex(raw, len);
+        end = clampIndexDouble(raw, len);
     }
-    Value* result = ctx->createArray();
-    if (result == ctx->oomValue()) return result;
-    for (uint32_t i = start; i < end; ++i) {
-        Value* key = indexKey(ctx, i);
+    const double count = end > start ? end - start : 0.0;
+    // ArraySpeciesCreate(O, count)：count > 2^32-1 时默认 ArrayCreate 抛
+    // RangeError，避免对超长数组类对象逐元素循环。
+    Value* result = arraySpeciesCreate(ctx, obj, count);
+    if (detail::isErrorValue(result)) return result;
+    for (double k = 0.0; k < count; k += 1.0) {
+        Value* key = indexKeyFromDouble(ctx, start + k);
         Value* has = ctx->hasProperty(obj, key);
         if (detail::isErrorValue(has)) return has;
         if (!detail::toBoolean(has)) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        Value* r = ctx->defineProperty(result, indexKey(ctx, i - start), v, true, true, true);
+        Value* r = ctx->defineProperty(result, indexKeyFromDouble(ctx, k), v, true,
+                                       true, true);
         if (detail::isErrorValue(r)) return r;
     }
-    return result;
+    Value* r = ctx->setProperty(result, "length", ctx->createNumber(count));
+    return detail::isErrorValue(r) ? r : result;
 }
 
 // indexOf(searchElement, fromIndex)：严格相等，未找到返回 -1（ES2024 §23.1.3.13）
 Value* arrayIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "indexOf");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (argc == 0) return ctx->createNumber(-1.0);
-    uint32_t from = 0;
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) return ctx->createNumber(-1.0);
+    Value* target = argc > 0 ? argv[0] : ctx->createUndefined();
+    double from = 0.0;
     if (argc > 1) {
         Value* err = nullptr;
         double raw = toIntegerOrInfinity(ctx, argv[1], err);
         if (err != nullptr) return err;
-        if (raw >= static_cast<double>(len)) return ctx->createNumber(-1.0);
-        from = clampIndex(raw, len);
+        if (std::isinf(raw) && raw > 0.0) return ctx->createNumber(-1.0);
+        if (raw >= 0.0) {
+            from = raw;
+        } else {
+            from = len + raw;
+            if (from < 0.0) from = 0.0;
+        }
+        if (from >= len) return ctx->createNumber(-1.0);
     }
-    for (uint32_t i = from; i < len; ++i) {
-        Value* key = indexKey(ctx, i);
+    for (double k = from; k < len; k += 1.0) {
+        Value* key = indexKeyFromDouble(ctx, k);
         bool present = false;
         if (Value* e = hasElement(ctx, obj, key, present)) return e;
         if (!present) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        if (detail::strictEquals(v, argv[0])) {
-            return ctx->createNumber(static_cast<double>(i));
-        }
+        if (detail::strictEquals(v, target)) return ctx->createNumber(k);
     }
     return ctx->createNumber(-1.0);
 }
@@ -443,8 +489,9 @@ Value* createData(IContext* ctx, Value* obj, Value* key, Value* value) {
 }
 
 // ArraySpeciesCreate（§23.1.3.1）：子类构造器可覆盖返回类型。
-Value* arraySpeciesCreate(IContext* ctx, Value* original, uint32_t length) {
-    if (!isArrayValue(original)) return ctx->createArray();
+Value* arraySpeciesCreate(IContext* ctx, Value* original, double length) {
+    // IsArray 为 false：直接 ArrayCreate(length)（含 RangeError 检查）。
+    if (!isArrayValue(original)) return arrayCreateLength(ctx, length);
     Value* ctor = ctx->getProperty(original, "constructor");
     if (detail::isErrorValue(ctor)) return ctor;
     if (detail::isObjectKind(ctor->type()->kind())) {
@@ -456,13 +503,15 @@ Value* arraySpeciesCreate(IContext* ctx, Value* original, uint32_t length) {
                    ? ctx->createUndefined()
                    : species;
     }
-    if (ctor->type()->kind() == TypeKind::Undefined) return ctx->createArray();
+    if (ctor->type()->kind() == TypeKind::Undefined) {
+        return arrayCreateLength(ctx, length);
+    }
     if (!detail::isCallable(ctor)) {
         return detail::typeError(ctx, "Array species constructor is not a constructor");
     }
     Value* arrayCtor = ctx->global()->lookup("Array");
-    if (ctor == arrayCtor) return ctx->createArray();
-    Value* len = ctx->createNumber(static_cast<double>(length));
+    if (ctor == arrayCtor) return arrayCreateLength(ctx, length);
+    Value* len = ctx->createNumber(length);
     return ctx->construct(ctor, 1, &len);
 }
 
@@ -483,18 +532,25 @@ Value* iterateArrayLike(IContext* ctx, Value* obj, uint32_t len, bool skipHoles,
     }
     for (uint32_t k = 0; k < len; ++k) {
         Value* key = nullptr;
+        // 索引键是朝生暮死的表达式临时值：不登记 execScope，仅在本轮遍历
+        // 期间由 PinGuard 钉住（getProperty / hasElement 可能触发 GC）。
+        PinGuard keyPin;
         if (skipHoles) {
             bool present = false;
             if (fastArray) {
                 // 稀疏数组空洞直接查内部表，避免每轮分配索引字符串。
                 present = static_cast<ArrayData*>(obj->data())->hasElement(k);
             } else {
-                key = indexKey(ctx, k);
+                key = ctx->createEphemeralString(std::to_string(k));
+                keyPin.reset(key);
                 if (Value* err = hasElement(ctx, obj, key, present)) return err;
             }
             if (!present) continue;
         }
-        if (key == nullptr) key = indexKey(ctx, k);
+        if (key == nullptr) {
+            key = ctx->createEphemeralString(std::to_string(k));
+            keyPin.reset(key);
+        }
         Value* value = ctx->getProperty(obj, key);
         if (detail::isErrorValue(value)) return value;
         Value* r = visitor(k, value);
@@ -512,7 +568,9 @@ Value* arrayForEach(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     uint32_t len = 0;
     if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     Value* err = iterateArrayLike(ctx, obj, len, true, [&](uint32_t k, Value* v) -> Value* {
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* r = ctx->call(cb, thisArg, 3, callArgs);
         return detail::isErrorValue(r) ? r : nullptr;
     });
@@ -525,12 +583,17 @@ Value* arrayMap(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* cb = argOrUndefined(ctx, argc, argv, 0);
     if (Value* err = requireCallable(ctx, cb, "map")) return err;
     Value* thisArg = argOrUndefined(ctx, argc, argv, 1);
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    Value* result = arraySpeciesCreate(ctx, obj, len);
+    // 用完整 ToLength（2^53-1）：ArraySpeciesCreate 对超过 2^32-1 的长度
+    // 抛 RangeError，不能先截断到 2^32-1 再进入超长循环。
+    double lenD = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, lenD)) return err;
+    Value* result = arraySpeciesCreate(ctx, obj, lenD);
     if (detail::isErrorValue(result)) return result;
+    const uint32_t len = static_cast<uint32_t>(lenD);
     Value* err = iterateArrayLike(ctx, obj, len, true, [&](uint32_t k, Value* v) -> Value* {
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* mapped = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(mapped)) return mapped;
         return createData(ctx, result, indexKey(ctx, k), mapped);
@@ -550,7 +613,9 @@ Value* arrayFilter(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     if (detail::isErrorValue(result)) return result;
     uint32_t to = 0;
     Value* err = iterateArrayLike(ctx, obj, len, true, [&](uint32_t k, Value* v) -> Value* {
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* selected = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(selected)) return selected;
         if (!detail::toBoolean(selected)) return nullptr;
@@ -571,7 +636,9 @@ Value* arraySome(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     uint32_t len = 0;
     if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     Value* err = iterateArrayLike(ctx, obj, len, true, [&](uint32_t k, Value* v) -> Value* {
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* r = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(r)) return r;
         return detail::toBoolean(r) ? ctx->createBoolean(true) : nullptr;
@@ -589,7 +656,9 @@ Value* arrayEvery(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     uint32_t len = 0;
     if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
     Value* err = iterateArrayLike(ctx, obj, len, true, [&](uint32_t k, Value* v) -> Value* {
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* r = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(r)) return r;
         return detail::toBoolean(r) ? nullptr : ctx->createBoolean(false);
@@ -607,14 +676,17 @@ Value* arrayFindImpl(IContext* ctx, Value* self, size_t argc, Value* argv[],
     Value* cb = argOrUndefined(ctx, argc, argv, 0);
     if (Value* err = requireCallable(ctx, cb, method)) return err;
     Value* thisArg = argOrUndefined(ctx, argc, argv, 1);
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (len == 0) return returnIndex ? ctx->createNumber(-1.0) : ctx->createUndefined();
-    for (uint32_t step = 0; step < len; ++step) {
-        uint32_t k = fromEnd ? len - 1 - step : step;
-        Value* v = ctx->getProperty(obj, indexKey(ctx, k));
+    // 完整 ToLength（2^53-1）：findLast 从末尾开始，截断会漏掉近上限索引。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) return returnIndex ? ctx->createNumber(-1.0) : ctx->createUndefined();
+    for (double step = 0.0; step < len; step += 1.0) {
+        double k = fromEnd ? len - 1.0 - step : step;
+        Value* v = ctx->getProperty(obj, indexKeyFromDouble(ctx, k));
         if (detail::isErrorValue(v)) return v;
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* r = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(r)) return r;
         if (!detail::toBoolean(r)) continue;
@@ -644,25 +716,25 @@ Value* arrayReduceImpl(IContext* ctx, Value* self, size_t argc, Value* argv[],
     if (Value* err = requireCallable(ctx, cb, fromEnd ? "reduceRight" : "reduce")) {
         return err;
     }
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
 
-    uint32_t step = 0;
+    double step = 0.0;
     Value* accumulator = nullptr;
     if (argc > 1) {
         accumulator = argv[1];
     } else {
         bool found = false;
-        for (; step < len; ++step) {
-            uint32_t k = fromEnd ? len - 1 - step : step;
-            Value* key = indexKey(ctx, k);
+        for (; step < len; step += 1.0) {
+            double k = fromEnd ? len - 1.0 - step : step;
+            Value* key = indexKeyFromDouble(ctx, k);
             bool present = false;
             if (Value* err = hasElement(ctx, obj, key, present)) return err;
             if (!present) continue;
             accumulator = ctx->getProperty(obj, key);
             if (detail::isErrorValue(accumulator)) return accumulator;
             found = true;
-            ++step;
+            step += 1.0;
             break;
         }
         if (!found) {
@@ -670,16 +742,17 @@ Value* arrayReduceImpl(IContext* ctx, Value* self, size_t argc, Value* argv[],
         }
     }
 
-    for (; step < len; ++step) {
-        uint32_t k = fromEnd ? len - 1 - step : step;
-        Value* key = indexKey(ctx, k);
+    for (; step < len; step += 1.0) {
+        double k = fromEnd ? len - 1.0 - step : step;
+        Value* key = indexKeyFromDouble(ctx, k);
         bool present = false;
         if (Value* err = hasElement(ctx, obj, key, present)) return err;
         if (!present) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        Value* callArgs[4] = {accumulator, v, ctx->createNumber(static_cast<double>(k)),
-                              obj};
+        Value* index = ctx->createEphemeralNumber(k);
+        PinGuard indexPin(index);
+        Value* callArgs[4] = {accumulator, v, index, obj};
         accumulator = ctx->call(cb, ctx->createUndefined(), 4, callArgs);
         if (detail::isErrorValue(accumulator)) return accumulator;
     }
@@ -707,17 +780,18 @@ bool sameValueZero(IContext* ctx, Value* a, Value* b) {
 Value* arrayIncludes(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "includes");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (len == 0) return ctx->createBoolean(false);
+    // 完整 ToLength（2^53-1）：fromIndex 可达 2^53-2，截断会漏掉近上限索引。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) return ctx->createBoolean(false);
     Value* err = nullptr;
     double raw = argc > 1 ? toIntegerOrInfinity(ctx, argv[1], err) : 0.0;
     if (err != nullptr) return err;
-    if (raw >= static_cast<double>(len)) return ctx->createBoolean(false);
-    uint32_t from = clampIndex(raw, len);
+    if (raw >= len) return ctx->createBoolean(false);
+    double from = clampIndexDouble(raw, len);
     Value* target = argOrUndefined(ctx, argc, argv, 0);
-    for (uint32_t k = from; k < len; ++k) {
-        Value* v = ctx->getProperty(obj, indexKey(ctx, k));
+    for (double k = from; k < len; k += 1.0) {
+        Value* v = ctx->getProperty(obj, indexKeyFromDouble(ctx, k));
         if (detail::isErrorValue(v)) return v;
         if (sameValueZero(ctx, v, target)) return ctx->createBoolean(true);
     }
@@ -727,26 +801,23 @@ Value* arrayIncludes(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* arrayLastIndexOf(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "lastIndexOf");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    if (len == 0) return ctx->createNumber(-1.0);
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    if (len == 0.0) return ctx->createNumber(-1.0);
     Value* err = nullptr;
-    double raw = argc > 1 ? toIntegerOrInfinity(ctx, argv[1], err)
-                          : static_cast<double>(len) - 1.0;
+    double raw = argc > 1 ? toIntegerOrInfinity(ctx, argv[1], err) : len - 1.0;
     if (err != nullptr) return err;
-    double from = raw >= 0.0 ? std::min(raw, static_cast<double>(len) - 1.0)
-                             : static_cast<double>(len) + raw;
+    double from = raw >= 0.0 ? std::min(raw, len - 1.0) : len + raw;
     if (from < 0.0) return ctx->createNumber(-1.0);
-    Value* target = argOrUndefined(ctx, argc, argv, 0);
-    for (double d = from; d >= 0.0; d -= 1.0) {
-        uint32_t k = static_cast<uint32_t>(d);
-        Value* key = indexKey(ctx, k);
+    Value* target = argc > 0 ? argv[0] : ctx->createUndefined();
+    for (double k = from; k >= 0.0; k -= 1.0) {
+        Value* key = indexKeyFromDouble(ctx, k);
         bool present = false;
         if (Value* e = hasElement(ctx, obj, key, present)) return e;
         if (!present) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        if (detail::strictEquals(v, target)) return ctx->createNumber(static_cast<double>(k));
+        if (detail::strictEquals(v, target)) return ctx->createNumber(k);
     }
     return ctx->createNumber(-1.0);
 }
@@ -807,86 +878,102 @@ Value* arrayConcat(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 }
 
 // splice(start, deleteCount, ...items)（ES2024 §23.1.3.29）
+// 长度与索引按 ToLength 的 2^53-1 上限处理：数组类对象可超过 2^32-1，
+// 只有实际创建数组时（ArrayCreate）才检查 2^32-1 并抛 RangeError。
 Value* arraySplice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "splice");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
     Value* err = nullptr;
     double rawStart = argc > 0 ? toIntegerOrInfinity(ctx, argv[0], err) : 0.0;
     if (err != nullptr) return err;
-    uint32_t start = clampIndex(rawStart, len);
+    double start = 0.0;
+    if (rawStart < 0.0) {
+        start = len + rawStart;
+        if (start < 0.0) start = 0.0;
+    } else {
+        start = rawStart < len ? rawStart : len;
+    }
 
-    uint32_t deleteCount = 0;
+    double deleteCount = 0.0;
     if (argc == 1) {
         deleteCount = len - start;
     } else if (argc >= 2) {
         double rawDelete = toIntegerOrInfinity(ctx, argv[1], err);
         if (err != nullptr) return err;
         if (rawDelete <= 0.0) {
-            deleteCount = 0;
-        } else if (rawDelete >= static_cast<double>(len - start)) {
+            deleteCount = 0.0;
+        } else if (rawDelete >= len - start) {
             deleteCount = len - start;
         } else {
-            deleteCount = static_cast<uint32_t>(rawDelete);
+            deleteCount = rawDelete;
         }
     }
-    uint32_t itemCount = argc > 2 ? static_cast<uint32_t>(argc - 2) : 0;
+    double itemCount = argc > 2 ? static_cast<double>(argc - 2) : 0.0;
+
+    // §23.1.3.29 step 8：新长度超过整数上限抛 TypeError。
+    if (len + itemCount - deleteCount > 9007199254740991.0) {
+        return detail::typeError(ctx, "Invalid array length");
+    }
 
     Value* removed = arraySpeciesCreate(ctx, obj, deleteCount);
     if (detail::isErrorValue(removed)) return removed;
-    for (uint32_t k = 0; k < deleteCount; ++k) {
-        Value* key = indexKey(ctx, start + k);
+    for (double k = 0.0; k < deleteCount; k += 1.0) {
+        Value* key = indexKeyFromDouble(ctx, start + k);
         bool present = false;
         if (Value* e = hasElement(ctx, obj, key, present)) return e;
         if (!present) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        if (Value* e = createData(ctx, removed, indexKey(ctx, k), v)) return e;
-    }
-    Value* r = ctx->setProperty(removed, "length",
-                                ctx->createNumber(static_cast<double>(deleteCount)));
-    if (detail::isErrorValue(r)) return r;
-
-    if (itemCount < deleteCount) {
-        for (uint32_t k = start; k < len - deleteCount; ++k) {
-            Value* from = indexKey(ctx, k + deleteCount);
-            Value* to = indexKey(ctx, k + itemCount);
-            bool present = false;
-            if (Value* e = hasElement(ctx, obj, from, present)) return e;
-            if (present) {
-                Value* v = ctx->getProperty(obj, from);
-                if (detail::isErrorValue(v)) return v;
-                if (Value* e = createData(ctx, obj, to, v)) return e;
-            } else {
-                if (Value* e = deletePropertyOrThrow(ctx, obj, to)) return e;
-            }
-        }
-        for (uint32_t k = len; k > len - deleteCount + itemCount; --k) {
-            if (Value* e = deletePropertyOrThrow(ctx, obj, indexKey(ctx, k - 1))) return e;
-        }
-    } else if (itemCount > deleteCount) {
-        for (uint32_t k = len - deleteCount; k > start; --k) {
-            Value* from = indexKey(ctx, k + deleteCount - 1);
-            Value* to = indexKey(ctx, k + itemCount - 1);
-            bool present = false;
-            if (Value* e = hasElement(ctx, obj, from, present)) return e;
-            if (present) {
-                Value* v = ctx->getProperty(obj, from);
-                if (detail::isErrorValue(v)) return v;
-                if (Value* e = createData(ctx, obj, to, v)) return e;
-            } else {
-                if (Value* e = deletePropertyOrThrow(ctx, obj, to)) return e;
-            }
-        }
-    }
-    for (uint32_t i = 0; i < itemCount; ++i) {
-        if (Value* e = createData(ctx, obj, indexKey(ctx, start + i), argv[2 + i])) {
+        if (Value* e = createData(ctx, removed, indexKeyFromDouble(ctx, k), v)) {
             return e;
         }
     }
-    double newLen = static_cast<double>(len) - static_cast<double>(deleteCount) +
-                    static_cast<double>(itemCount);
+    Value* r = ctx->setProperty(removed, "length", ctx->createNumber(deleteCount));
+    if (detail::isErrorValue(r)) return r;
+
+    if (itemCount < deleteCount) {
+        for (double k = start; k < len - deleteCount; k += 1.0) {
+            Value* from = indexKeyFromDouble(ctx, k + deleteCount);
+            Value* to = indexKeyFromDouble(ctx, k + itemCount);
+            bool present = false;
+            if (Value* e = hasElement(ctx, obj, from, present)) return e;
+            if (present) {
+                Value* v = ctx->getProperty(obj, from);
+                if (detail::isErrorValue(v)) return v;
+                if (Value* e = createData(ctx, obj, to, v)) return e;
+            } else {
+                if (Value* e = deletePropertyOrThrow(ctx, obj, to)) return e;
+            }
+        }
+        for (double k = len; k > len - deleteCount + itemCount; k -= 1.0) {
+            if (Value* e = deletePropertyOrThrow(ctx, obj, indexKeyFromDouble(ctx, k - 1.0))) {
+                return e;
+            }
+        }
+    } else if (itemCount > deleteCount) {
+        for (double k = len - deleteCount; k > start; k -= 1.0) {
+            Value* from = indexKeyFromDouble(ctx, k + deleteCount - 1.0);
+            Value* to = indexKeyFromDouble(ctx, k + itemCount - 1.0);
+            bool present = false;
+            if (Value* e = hasElement(ctx, obj, from, present)) return e;
+            if (present) {
+                Value* v = ctx->getProperty(obj, from);
+                if (detail::isErrorValue(v)) return v;
+                if (Value* e = createData(ctx, obj, to, v)) return e;
+            } else {
+                if (Value* e = deletePropertyOrThrow(ctx, obj, to)) return e;
+            }
+        }
+    }
+    for (double i = 0.0; i < itemCount; i += 1.0) {
+        if (Value* e = createData(ctx, obj, indexKeyFromDouble(ctx, start + i),
+                                  argv[2 + static_cast<size_t>(i)])) {
+            return e;
+        }
+    }
+    double newLen = len - deleteCount + itemCount;
     r = ctx->setProperty(obj, "length", ctx->createNumber(newLen));
     return detail::isErrorValue(r) ? r : removed;
 }
@@ -895,12 +982,14 @@ Value* arraySplice(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* arrayReverse(IContext* ctx, Value* self, size_t /*argc*/, Value* /*argv*/[]) {
     Value* obj = toObject(ctx, self, "reverse");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
-    for (uint32_t lower = 0; lower < len / 2; ++lower) {
-        uint32_t upper = len - lower - 1;
-        Value* lowerKey = indexKey(ctx, lower);
-        Value* upperKey = indexKey(ctx, upper);
+    // 完整 ToLength（2^53-1）：截断到 2^32-1 会漏掉近上限索引并造成超长循环。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
+    const double middle = std::floor(len / 2.0);
+    for (double lower = 0.0; lower < middle; lower += 1.0) {
+        double upper = len - lower - 1.0;
+        Value* lowerKey = indexKeyFromDouble(ctx, lower);
+        Value* upperKey = indexKeyFromDouble(ctx, upper);
         bool lowerPresent = false;
         bool upperPresent = false;
         if (Value* e = hasElement(ctx, obj, lowerKey, lowerPresent)) return e;
@@ -1104,7 +1193,9 @@ Value* arrayFlatMap(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
         if (!present) continue;
         Value* v = ctx->getProperty(obj, key);
         if (detail::isErrorValue(v)) return v;
-        Value* callArgs[3] = {v, ctx->createNumber(static_cast<double>(k)), obj};
+        Value* index = ctx->createEphemeralNumber(static_cast<double>(k));
+        PinGuard indexPin(index);
+        Value* callArgs[3] = {v, index, obj};
         Value* mapped = ctx->call(cb, thisArg, 3, callArgs);
         if (detail::isErrorValue(mapped)) return mapped;
         if (isArrayValue(mapped)) {
@@ -1127,34 +1218,36 @@ Value* arrayFlatMap(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* arrayAt(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "at");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    // 完整 ToLength（2^53-1）：负索引可达 2^53-2，截断会漏掉近上限索引。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
     Value* err = nullptr;
     double raw = argc > 0 ? toIntegerOrInfinity(ctx, argv[0], err) : 0.0;
     if (err != nullptr) return err;
-    double idx = raw >= 0.0 ? raw : static_cast<double>(len) + raw;
-    if (idx < 0.0 || idx >= static_cast<double>(len)) return ctx->createUndefined();
-    return ctx->getProperty(obj, indexKey(ctx, static_cast<uint32_t>(idx)));
+    double idx = raw >= 0.0 ? raw : len + raw;
+    if (idx < 0.0 || idx >= len) return ctx->createUndefined();
+    return ctx->getProperty(obj, indexKeyFromDouble(ctx, idx));
 }
 
 Value* arrayFill(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "fill");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    // 完整 ToLength（2^53-1）：start/end 可达 2^53-2，截断会漏掉近上限索引。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
     Value* value = argOrUndefined(ctx, argc, argv, 0);
     Value* err = nullptr;
     double rawStart = argc > 1 ? toIntegerOrInfinity(ctx, argv[1], err) : 0.0;
     if (err != nullptr) return err;
-    uint32_t start = clampIndex(rawStart, len);
-    uint32_t end = len;
+    double start = clampIndexDouble(rawStart, len);
+    double end = len;
     if (argc > 2) {
         double rawEnd = toIntegerOrInfinity(ctx, argv[2], err);
         if (err != nullptr) return err;
-        end = clampIndex(rawEnd, len);
+        end = clampIndexDouble(rawEnd, len);
     }
-    for (uint32_t k = start; k < end; ++k) {
-        if (Value* e = createData(ctx, obj, indexKey(ctx, k), value)) return e;
+    for (double k = start; k < end; k += 1.0) {
+        if (Value* e = createData(ctx, obj, indexKeyFromDouble(ctx, k), value)) return e;
     }
     return obj;
 }
@@ -1162,33 +1255,34 @@ Value* arrayFill(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
 Value* arrayCopyWithin(IContext* ctx, Value* self, size_t argc, Value* argv[]) {
     Value* obj = toObject(ctx, self, "copyWithin");
     if (detail::isErrorValue(obj)) return obj;
-    uint32_t len = 0;
-    if (Value* err = lengthOfArrayLike(ctx, obj, len)) return err;
+    // 完整 ToLength（2^53-1）：target/start/end 可达 2^53-2，截断会漏掉近上限索引。
+    double len = 0.0;
+    if (Value* err = lengthOfArrayLikeFull(ctx, obj, len)) return err;
     Value* err = nullptr;
     double rawTarget = argc > 0 ? toIntegerOrInfinity(ctx, argv[0], err) : 0.0;
     if (err != nullptr) return err;
-    uint32_t to = clampIndex(rawTarget, len);
+    double to = clampIndexDouble(rawTarget, len);
     double rawStart = argc > 1 ? toIntegerOrInfinity(ctx, argv[1], err) : 0.0;
     if (err != nullptr) return err;
-    uint32_t from = clampIndex(rawStart, len);
-    uint32_t final = len;
+    double from = clampIndexDouble(rawStart, len);
+    double final = len;
     if (argc > 2) {
         double rawEnd = toIntegerOrInfinity(ctx, argv[2], err);
         if (err != nullptr) return err;
-        final = clampIndex(rawEnd, len);
+        final = clampIndexDouble(rawEnd, len);
     }
     if (final <= from) return obj;
-    uint32_t count = std::min(final - from, len - to);
-    if (count == 0) return obj;
+    double count = std::min(final - from, len - to);
+    if (count == 0.0) return obj;
     int direction = 1;
     if (from < to && to < from + count) {
         direction = -1;
-        from = from + count - 1;
-        to = to + count - 1;
+        from = from + count - 1.0;
+        to = to + count - 1.0;
     }
-    for (uint32_t i = 0; i < count; ++i) {
-        Value* fromKey = indexKey(ctx, from);
-        Value* toKey = indexKey(ctx, to);
+    for (double i = 0.0; i < count; i += 1.0) {
+        Value* fromKey = indexKeyFromDouble(ctx, from);
+        Value* toKey = indexKeyFromDouble(ctx, to);
         bool present = false;
         if (Value* e = hasElement(ctx, obj, fromKey, present)) return e;
         if (present) {

@@ -38,6 +38,8 @@ public:
     explicit Marker(uint64_t epoch) : epoch_(epoch) {}
 
     void visit(Value* v) override {
+        // dead：popScope 已提前析构（data 已释放），等待 sweep 回收内存。
+        if (v == nullptr || v->dead()) return;
         if (v->markEpoch() == epoch_) return;
         v->setMarkEpoch(epoch_);
         IData* data = v->data();
@@ -142,6 +144,10 @@ void MarkSweepGC::collect() {
     for (Value* v : values_) {
         if (v->pinRef() > 0) marker.visit(v);
     }
+    // 3. 注册的根提供者（VM 操作数栈等）——这些引用不在作用域树上。
+    for (IGCRootProvider* provider : rootProviders_) {
+        if (provider != nullptr) provider->visitRoots(&marker);
+    }
 
     // —— 清除阶段 ——
     // 未标记的 Value：析构（data->ref--）+ 检查 data ref 归 0 则 free(data) + free(value)
@@ -149,6 +155,12 @@ void MarkSweepGC::collect() {
     size_t write = 0;
     for (size_t read = 0; read < values_.size(); ++read) {
         Value* v = values_[read];
+        if (v->dead()) {
+            // popScope 已析构并释放 data，这里只归还 Value 本体内存。
+            alloc_->free(v);
+            ++collectedCount_;
+            continue;
+        }
         if (v->markEpoch() == epoch) {
             values_[write++] = v;  // 存活，保留
         } else {
@@ -176,6 +188,32 @@ void MarkSweepGC::setRootScope(Scope* scope) {
     rootScope_ = scope;
 }
 
+void MarkSweepGC::addRootProvider(IGCRootProvider* provider) {
+    if (provider == nullptr) return;
+    rootProviders_.push_back(provider);
+}
+
+void MarkSweepGC::removeRootProvider(IGCRootProvider* provider) {
+    for (auto it = rootProviders_.begin(); it != rootProviders_.end(); ++it) {
+        if (*it == provider) {
+            rootProviders_.erase(it);
+            return;
+        }
+    }
+}
+
+void MarkSweepGC::releaseValue(Value* v) {
+    if (v == nullptr || v->dead()) return;
+    // 先标 dead（析构后不再触碰对象成员），再析构 Value。
+    v->markDead();
+    IData* d = v->data();
+    v->~Value();
+    if (d->ref() == 0) {
+        d->~IData();
+        alloc_->free(d);
+    }
+}
+
 void MarkSweepGC::releaseData(IData* d) {
     // 赋值 replaceMeta 后旧 data 被摘除，collect 遍历不到它。
     // ref 归 0 则析构 + free；仍被其他 Value 共享则无操作。
@@ -194,7 +232,9 @@ size_t MarkSweepGC::collectedCount() const {
 }
 
 void MarkSweepGC::enumerateValues(IGCVisitor* v) const {
-    for (Value* val : values_) v->visit(val);
+    for (Value* val : values_) {
+        if (!val->dead()) v->visit(val);
+    }
 }
 
 void MarkSweepGC::setMemThreshold(double ratio) {

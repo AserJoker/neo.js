@@ -267,6 +267,18 @@ public:
                                 std::string_view name = {}) = 0;
     virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
 
+    // —— 表达式级临时值（ADR-065 §6）——
+    // 与 create* 相同，但**不登记到 current scope**：产物只由调用方持有的
+    // 引用保活（VM 操作数栈 / 对象属性 / 绑定槽位）。用于朝生暮死的表达式
+    // 临时值，避免长寿命作用域（native 内建 execScope、模块顶层）无限累积。
+    // 调用方若在两次可能触发 GC 的操作之间持有返回值，必须用 PinGuard 钉住。
+    virtual Value* createEphemeralUndefined() = 0;
+    virtual Value* createEphemeralNull() = 0;
+    virtual Value* createEphemeralBoolean(bool b) = 0;
+    virtual Value* createEphemeralNumber(double n) = 0;
+    virtual Value* createEphemeralBigInt(const neo::bigint::BigInt& value) = 0;
+    virtual Value* createEphemeralString(std::string_view s) = 0;
+
     // createSymbol: 创建 symbol 原始值（ES2024 §20.4.1.1）。
     // description 可空；每次调用分配独立的 data，故同描述的两个 symbol 不相等
     // （唯一性 = data 身份，不可变类型按 ADR-019 §4 共享 data）。

@@ -677,7 +677,9 @@ void Compiler::compileForStatement(
         code_->store(loopSlot);
     }
 
-    if (lexicalInit != nullptr) code_->pushScope();
+    // 循环作用域：let/const 槽位；var 循环也建一个空作用域，
+    // 使每轮迭代的临时值可随 iterationEnv 一起释放（ADR-065 内存收敛）。
+    code_->pushScope();
 
     if (node.init) {
         if (node.init->kind() != NodeKind::VariableDeclaration) {
@@ -736,20 +738,24 @@ void Compiler::compileForStatement(
     const uint32_t loopValueName =
         evalCompletion_ ? code_->addString(loopSlot) : UINT32_MAX;
 
-    if (lexicalInit != nullptr) {
+    {
         // 逐迭代环境：循环作用域持有 let/const 槽；每次迭代复制到子作用域，
         // 闭包捕获的是该迭代的子作用域，迭代结束后写回循环作用域。
+        // var 循环没有需要复制的槽（names 为空），但同样建立迭代作用域，
+        // 让每轮 test/body/update 的临时值在轮末随作用域销毁而不可达。
         std::vector<std::string> names;
-        for (const NodePtr& declarator : lexicalInit->declarations) {
-            if (!declarator ||
-                declarator->kind() != NodeKind::VariableDeclarator) {
-                continue;
-            }
-            const auto& decl =
-                static_cast<const frontend::VariableDeclarator&>(*declarator);
-            if (decl.id && decl.id->kind() == NodeKind::Identifier) {
-                names.push_back(
-                    static_cast<const frontend::Identifier&>(*decl.id).name);
+        if (lexicalInit != nullptr) {
+            for (const NodePtr& declarator : lexicalInit->declarations) {
+                if (!declarator ||
+                    declarator->kind() != NodeKind::VariableDeclarator) {
+                    continue;
+                }
+                const auto& decl =
+                    static_cast<const frontend::VariableDeclarator&>(*declarator);
+                if (decl.id && decl.id->kind() == NodeKind::Identifier) {
+                    names.push_back(
+                        static_cast<const frontend::Identifier&>(*decl.id).name);
+                }
             }
         }
 
@@ -777,10 +783,14 @@ void Compiler::compileForStatement(
             code_->popLabelIfTop(*it);
         }
         code_->commitIterationEnv(names);
+        // update 也放进逐迭代作用域：否则 i++ 产生的临时值会落在循环作用域，
+        // 每轮累积一个 Value（ADR-065 内存收敛）。
+        code_->pushScope();
         if (node.update) {
             compileExpression(*node.update);
             code_->pop();
         }
+        code_->popScope();
         code_->jmp(loop);
 
         // 正常退出：清理 label、迭代作用域与循环作用域。
@@ -804,43 +814,6 @@ void Compiler::compileForStatement(
             emitMergeCompletion(outerSlot);
         }
         return;
-    }
-
-    std::vector<uint32_t> pushes;
-    for (const std::string& label : effective) {
-        pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
-    }
-
-    uint32_t loop = code_->here();
-    uint32_t toEnd = 0;
-    if (node.test) {
-        compileExpression(*node.test);
-        toEnd = code_->jfalse();
-    }
-    if (evalCompletion_) emitClearCompletion();
-    if (node.body) compileStatement(*node.body);
-    if (evalCompletion_) emitUpdateLoopValue(loopSlot);
-
-    // continue 目标是 update，而不是循环头（否则 update 会被跳过）。
-    uint32_t updatePc = code_->here();
-    for (uint32_t push : pushes) code_->patchU32(push + 6, updatePc);
-    if (node.update) {
-        compileExpression(*node.update);
-        code_->pop();
-    }
-    code_->jmp(loop);
-
-    // 正常退出：pop_label；break 目标在其后。
-    uint32_t exitPc = code_->here();
-    if (toEnd != 0) code_->patchU32(toEnd + 2, exitPc);
-    for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
-        code_->popLabel(*it);
-    }
-    uint32_t endPc = code_->here();
-    for (uint32_t push : pushes) code_->patchU32(push + 10, endPc);
-    if (evalCompletion_) {
-        emitLoopEnd(loopSlot);
-        emitMergeCompletion(outerSlot);
     }
 }
 
@@ -1418,19 +1391,23 @@ void Compiler::compileWhileStatement(
         pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     // continue/回跳目标在 push_label 之后，避免重复压帧。
+    // 每轮迭代包一个作用域（test+body），轮末销毁使临时值不可达。
     uint32_t loop = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, loop);
+    code_->pushScope();
 
     compileExpression(*node.test);
     uint32_t toEnd = code_->jfalse();
     if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
     if (evalCompletion_) emitUpdateLoopValue(loopSlot);
+    code_->popScope();
     code_->jmp(loop);
 
-    // 正常退出先执行 pop_label；break 目标在 pop_label 之后。
+    // 正常退出先弹迭代作用域与 pop_label；break 目标在 pop_label 之后。
     uint32_t exitPc = code_->here();
     code_->patchU32(toEnd + 2, exitPc);
+    code_->popScope();
     for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
         code_->popLabel(*it);
     }
@@ -1468,16 +1445,23 @@ void Compiler::compileDoWhileStatement(
         pushes.push_back(code_->pushLabel(label, 0, 0, loopValueName));
     }
     uint32_t loop = code_->here();
-
+    // body 与 test 各包一个逐迭代作用域：轮末销毁，临时值不可达。
+    code_->pushScope();
     if (evalCompletion_) emitClearCompletion();
     if (node.body) compileStatement(*node.body);
     if (evalCompletion_) emitUpdateLoopValue(loopSlot);
+    code_->popScope();
     uint32_t testPc = code_->here();
     for (uint32_t push : pushes) code_->patchU32(push + 6, testPc);
+    code_->pushScope();
     compileExpression(*node.test);
-    code_->jtrue(loop);
+    uint32_t toExit = code_->jfalse();
+    code_->popScope();
+    code_->jmp(loop);
 
     uint32_t exitPc = code_->here();
+    code_->patchU32(toExit + 2, exitPc);
+    code_->popScope();
     for (auto it = effective.rbegin(); it != effective.rend(); ++it) {
         code_->popLabel(*it);
     }
