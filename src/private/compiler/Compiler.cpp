@@ -157,6 +157,8 @@ void Compiler::compileProgram() {
     // GlobalDeclarationInstantiation：所有声明校验（lex/var/function）先于
     // 任何绑定创建，冲突时脚本不留下部分绑定。
     checkGlobalScriptDeclarations(program_.body);
+    // B.3.3.2：sloppy 脚本的块级函数声明同样受早期错误门控。
+    if (!strict_) computeAnnexBGated(program_.body, {});
     hoistScope(program_.body, true);
     for (const frontend::NodePtr& statement : program_.body) {
         if (statement) compileStatement(*statement);
@@ -173,6 +175,9 @@ void Compiler::compileEvalProgram() {
     // sloppy direct eval：var/函数声明进入调用方变量环境（declare_var 只建
     // 缺失的槽，不覆盖已有绑定）；let/const 进入 eval 自己的词法作用域。
     if (!options_.evalStrict) {
+        // B.3.3.3：先判定哪些块级函数声明因“替换为 var 会产生早期错误”
+        // 而不得提升，再据此建 var 槽与函数对象。
+        computeAnnexBGated(program_.body, {});
         hoistVarSlots(program_.body, true);
         hoistEvalFunctions(program_.body);
     }
@@ -5183,11 +5188,16 @@ void Compiler::compileFunctionBody(const frontend::NodeList& params,
         const auto& block = static_cast<const frontend::BlockStatement&>(body);
         const auto* savedParamNames = paramNames_;
         paramNames_ = &definedParams;
+        // B.3.3.1：函数体内块级函数声明的早期错误门控；形参同名也跳过。
+        const auto savedGated = gatedAnnexBFunctions_;
+        gatedAnnexBFunctions_.clear();
+        if (!strict_) computeAnnexBGated(block.body, definedParams);
         hoistScope(block.body, true);
         paramNames_ = savedParamNames;
         for (const frontend::NodePtr& statement : block.body) {
             if (statement) compileStatement(*statement);
         }
+        gatedAnnexBFunctions_ = savedGated;
     } else {
         error(body, "compiler: unsupported function body");
     }
@@ -5271,6 +5281,11 @@ void Compiler::hoistSlots(const frontend::NodeList& body, bool varScope) {
         } else if (varNames.count(name) != 0) {
             // 同名 var 已建槽：函数声明复用该绑定，不再重复 define
             // （§10.2.1.3 中 var 与函数声明同名合法）。
+        } else if (!varScope && !strict_) {
+            // Annex B B.3.3.4/B.3.3.5：sloppy 块级（含 switch CaseBlock）
+            // 重复函数声明共享同一绑定，后声明覆盖前声明。
+            code_->pushUndefined();
+            code_->defineIfMissing(name);
         } else {
             code_->pushUndefined();
             code_->define(name, true, true, true);
@@ -5385,9 +5400,14 @@ void Compiler::hoistFunctions(const frontend::NodeList& body, bool annexB) {
         code_->store(name);
         // Annex B.3.3：块级函数在块入口同步写入外层 var 绑定。
         // 仅适用于普通 FunctionDeclaration（生成器/async 不在 Annex B 范围）。
-        if (annexB && !strict_ && !function.generator && !function.async) {
+        if (annexB && !strict_ && !function.generator && !function.async &&
+            gatedAnnexBFunctions_.count(declaration) == 0) {
             code_->load(name);
-            code_->storeVar(name);
+            if (globalCode_) {
+                code_->storeGlobalVar(name);
+            } else {
+                code_->storeVar(name);
+            }
         }
     }
 }
@@ -5409,9 +5429,15 @@ void Compiler::compileAnnexBFunction(
                           name, function.generator, function.async);
     code_->store(name);
     if (blockScoped) {
-        // 同步写入外层变量环境（Annex B.3.3）。
-        code_->load(name);
-        code_->storeVar(name);
+        // 同步写入外层变量环境（Annex B.3.3）；被 B.3.3.3 门控的声明不写回。
+        if (gatedAnnexBFunctions_.count(&function) == 0) {
+            code_->load(name);
+            if (globalCode_) {
+                code_->storeGlobalVar(name);
+            } else {
+                code_->storeVar(name);
+            }
+        }
         code_->popScope();
     }
 }
@@ -5557,6 +5583,237 @@ void Compiler::hoistEvalFunctions(const frontend::NodeList& body) {
     }
 }
 
+// —— B.3.3.3 早期错误门控 ——
+//
+// 判定“把块级 FunctionDeclaration f 原地替换成 var f 是否会给 eval body
+// 带来 Early Error”。冲突来源是各层词法作用域里的同名声明：块/switch 的
+// let/const/class/块级函数、for 头部 let/const、catch 解构参数、eval 顶层
+// let/const/class。简单标识符 catch 参数按 B.3.5 例外放行。函数边界不再下探。
+
+namespace {
+
+// 把 let/const/class 声明的名字加入 names（var 与函数声明不算词法名）。
+void addEvalLexicalNames(const frontend::Node& node,
+                         std::unordered_set<std::string>& names) {
+    if (node.kind() == NodeKind::VariableDeclaration) {
+        const auto& declaration =
+            static_cast<const frontend::VariableDeclaration&>(node);
+        if (declaration.variableKind == frontend::VariableKind::Var) return;
+        for (const frontend::NodePtr& declarator : declaration.declarations) {
+            if (!declarator ||
+                declarator->kind() != NodeKind::VariableDeclarator) {
+                continue;
+            }
+            const auto& entry =
+                static_cast<const frontend::VariableDeclarator&>(*declarator);
+            if (!entry.id) continue;
+            std::vector<std::string> bound;
+            collectPatternNames(*entry.id, bound);
+            names.insert(bound.begin(), bound.end());
+        }
+        return;
+    }
+    if (node.kind() == NodeKind::ClassDeclaration) {
+        const auto& klass =
+            static_cast<const frontend::ClassDeclaration&>(node);
+        if (klass.id && klass.id->kind() == NodeKind::Identifier) {
+            names.insert(
+                static_cast<const frontend::Identifier&>(*klass.id).name);
+        }
+    }
+}
+
+}  // namespace
+
+void Compiler::gateEvalFunction(
+    const frontend::Node& declaration,
+    const std::unordered_set<std::string>& conflict) {
+    const auto& function =
+        static_cast<const frontend::FunctionDeclaration&>(declaration);
+    if (function.generator || function.async) return;
+    if (!function.id || function.id->kind() != NodeKind::Identifier) return;
+    const std::string& name =
+        static_cast<const frontend::Identifier&>(*function.id).name;
+    if (conflict.count(name) != 0) {
+        gatedAnnexBFunctions_.insert(&declaration);
+    }
+}
+
+void Compiler::computeAnnexBGated(
+    const frontend::NodeList& body,
+    const std::unordered_set<std::string>& extraConflict) {
+    gatedAnnexBFunctions_.clear();
+    walkEvalStatements(body, extraConflict, false);
+}
+
+void Compiler::walkEvalStatements(
+    const frontend::NodeList& body,
+    const std::unordered_set<std::string>& outer, bool blockLevel) {
+    std::unordered_set<std::string> lexical;   // let/const/class
+    std::unordered_set<std::string> functions;  // 块级函数声明
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement) continue;
+        if (statement->kind() == NodeKind::FunctionDeclaration) {
+            const auto& function =
+                static_cast<const frontend::FunctionDeclaration&>(*statement);
+            if (!function.generator && !function.async && function.id &&
+                function.id->kind() == NodeKind::Identifier) {
+                functions.insert(
+                    static_cast<const frontend::Identifier&>(*function.id).name);
+            }
+            continue;
+        }
+        addEvalLexicalNames(*statement, lexical);
+    }
+
+    // 直接块级函数候选：与祖先作用域或本层 let/const/class 冲突即门控。
+    std::unordered_set<std::string> conflict = outer;
+    conflict.insert(lexical.begin(), lexical.end());
+    // 嵌套作用域可见的名字：祖先 + 本层词法名 +（块级时）本层函数名。
+    std::unordered_set<std::string> childOuter = outer;
+    childOuter.insert(lexical.begin(), lexical.end());
+    if (blockLevel) childOuter.insert(functions.begin(), functions.end());
+
+    for (const frontend::NodePtr& statement : body) {
+        if (!statement) continue;
+        if (statement->kind() == NodeKind::FunctionDeclaration) {
+            if (blockLevel) gateEvalFunction(*statement, conflict);
+            continue;  // 不进入函数体
+        }
+        walkEvalStatement(statement, childOuter);
+    }
+}
+
+void Compiler::walkEvalStatement(
+    const frontend::NodePtr& statement,
+    const std::unordered_set<std::string>& outer) {
+    if (!statement) return;
+    // 循环/if/标签体上的函数声明按合成块处理：var 落在当前作用域。
+    auto handleBody = [&](const frontend::NodePtr& body,
+                          const std::unordered_set<std::string>& scope) {
+        if (!body) return;
+        if (body->kind() == NodeKind::FunctionDeclaration) {
+            gateEvalFunction(*body, scope);
+        } else {
+            walkEvalStatement(body, scope);
+        }
+    };
+
+    switch (statement->kind()) {
+        case NodeKind::BlockStatement: {
+            const auto& block =
+                static_cast<const frontend::BlockStatement&>(*statement);
+            walkEvalStatements(block.body, outer, true);
+            return;
+        }
+        case NodeKind::IfStatement: {
+            const auto& node =
+                static_cast<const frontend::IfStatement&>(*statement);
+            handleBody(node.consequent, outer);
+            handleBody(node.alternate, outer);
+            return;
+        }
+        case NodeKind::ForStatement: {
+            const auto& node =
+                static_cast<const frontend::ForStatement&>(*statement);
+            std::unordered_set<std::string> head = outer;
+            if (node.init) addEvalLexicalNames(*node.init, head);
+            handleBody(node.body, head);
+            return;
+        }
+        case NodeKind::ForInStatement: {
+            const auto& node =
+                static_cast<const frontend::ForInStatement&>(*statement);
+            std::unordered_set<std::string> head = outer;
+            if (node.left) addEvalLexicalNames(*node.left, head);
+            handleBody(node.body, head);
+            return;
+        }
+        case NodeKind::ForOfStatement: {
+            const auto& node =
+                static_cast<const frontend::ForOfStatement&>(*statement);
+            std::unordered_set<std::string> head = outer;
+            if (node.left) addEvalLexicalNames(*node.left, head);
+            handleBody(node.body, head);
+            return;
+        }
+        case NodeKind::WhileStatement: {
+            const auto& node =
+                static_cast<const frontend::WhileStatement&>(*statement);
+            handleBody(node.body, outer);
+            return;
+        }
+        case NodeKind::DoWhileStatement: {
+            const auto& node =
+                static_cast<const frontend::DoWhileStatement&>(*statement);
+            handleBody(node.body, outer);
+            return;
+        }
+        case NodeKind::WithStatement: {
+            const auto& node =
+                static_cast<const frontend::WithStatement&>(*statement);
+            handleBody(node.body, outer);
+            return;
+        }
+        case NodeKind::LabeledStatement: {
+            const auto& node =
+                static_cast<const frontend::LabeledStatement&>(*statement);
+            handleBody(node.body, outer);
+            return;
+        }
+        case NodeKind::SwitchStatement: {
+            const auto& node =
+                static_cast<const frontend::SwitchStatement&>(*statement);
+            // CaseBlock 的词法声明（跨 case 共享一个作用域）。
+            std::unordered_set<std::string> caseLexical;
+            for (const frontend::NodePtr& caseNode : node.cases) {
+                if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) {
+                    continue;
+                }
+                const auto& switchCase =
+                    static_cast<const frontend::SwitchCase&>(*caseNode);
+                for (const frontend::NodePtr& child : switchCase.consequent) {
+                    if (child) addEvalLexicalNames(*child, caseLexical);
+                }
+            }
+            std::unordered_set<std::string> caseOuter = outer;
+            caseOuter.insert(caseLexical.begin(), caseLexical.end());
+            for (const frontend::NodePtr& caseNode : node.cases) {
+                if (!caseNode || caseNode->kind() != NodeKind::SwitchCase) {
+                    continue;
+                }
+                const auto& switchCase =
+                    static_cast<const frontend::SwitchCase&>(*caseNode);
+                walkEvalStatements(switchCase.consequent, caseOuter, true);
+            }
+            return;
+        }
+        case NodeKind::TryStatement: {
+            const auto& node =
+                static_cast<const frontend::TryStatement&>(*statement);
+            if (node.block) walkEvalStatement(node.block, outer);
+            if (node.handler &&
+                node.handler->kind() == NodeKind::CatchClause) {
+                const auto& handler =
+                    static_cast<const frontend::CatchClause&>(*node.handler);
+                std::unordered_set<std::string> catchOuter = outer;
+                // B.3.5：简单标识符 catch 参数允许同名 var；解构模式冲突。
+                if (handler.param &&
+                    handler.param->kind() != NodeKind::Identifier) {
+                    std::vector<std::string> bound;
+                    collectPatternNames(*handler.param, bound);
+                    catchOuter.insert(bound.begin(), bound.end());
+                }
+                if (handler.body) walkEvalStatement(handler.body, catchOuter);
+            }
+            if (node.finalizer) walkEvalStatement(node.finalizer, outer);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
 void Compiler::collectVarNames(const frontend::Node& statement,
                                std::vector<std::string>& names) {
     switch (statement.kind()) {
@@ -5685,6 +5942,8 @@ void Compiler::collectAnnexBFunctionNames(const frontend::Node& statement,
     switch (statement.kind()) {
         case NodeKind::FunctionDeclaration: {
             if (topLevel) return;
+            // B.3.3.3 门控：替换为 var 会产生早期错误的声明不得建 var 绑定。
+            if (gatedAnnexBFunctions_.count(&statement) != 0) return;
             const auto& function =
                 static_cast<const frontend::FunctionDeclaration&>(statement);
             // Annex B.3.3 只覆盖普通 FunctionDeclaration。

@@ -159,6 +159,67 @@ TEST(AnnexBFunctionTest, SloppyEvalBlockFunctionLeaksToCaller) {
     EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 4.0);
 }
 
+TEST(AnnexBFunctionTest, SloppyEvalBlockFunctionGatedByLexicalConflict) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  eval('{ let g = 1; { function g() {} } }');\n"
+                          "  return typeof g;\n"
+                          "}\n"
+                          "var out = f();\n"));
+    // 替换为 var 会与外层 let g 冲突 → 不提升，g 完全不存在。
+    EXPECT_EQ(stringOf(lookupOut(f)), "undefined");
+}
+
+TEST(AnnexBFunctionTest, SloppyEvalBlockFunctionGatedByForHead) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  eval('for (let g;;) { { function g() {} } break; }');\n"
+                          "  return typeof g;\n"
+                          "}\n"
+                          "var out = f();\n"));
+    EXPECT_EQ(stringOf(lookupOut(f)), "undefined");
+}
+
+TEST(AnnexBFunctionTest, SloppyEvalBlockFunctionAllowedBySimpleCatchParam) {
+    Fixture f;
+    f.ctx->global()->clearFlag("strict");
+    ASSERT_TRUE(runScript(f,
+                          "function f() {\n"
+                          "  eval('try { throw 1; } catch (g) { { function g() { return 6; } } }');\n"
+                          "  return g();\n"
+                          "}\n"
+                          "var out = f();\n"));
+    // B.3.5：简单标识符 catch 参数允许同名 var → 正常提升。
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 6.0);
+}
+
+TEST(AnnexBFunctionTest, SloppyBlockDuplicateFunctionDeclarationsAllowed) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "{ function a() { return 1; }\n"
+                          "  function a() { return 2; } }\n"
+                          "var out = a();\n"));
+    // B.3.3.4：sloppy 块内重复函数声明共享绑定，后声明覆盖前声明。
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
+TEST(AnnexBFunctionTest, SloppySwitchDuplicateFunctionDeclarationsAllowed) {
+    Fixture f;
+    ASSERT_TRUE(runScript(f,
+                          "let x = 1;\n"
+                          "switch (x) {\n"
+                          "  case 1: function a() { return 1; }\n"
+                          "  case 2: function a() { return 2; }\n"
+                          "}\n"
+                          "var out = a();\n"));
+    // B.3.3.5：sloppy CaseBlock 内重复函数声明共享绑定。
+    EXPECT_DOUBLE_EQ(numberOf(lookupOut(f)), 2.0);
+}
+
 TEST(AnnexBFunctionTest, StrictEvalBlockFunctionDoesNotLeak) {
     Fixture f;
     ASSERT_TRUE(runScript(f,

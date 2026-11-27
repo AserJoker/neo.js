@@ -732,6 +732,7 @@ public:
                   bool varBinding = false) override;
     Value* store(std::string_view name, Value* source) override;
     Value* storeVar(std::string_view name, Value* source) override;
+    Value* storeGlobalVar(std::string_view name, Value* source) override;
     Value* initialize(std::string_view name, Value* source) override;
     Value* load(std::string_view name) override;
     Value* loadSoft(std::string_view name) override;

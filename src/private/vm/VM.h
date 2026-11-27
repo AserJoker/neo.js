@@ -179,6 +179,7 @@ private:
     neo::core::Value* opSetFunctionSloppy();
     neo::core::Value* opStore();
     neo::core::Value* opStoreVar();
+    neo::core::Value* opStoreGlobalVar();
     neo::core::Value* opResolveWithRef();
     neo::core::Value* opStoreWithRef();
     neo::core::Value* opLoadWithRef();

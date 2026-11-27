@@ -379,97 +379,6 @@ private:
     int functionDepth_ = 0;
 };
 
-// SwitchStatement : switch ( Expression ) CaseBlock
-//   - 同一 CaseBlock 内 LexicallyDeclaredNames 不得有重复项（§14.12.1）。
-//   - 至多一个 DefaultClause（Parser 已保证，这里只做词法名检查）。
-class SwitchCaseBlockVisitor final : public IVisitor {
-public:
-    void enter(Walker&, SemaContext& context, frontend::Node& node) override {
-        if (node.kind() != frontend::NodeKind::SwitchStatement) return;
-        auto& statement = static_cast<frontend::SwitchStatement&>(node);
-
-        std::map<std::string, frontend::SourceRange> seen;
-        for (const frontend::NodePtr& caseNode : statement.cases) {
-            if (!caseNode ||
-                caseNode->kind() != frontend::NodeKind::SwitchCase) {
-                continue;
-            }
-            auto& clause = static_cast<frontend::SwitchCase&>(*caseNode);
-            for (const frontend::NodePtr& statementNode : clause.consequent) {
-                collect(statementNode.get(), seen, context);
-            }
-        }
-    }
-
-private:
-    static void declare(const std::string& name, frontend::SourceRange range,
-                        std::map<std::string, frontend::SourceRange>& seen,
-                        SemaContext& context) {
-        if (!seen.emplace(name, range).second) {
-            context.error(range.start,
-                          "Duplicate lexical declaration '" + name +
-                              "' in switch statement");
-        }
-    }
-
-    static void collect(frontend::Node* statement,
-                        std::map<std::string, frontend::SourceRange>& seen,
-                        SemaContext& context) {
-        using frontend::NodeKind;
-        if (statement == nullptr) return;
-
-        switch (statement->kind()) {
-            case NodeKind::VariableDeclaration: {
-                auto& declaration =
-                    static_cast<frontend::VariableDeclaration&>(*statement);
-                if (declaration.variableKind == frontend::VariableKind::Var) {
-                    return;
-                }
-                for (frontend::NodePtr& declarator :
-                     declaration.declarations) {
-                    if (!declarator ||
-                        declarator->kind() != NodeKind::VariableDeclarator) {
-                        continue;
-                    }
-                    auto& entry =
-                        static_cast<frontend::VariableDeclarator&>(*declarator);
-                    std::vector<BindingName> names;
-                    bool nonSimple = false;
-                    collectBindingNames(entry.id.get(), names, nonSimple);
-                    for (const BindingName& name : names) {
-                        declare(name.name, name.range, seen, context);
-                    }
-                }
-                return;
-            }
-            case NodeKind::FunctionDeclaration: {
-                auto& declaration =
-                    static_cast<frontend::FunctionDeclaration&>(*statement);
-                if (declaration.id &&
-                    declaration.id->kind() == NodeKind::Identifier) {
-                    auto& identifier = static_cast<frontend::Identifier&>(
-                        *declaration.id);
-                    declare(identifier.name, identifier.range(), seen, context);
-                }
-                return;
-            }
-            case NodeKind::ClassDeclaration: {
-                auto& declaration =
-                    static_cast<frontend::ClassDeclaration&>(*statement);
-                if (declaration.id &&
-                    declaration.id->kind() == NodeKind::Identifier) {
-                    auto& identifier = static_cast<frontend::Identifier&>(
-                        *declaration.id);
-                    declare(identifier.name, identifier.range(), seen, context);
-                }
-                return;
-            }
-            default:
-                return;
-        }
-    }
-};
-
 }  // namespace
 
 void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
@@ -484,7 +393,6 @@ void runEarlyErrorPass(frontend::Node& program, SemaContext& context,
     walker.addAll(std::make_unique<LexicalBindingVisitor>());
     walker.addAll(std::make_unique<StaticBlockAwaitVisitor>());
     walker.addAll(std::make_unique<RegExpLiteralVisitor>());
-    walker.addAll(std::make_unique<SwitchCaseBlockVisitor>());
     walker.walk(program, context);
 }
 

@@ -313,6 +313,11 @@ struct Code {
         emitU32(addString(std::string(name)));
         return pc;
     }
+    uint32_t storeGlobalVar(std::string_view name) {
+        uint32_t pc = emitOp(OpCode::StoreGlobalVar);
+        emitU32(addString(std::string(name)));
+        return pc;
+    }
 
     uint32_t getProp() { return emitOp(OpCode::GetProp); }
     uint32_t setProp() { return emitOp(OpCode::SetProp); }

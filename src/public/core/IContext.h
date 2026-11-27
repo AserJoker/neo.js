@@ -1308,6 +1308,10 @@ public:
     // 块级函数同步到外层 var 绑定。
     virtual Value* storeVar(std::string_view name, Value* source) = 0;
 
+    // storeGlobalVar: 写入脚本全局变量环境（global object 属性）。
+    // 仅更新已存在的属性并保留其特性；不存在时不做任何事（Annex B 门控）。
+    virtual Value* storeGlobalVar(std::string_view name, Value* source) = 0;
+
     // initialize: 初始化一个已提升但尚未初始化的绑定（TDZ 解除）。
     // 允许写 <uninitialized> 槽位，不受 const 的 mutableBinding=false 限制；
     // 已初始化或绑定不存在返回 Exception。

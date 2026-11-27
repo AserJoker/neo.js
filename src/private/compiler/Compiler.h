@@ -278,6 +278,19 @@ private:
     void checkGlobalScriptDeclarations(const frontend::NodeList& body);
     void checkEvalGlobalFunctions(const frontend::NodeList& body);
     void hoistEvalFunctions(const frontend::NodeList& body);
+    // B.3.3 门控：标记“替换为 var 会产生早期错误”的块级函数声明节点，
+    // 这些声明不建立 var 绑定、也不写回 var 环境。extraConflict 为额外
+    // 冲突名（函数代码的形参名，B.3.3.1）。
+    void computeAnnexBGated(
+        const frontend::NodeList& body,
+        const std::unordered_set<std::string>& extraConflict);
+    void walkEvalStatements(const frontend::NodeList& body,
+                            const std::unordered_set<std::string>& outer,
+                            bool blockLevel);
+    void walkEvalStatement(const frontend::NodePtr& statement,
+                           const std::unordered_set<std::string>& outer);
+    void gateEvalFunction(const frontend::Node& declaration,
+                          const std::unordered_set<std::string>& conflict);
     void collectVarNames(const frontend::Node& statement,
                          std::vector<std::string>& names);
 
@@ -339,6 +352,9 @@ private:
     const std::unordered_set<std::string>* paramNames_ = nullptr;
     // 当前代码是否严格模式（决定 Annex B 块级函数是否额外建 var 绑定）。
     bool strict_ = false;
+    // B.3.3.3：被早期错误门控跳过的块级函数声明节点（按节点而非名字，
+    // 因为同名函数可能一个门控、一个不门控）。
+    std::unordered_set<const frontend::Node*> gatedAnnexBFunctions_;
     // 当前代码是否是脚本全局代码：var/函数声明落到 global object 属性，
     // let/const 需检查不可配置全局属性冲突（§9.1.1.4）。
     bool globalCode_ = false;

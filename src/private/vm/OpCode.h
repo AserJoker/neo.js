@@ -455,11 +455,14 @@ enum class OpCode : uint16_t {
     // u32 argc：DirectEvalMethod 的尾位置版本。内建 %eval% 仍按直接 eval
     // 执行；被 with 对象绑定（普通方法）时按尾调用处理。
     DirectEvalMethodTail,
+    // u32 名字：[value] → []：脚本全局变量环境写入（SetMutableBinding，仅
+    // 更新已存在的 global object 属性）。用于 Annex B.3.3 块级函数同步。
+    StoreGlobalVar,
 };
 
 // 指令总数（分派表大小）。
 inline constexpr size_t kOpCodeCount =
-    static_cast<size_t>(OpCode::DirectEvalMethodTail) + 1;
+    static_cast<size_t>(OpCode::StoreGlobalVar) + 1;
 
 // Define 的 flags 位。未置位即 false：
 //   mutable    —— 绑定可被 store 改写（const 为 false）

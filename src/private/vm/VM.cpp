@@ -106,6 +106,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::DirectEvalMethod:    return "direct_eval_method";
         case OpCode::DirectEvalMethodSpread: return "direct_eval_method_spread";
         case OpCode::DirectEvalMethodTail: return "direct_eval_method_tail";
+        case OpCode::StoreGlobalVar: return "store_global_var";
         case OpCode::StoreWithRefKeep: return "store_with_ref_keep";
         case OpCode::GetProp:       return "get_prop";
         case OpCode::SetProp:       return "set_prop";
@@ -466,6 +467,7 @@ const VM::Handler* VM::handlers() {
         &VM::opDirectEvalMethod,
         &VM::opDirectEvalMethodSpread,
         &VM::opDirectEvalMethodTail,
+        &VM::opStoreGlobalVar,
     };
     return table;
 }
@@ -1367,6 +1369,26 @@ Value* VM::opStoreVar() {
     if (stack_.empty()) return badBytecode("store_var: operand stack underflow");
 
     Value* result = ctx_->storeVar(*name, pop());
+    if (detail::isErrorValue(result)) return fail(result);
+    return nullptr;
+}
+
+Value* VM::opStoreGlobalVar() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("store_global_var: truncated operand");
+    }
+    uint32_t nameIndex = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* name = stringOperand(nameIndex);
+    if (name == nullptr) {
+        return badBytecode("store_global_var: name index out of range");
+    }
+    if (stack_.empty()) {
+        return badBytecode("store_global_var: operand stack underflow");
+    }
+
+    Value* result = ctx_->storeGlobalVar(*name, pop());
     if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }

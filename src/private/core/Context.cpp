@@ -4049,6 +4049,19 @@ Value* Context::store(std::string_view name, Value* source) {
     return setProperty(globalObject_, name, source);
 }
 
+Value* Context::storeGlobalVar(std::string_view name, Value* source) {
+    if (isErrorValue(source)) return source;
+    // 全局环境记录是对象记录：SetMutableBinding 即对已有全局属性赋值，
+    // 保留其属性特性（如既有属性的 non-enumerable）。属性不存在时不做任何
+    // 事——Annex B 门控跳过的声明本就不该创建全局绑定。
+    Value* key = createString(name);
+    if (key == oomValue_) return key;
+    Value* has = hasProperty(globalObject_, key);
+    if (isErrorValue(has)) return has;
+    if (!detail::toBoolean(has)) return source;
+    return setProperty(globalObject_, key, source);
+}
+
 Value* Context::storeVar(std::string_view name, Value* source) {
     if (isErrorValue(source)) return source;
     // 变量环境：eval 用调用方变量环境；普通函数用函数体 "var-scope" 作用域
@@ -4064,6 +4077,11 @@ Value* Context::storeVar(std::string_view name, Value* source) {
     if (target == nullptr) {
         target = currentFunctionEnv_ != nullptr ? currentFunctionEnv_ : root_;
     }
+    // 全局环境记录是对象记录：var 绑定落在 global object 属性上，
+    // Scope::lookupBinding 看不到。SetMutableBinding 即对属性赋值；只写
+    // 已存在的属性（由 declareVar/CreateGlobalVarBinding 建立），避免为被
+    // Annex B 门控跳过的声明意外创建全局属性。
+    if (target == global_) return storeGlobalVar(name, source);
     Scope::Binding* binding =
         target != nullptr ? target->lookupBinding(name) : nullptr;
     // 变量环境没有该绑定（动态路径）：回退普通 store。
