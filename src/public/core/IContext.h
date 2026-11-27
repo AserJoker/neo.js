@@ -37,6 +37,7 @@
 #include "core/SharedBuffer.h"
 #include "core/SourceText.h"
 #include "core/Task.h"
+#include "core/Value.h"
 #include "core/WellKnownSymbol.h"
 #include "infra/IAllocator.h"
 #include "infra/Console.h"
@@ -601,6 +602,10 @@ public:
     // 返回 Value*：正常对象，或 OOM 哨兵（ADR-031）。
     virtual Value* createObject(std::string_view bindName = {}) = 0;
 
+    // createEphemeralObject: 不登记当前作用域的临时对象（对象字面量用）。
+    // 可达性只靠 VM 栈 pin / data 引用；调用方须保证跨分配期间自行 pin。
+    virtual Value* createEphemeralObject() = 0;
+
     // createProxy: 创建 Proxy exotic 对象（ES2024 §10.5.1 ProxyCreate）。
     // target 必须是对象；handler 必须是对象（可为 Proxy）。失败返回 Exception/OOM。
     // 返回的代理可调用/可构造性继承自 target。
@@ -611,6 +616,10 @@ public:
     // 原型自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间原型未就绪时跳过。
     // 返回 Value*：正常数组，或 OOM 哨兵（ADR-031）。
     virtual Value* createArray(std::string_view bindName = {}) = 0;
+
+    // createEphemeralArray: 不登记当前作用域的临时数组（数组字面量用）。
+    // 可达性只靠 VM 栈 pin / data 引用；调用方须保证跨分配期间自行 pin。
+    virtual Value* createEphemeralArray() = 0;
 
     // createArgumentsObject: 为当前 script 函数调用创建 arguments 对象
     // （ES2024 §10.4.4）。使用 currentFunctionEnv() 作为映射/保活作用域；
@@ -1013,30 +1022,47 @@ public:
                                          bool hasSetter, bool enumerable,
                                          bool configurable) = 0;
 
-    // 字符串键便捷重载：内部 createString(key) 后走上面的 Value* 版本。
-    // 用于 C++ 侧固定键（如 "prototype"/"constructor"/"name"）。
+    // 字符串键便捷重载：内部创建临时键 Value 后走上面的 Value* 版本。
+    // 键只在该调用内使用（属性操作会复制键内容），故用共享 data 的 ephemeral
+    // 键 + 调用期 PinGuard，避免每次访问都登记一个 tracked 键值。
     Value* getProperty(Value* obj, std::string_view key) {
-        return getProperty(obj, createString(key));
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return getProperty(obj, k);
     }
     Value* setProperty(Value* obj, std::string_view key, Value* value) {
-        return setProperty(obj, createString(key), value);
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return setProperty(obj, k, value);
     }
     Value* hasProperty(Value* obj, std::string_view key) {
-        return hasProperty(obj, createString(key));
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return hasProperty(obj, k);
     }
     Value* deleteProperty(Value* obj, std::string_view key) {
-        return deleteProperty(obj, createString(key));
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return deleteProperty(obj, k);
     }
     Value* defineProperty(Value* obj, std::string_view key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) {
-        return defineProperty(obj, createString(key), value, writable, enumerable,
-                              configurable);
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return defineProperty(obj, k, value, writable, enumerable, configurable);
     }
     Value* defineAccessor(Value* obj, std::string_view key, Value* getter, Value* setter,
                           bool enumerable = false, bool configurable = true) {
-        return defineAccessor(obj, createString(key), getter, setter, enumerable,
-                              configurable);
+        Value* k = createLiteralString(key);
+        if (k == oomValue()) return k;
+        PinGuard pin(k);
+        return defineAccessor(obj, k, getter, setter, enumerable, configurable);
     }
 
     // 原型链代理（ADR-018 §1）：

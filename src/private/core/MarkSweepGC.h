@@ -62,6 +62,10 @@ private:
     infra::IAllocator* alloc_;  // 注入，不持有所有权
     Scope* rootScope_ = nullptr;  // 根作用域树（Context 的 global，借用，不拥有）
     std::vector<Value*> values_;  // GC 持有所有 Value 的跟踪表
+    // 空闲 Value 槽复用链表（避免每轮回收/分配都 malloc/free 抖动）。
+    // 回收的 Value 内存不立即还给 allocator，而是留在本表供下次 createValue
+    // 复用；~MarkSweepGC 时统一归还。内存占用上界 ≈ 峰值同时在用的 Value 数。
+    std::vector<Value*> freeValues_;
     // GC 图之外的活跃根（VM 操作数栈等），非拥有。
     std::vector<IGCRootProvider*> rootProviders_;
     size_t collectedCount_ = 0;  // 累计回收数

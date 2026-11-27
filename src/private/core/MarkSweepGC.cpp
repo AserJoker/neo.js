@@ -124,6 +124,9 @@ MarkSweepGC::~MarkSweepGC() {
                      values_.size());
         std::abort();
     }
+    // 2. 归还复用的 Value 槽内存（此时不再有 Value 存活）。
+    for (Value* v : freeValues_) alloc_->free(v);
+    freeValues_.clear();
 }
 
 void* MarkSweepGC::rawAlloc(size_t bytes) {
@@ -156,10 +159,17 @@ Value* MarkSweepGC::createValue(IType* type, IData* data) {
     if (data != nullptr) data->refInc();
     maybeCollect();
 
-    void* p = alloc_->alloc(sizeof(Value));
-    if (p == nullptr) {  // OOM
-        if (data != nullptr) data->refDec();
-        return nullptr;
+    void* p;
+    if (!freeValues_.empty()) {
+        // 复用上一轮回收的槽位：省一次 malloc。
+        p = freeValues_.back();
+        freeValues_.pop_back();
+    } else {
+        p = alloc_->alloc(sizeof(Value));
+        if (p == nullptr) {  // OOM
+            if (data != nullptr) data->refDec();
+            return nullptr;
+        }
     }
     Value* v = new (p) Value(type, data);  // placement new，Value 构造内 data->ref++
     if (data != nullptr) data->refDec();   // 归还临时引用
@@ -293,8 +303,8 @@ void MarkSweepGC::collect() {
     for (size_t read = 0; read < values_.size(); ++read) {
         Value* v = values_[read];
         if (v->dead()) {
-            // popScope 已析构并释放 data，这里只归还 Value 本体内存。
-            alloc_->free(v);
+            // popScope 已析构并释放 data，这里只回收 Value 本体内存（留待复用）。
+            freeValues_.push_back(v);
             ++collectedCount_;
             continue;
         }
@@ -304,7 +314,7 @@ void MarkSweepGC::collect() {
             // 回收：先记 data 指针，析构 Value（data->ref--），再检查 data ref
             IData* d = v->data();
             v->~Value();  // 显式析构（placement new 的对象需显式析构）
-            alloc_->free(v);
+            freeValues_.push_back(v);  // 槽位留待复用，不还给 allocator
             // data ref 归 0 则释放 data（多 Value 共享 data 时仅最后一次回收才 free）
             if (d->ref() == 0) {
                 d->~IData();  // 显式析构（data 含 std::string 等需析构的成员，placement new 须显式析构）

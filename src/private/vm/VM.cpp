@@ -1722,7 +1722,8 @@ Value* VM::opSetProp() {
 }
 
 Value* VM::opNewObject() {
-    Value* object = ctx_->createObject();
+    // 对象字面量是临时值：不登记作用域，创建后立即压栈（压栈即 pin）。
+    Value* object = ctx_->createEphemeralObject();
     if (object == ctx_->oomValue()) return object;
     push(object);
     return nullptr;
@@ -1736,8 +1737,10 @@ Value* VM::opNewArray() {
     uint32_t length = readU32(bytes.data() + pc_);
     pc_ += 4;
 
-    Value* array = ctx_->createArray();
+    Value* array = ctx_->createEphemeralArray();
     if (array == ctx_->oomValue()) return array;
+    // 临时数组尚未压栈，defineProperty 可能触发 GC，先钉住。
+    neo::core::PinGuard pinArray(array);
     if (length != 0) {
         Value* result = ctx_->defineProperty(
             array, "length", ctx_->createNumber(static_cast<double>(length)),

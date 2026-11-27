@@ -702,16 +702,12 @@ Value* Context::createIndexString(uint32_t index) {
             gc_->releaseData(data);
             return oomValue_;
         }
-        v->pinRefInc();  // 永久根：仅其不可变 data 被复用
+        v->pinRefInc();  // 永久根
         slot = v;
     }
-    // 新建 Value 共享缓存的 data（Value 构造已 ref++）。索引键只作属性键读取，
-    // 从不作为可变绑定槽位，故不能直接复用缓存 Value，但 data 可安全共享。
-    Value* v = createValueRaw(getStringType(), slot->data());
-    if (v == nullptr) return oomValue_;
-    ++creationStats_.tracked;
-    trackValue(current(), v, {});
-    return v;
+    // 索引键只作属性键读取（属性存储复制键内容，不保留 Value），与
+    // createKeyString 同理可直接复用 pin 住的只读共享 Value，无需每次新建。
+    return slot;
 }
 
 Value* Context::internLiteralString(std::string_view s) {
@@ -2368,6 +2364,15 @@ Value* Context::createObject(std::string_view bindName) {
     return obj;
 }
 
+Value* Context::createEphemeralObject() {
+    // 对象字面量：不登记作用域，可达性由 VM 栈 pin 决定。
+    Value* obj = createEphemeral(getObjectType(), gc_->allocData<ObjectData>());
+    if (obj != oomValue_ && objectPrototype_ != nullptr) {
+        static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
+    }
+    return obj;
+}
+
 Value* Context::createProxy(Value* target, Value* handler, std::string_view bindName) {
     // ProxyCreate（ES2024 §10.5.1）：target/handler 都必须是对象。
     if (target == nullptr || !detail::isObjectKind(target->type()->kind())) {
@@ -2399,6 +2404,15 @@ Value* Context::createModuleNamespace(std::string_view bindName) {
 Value* Context::createArray(std::string_view bindName) {
     Value* arr = createTracked(getArrayType(), gc_->allocData<ArrayData>(), bindName);
     // 自动挂 Array.prototype（ADR-018 §6）。bootstrap 期间尚未建立，跳过。
+    if (arr != oomValue_ && arrayPrototype_ != nullptr) {
+        static_cast<ObjectData*>(arr->data())->prototype = arrayPrototype_;
+    }
+    return arr;
+}
+
+Value* Context::createEphemeralArray() {
+    // 数组字面量：不登记作用域，可达性由 VM 栈 pin 决定。
+    Value* arr = createEphemeral(getArrayType(), gc_->allocData<ArrayData>());
     if (arr != oomValue_ && arrayPrototype_ != nullptr) {
         static_cast<ObjectData*>(arr->data())->prototype = arrayPrototype_;
     }

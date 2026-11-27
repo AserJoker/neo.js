@@ -513,9 +513,11 @@ public:
     using IContext::defineAccessor;
 
     Value* createObject(std::string_view bindName = {}) override;
+    Value* createEphemeralObject() override;
     Value* createProxy(Value* target, Value* handler,
                        std::string_view bindName = {}) override;
     Value* createArray(std::string_view bindName = {}) override;
+    Value* createEphemeralArray() override;
     Value* createArgumentsObject(Value* callee, size_t argc, Value* argv[],
                                  bool mapped) override;
     Value* storeBinding(Scope* scope, std::string_view name,
