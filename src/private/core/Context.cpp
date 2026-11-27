@@ -1969,9 +1969,28 @@ Value* Context::cloneValue(Value* source) {
 
 Value* Context::cloneValueEphemeral(Value* source) {
     if (source == nullptr) return createEphemeralUndefined();
-    IData* cloned = cloneForNewValue(source);
-    if (cloned == nullptr) return oomValue_;
-    return createEphemeral(source->type(), cloned);
+    // 只读快照：primitive 命中立即数单例时直接复用，省一次 Value 分配；
+    // 其余情况新建 Value 共享源 data（primitive data 不可变、对象 data 本就
+    // 共享；绑定后续赋值走 replaceMeta 换指针，不会改写旧 data）。
+    switch (source->type()->kind()) {
+        case TypeKind::Undefined:
+            return createEphemeralUndefined();
+        case TypeKind::Null:
+            return createEphemeralNull();
+        case TypeKind::Boolean:
+            return createBoolean(
+                static_cast<BooleanData*>(source->data())->value);
+        case TypeKind::Number: {
+            double n = static_cast<NumberData*>(source->data())->value;
+            if (Value* v = internSmallInt(n)) return v;
+            break;
+        }
+        default:
+            break;
+    }
+    Value* copy = createValueRaw(source->type(), source->data());
+    if (copy == nullptr) return oomValue_;
+    return copy;
 }
 
 Value* Context::copyForStorage(Value* source) {
