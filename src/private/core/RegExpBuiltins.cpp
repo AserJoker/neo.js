@@ -145,9 +145,21 @@ Value* captureValue(IContext* ctx, const std::u16string& subject,
     return ctx->createString(slice(subject, capture.start, capture.end));
 }
 
+// 规范中所有写 lastIndex 的位置都是 Set(R, "lastIndex", v, true)：Throw=true
+// 与调用代码是否严格无关。临时在当前作用域标注 strict，让 setProperty 走抛出
+// 路径（非可写属性/无 setter 的访问器 → TypeError），随后恢复原标注。
+Value* setLastIndexValue(IContext* ctx, Value* regexp, Value* value) {
+    const bool wasStrict = ctx->hasFlag("strict");
+    if (!wasStrict) ctx->current()->setFlag("strict");
+    Value* result = ctx->setProperty(regexp, "lastIndex", value);
+    if (!wasStrict) ctx->current()->clearFlag("strict");
+    return result;
+}
+
 Value* setLastIndex(IContext* ctx, Value* regexp, std::size_t value) {
-    return ctx->setProperty(regexp, "lastIndex",
-                            ctx->createNumber(static_cast<double>(value)));
+    Value* number = ctx->createNumber(static_cast<double>(value));
+    if (isError(number)) return number;
+    return setLastIndexValue(ctx, regexp, number);
 }
 
 bool readLastIndex(IContext* ctx, Value* regexp, std::size_t& out,
@@ -703,7 +715,7 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
     Value* zero = ctx->createNumber(0.0);
     if (isError(zero)) return zero;
     if (!detail::sameValue(previous, zero)) {
-        Value* reset = ctx->setProperty(self, "lastIndex", zero);
+        Value* reset = setLastIndexValue(ctx, self, zero);
         if (isError(reset)) return reset;
     }
 
@@ -712,7 +724,7 @@ Value* regexpSymbolSearch(IContext* ctx, Value* self, size_t argc,
     Value* current = ctx->getProperty(self, "lastIndex");
     if (isError(current)) return current;
     if (!detail::sameValue(current, previous)) {
-        Value* restore = ctx->setProperty(self, "lastIndex", previous);
+        Value* restore = setLastIndexValue(ctx, self, previous);
         if (isError(restore)) return restore;
     }
     if (isError(match)) return match;
@@ -1014,9 +1026,7 @@ Value* regexpSymbolSplit(IContext* ctx, Value* self, size_t argc,
     std::size_t q = 0;
     std::uint32_t count = 0;
     while (q < subject.size()) {
-        Value* setResult = ctx->setProperty(
-            splitter, "lastIndex",
-            ctx->createNumber(static_cast<double>(q)));
+        Value* setResult = setLastIndex(ctx, splitter, q);
         if (isError(setResult)) return setResult;
 
         Value* match = regExpExecValue(ctx, splitter, *splitData, input);
@@ -1188,7 +1198,7 @@ Value* regexpSymbolMatchAll(IContext* ctx, Value* self, size_t argc,
     Value* lastIndex =
         ctx->createNumber(static_cast<double>(start));
     if (isError(lastIndex)) return lastIndex;
-    Value* setResult = ctx->setProperty(matcher, "lastIndex", lastIndex);
+    Value* setResult = setLastIndexValue(ctx, matcher, lastIndex);
     if (isError(setResult)) return setResult;
 
     const bool unicode = flags.find('u') != std::string::npos ||
