@@ -148,6 +148,12 @@ void checkAssignmentTarget(Node* target, SemaContext& context) {
             }
             break;
         }
+        case NodeKind::CallExpression:
+            // Annex B 的 web-compat 仅限非严格代码：严格模式下调用表达式
+            // 不是合法赋值目标（早期错误）。
+            context.error(target->range().start,
+                          "Invalid assignment target in strict mode");
+            break;
         default:
             // 成员访问等目标允许（obj.eval = 1）。
             break;

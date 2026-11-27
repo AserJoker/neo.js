@@ -835,6 +835,15 @@ void Compiler::compileForTarget(const frontend::NodePtr& left,
         code_->pop();
         return;
     }
+    if (left->kind() == NodeKind::CallExpression) {
+        // Annex B web-compat：先求值调用，再抛 ReferenceError。
+        code_->pop();  // 丢弃本次迭代值
+        compileExpression(*left);
+        code_->pop();
+        code_->throwReferenceError(
+            "Invalid left-hand side in for-in/of loop");
+        return;
+    }
     if (left->kind() == NodeKind::VariableDeclaration) {
         const auto& declaration =
             static_cast<const frontend::VariableDeclaration&>(*left);
@@ -3241,6 +3250,14 @@ void Compiler::compileAssignmentExpression(
         }
         return;
     }
+    if (node.left->kind() == NodeKind::CallExpression) {
+        // Annex B web-compat：调用表达式作为赋值目标时先求值调用（副作用
+        // 保留），随后抛 ReferenceError；RHS 不求值。
+        compileExpression(*node.left);
+        code_->pop();
+        code_->throwReferenceError("Invalid left-hand side in assignment");
+        return;
+    }
     if (node.left->kind() != NodeKind::Identifier) {
         error(node, "compiler: assignment target must be an identifier");
         code_->pushUndefined();
@@ -3383,6 +3400,15 @@ bool Compiler::emitCompoundBinary(frontend::AssignmentOperator op,
 
 void Compiler::compileUpdateExpression(
     const frontend::UpdateExpression& node) {
+    if (node.argument &&
+        node.argument->kind() == NodeKind::CallExpression) {
+        // Annex B web-compat：先求值调用，再抛 ReferenceError（不做 ToNumeric）。
+        compileExpression(*node.argument);
+        code_->pop();
+        code_->throwReferenceError(
+            "Invalid left-hand side expression in update");
+        return;
+    }
     if (node.argument &&
         node.argument->kind() == NodeKind::MemberExpression) {
         const auto& member =

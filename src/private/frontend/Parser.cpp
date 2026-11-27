@@ -226,8 +226,11 @@ bool assignmentOperator(TokenKind kind, AssignmentOperator& op) {
 }
 
 bool isSimpleAssignmentTarget(const Node* node) {
+    // Annex B（web-compat）：sloppy 下调用表达式可作为赋值目标，运行时抛
+    // ReferenceError；严格模式的早期错误由 StrictnessPass 负责。
     return node != nullptr && (node->kind() == NodeKind::Identifier ||
-                               node->kind() == NodeKind::MemberExpression);
+                               node->kind() == NodeKind::MemberExpression ||
+                               node->kind() == NodeKind::CallExpression);
 }
 
 bool isForInOfLeft(const Node* node) {
@@ -235,6 +238,7 @@ bool isForInOfLeft(const Node* node) {
     return node->kind() == NodeKind::VariableDeclaration ||
            node->kind() == NodeKind::Identifier ||
            node->kind() == NodeKind::MemberExpression ||
+           node->kind() == NodeKind::CallExpression ||
            node->kind() == NodeKind::ArrayPattern ||
            node->kind() == NodeKind::ObjectPattern;
 }
@@ -2081,7 +2085,13 @@ NodePtr Parser::parseAssignmentExpression() {
          left->kind() == NodeKind::ObjectExpression)) {
         left = convertToAssignmentPattern(std::move(left));
         if (left == nullptr) return nullptr;
-    } else if (!isSimpleAssignmentTarget(left.get())) {
+    } else if (!isSimpleAssignmentTarget(left.get()) ||
+               (left->kind() == NodeKind::CallExpression &&
+                (op == AssignmentOperator::LogicalAnd ||
+                 op == AssignmentOperator::LogicalOr ||
+                 op == AssignmentOperator::Nullish))) {
+        // 逻辑赋值要求 AssignmentTargetType 为 simple；Annex B 的 web-compat
+        // （调用表达式）不是 simple，故任何模式下都是早期错误。
         error(left->range().start, "Invalid assignment target");
         return nullptr;
     }

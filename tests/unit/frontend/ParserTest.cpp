@@ -1096,7 +1096,9 @@ TEST(ParserTest, InvalidAssignmentTargetReportsError) {
     const char* sources[] = {
         "a + b = c;",
         "1 = 2;",
-        "a() = b;",
+        // 逻辑赋值要求 AssignmentTargetType 为 simple，Annex B 的 web-compat
+        // 不适用，任何模式下都是早期错误。
+        "a() &&= b;",
     };
 
     for (const char* source : sources) {
@@ -1107,6 +1109,17 @@ TEST(ParserTest, InvalidAssignmentTargetReportsError) {
                   std::string::npos)
             << source;
     }
+}
+
+TEST(ParserTest, CallExpressionAssignmentTargetIsWebCompat) {
+    // Annex B：sloppy 下调用表达式可作为赋值目标，运行时才抛 ReferenceError；
+    // 严格模式的早期错误由 StrictnessPass 负责，解析阶段放行。
+    ParseResult result = parse("a() = b;");
+
+    ASSERT_TRUE(result.ok());
+    const auto& statement = statementOf(result, 0);
+    ASSERT_NE(statement.expression, nullptr);
+    EXPECT_EQ(statement.expression->kind(), NodeKind::AssignmentExpression);
 }
 
 TEST(ParserTest, AssignmentMissingRhsReportsError) {
