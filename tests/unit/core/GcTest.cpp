@@ -264,3 +264,180 @@ TEST(GCEngineTest, MarkEpochAdvancesEachCollect) {
     EXPECT_GT(v->markEpoch(), first);
     v->pinRefDec();
 }
+
+// —— P1 显式所有权原语 ——
+
+TEST(GCEngineTest, CreateValueMarksGcOwned) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(1.0));
+    ASSERT_NE(v, nullptr);
+    EXPECT_TRUE(v->gcOwned());
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+}
+
+TEST(GCEngineTest, AllocUnownedIsInvisibleToGC) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* d = gc->allocData<NumberData>(2.0);
+    auto* v = gc->allocUnowned(dummyType(), d);
+    ASSERT_NE(v, nullptr);
+    EXPECT_FALSE(v->gcOwned());
+    EXPECT_EQ(d->ref(), 1);
+    EXPECT_EQ(gc->valueCount(), 0u);
+    EXPECT_EQ(gc->cppOwnedCount(), 1u);
+
+    // collect 不触碰 C++ 拥有的 Value。
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+    EXPECT_EQ(gc->cppOwnedCount(), 1u);
+
+    gc->freeUnowned(v);
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+}
+
+TEST(GCEngineTest, AdoptTransfersOwnershipToGC) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v =
+        gc->allocUnowned(dummyType(), gc->allocData<NumberData>(3.0));
+    ASSERT_NE(v, nullptr);
+    ASSERT_EQ(gc->cppOwnedCount(), 1u);
+
+    gc->adopt(v);
+    EXPECT_TRUE(v->gcOwned());
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+    EXPECT_EQ(gc->valueCount(), 1u);
+
+    // 不可达，collect 回收。
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+    EXPECT_EQ(gc->collectedCount(), 1u);
+}
+
+TEST(GCEngineTest, AdoptIsIdempotent) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v =
+        gc->allocUnowned(dummyType(), gc->allocData<NumberData>(4.0));
+    ASSERT_NE(v, nullptr);
+
+    gc->adopt(v);
+    gc->adopt(v);
+    EXPECT_EQ(gc->valueCount(), 1u);
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+}
+
+TEST(GCEngineTest, ScopeRefPreservesOwnershipBits) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(5.0));
+    ASSERT_NE(v, nullptr);
+
+    v->scopeRefInc();
+    v->scopeRefInc();
+    EXPECT_EQ(v->scopeRef(), 2u);
+    EXPECT_TRUE(v->gcOwned());
+
+    v->scopeRefDec();
+    EXPECT_EQ(v->scopeRef(), 1u);
+    EXPECT_TRUE(v->gcOwned());
+
+    v->markDead();
+    EXPECT_TRUE(v->dead());
+    EXPECT_TRUE(v->gcOwned());
+}
+
+// —— P2 统一 native 引用计数 ——
+
+TEST(GCEngineTest, AllocUnownedStartsWithOneRef) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->allocUnowned(dummyType(), gc->allocData<NumberData>(1.0));
+    ASSERT_NE(v, nullptr);
+    EXPECT_FALSE(v->gcOwned());
+    EXPECT_EQ(v->pinRef(), 1);
+    EXPECT_EQ(gc->cppOwnedCount(), 1u);
+    gc->unref(v);
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+}
+
+TEST(GCEngineTest, RefUnrefNativeOwnedLifetime) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->allocUnowned(dummyType(), gc->allocData<NumberData>(2.0));
+    ASSERT_NE(v, nullptr);
+
+    gc->ref(v);
+    EXPECT_EQ(v->pinRef(), 2);
+    gc->unref(v);
+    EXPECT_EQ(v->pinRef(), 1);
+    EXPECT_EQ(gc->cppOwnedCount(), 1u);
+
+    // 最后一次 unref 归 0：native-owned 被销毁。
+    gc->unref(v);
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+}
+
+TEST(GCEngineTest, RefKeepsGcOwnedAcrossCollect) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->createValue(dummyType(), gc->allocData<NumberData>(3.0));
+    ASSERT_NE(v, nullptr);
+    ASSERT_TRUE(v->gcOwned());
+
+    gc->ref(v);
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 1u);
+    EXPECT_EQ(gc->collectedCount(), 0u);
+
+    gc->unref(v);
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+}
+
+TEST(GCEngineTest, CopyForNativeSharesDataAndRefs) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* source = gc->createValue(dummyType(), gc->allocData<NumberData>(4.0));
+    ASSERT_NE(source, nullptr);
+    gc->ref(source);  // B 契约：源 Value 由 native 侧锚住
+
+    Value* copy = gc->copyForNative(source);
+    ASSERT_NE(copy, nullptr);
+    EXPECT_FALSE(copy->gcOwned());
+    EXPECT_EQ(copy->pinRef(), 1);
+    EXPECT_EQ(copy->data(), source->data());
+    EXPECT_EQ(source->data()->ref(), 2);
+
+    gc->unref(copy);
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+    EXPECT_EQ(source->data()->ref(), 1);
+
+    // 源仍被 ref 住，collect 不回收。
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 1u);
+    gc->unref(source);
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+}
+
+TEST(GCEngineTest, AdoptConsumesCreatorRef) {
+    auto alloc = createMallocAllocator();
+    auto gc = neo::core::createGcEngine(alloc.get());
+    auto* v = gc->allocUnowned(dummyType(), gc->allocData<NumberData>(5.0));
+    ASSERT_NE(v, nullptr);
+    ASSERT_EQ(v->pinRef(), 1);
+
+    gc->adopt(v);
+    EXPECT_TRUE(v->gcOwned());
+    EXPECT_EQ(v->pinRef(), 0);  // 创建者 ref 已转移给 GC 图
+    EXPECT_EQ(gc->cppOwnedCount(), 0u);
+    EXPECT_EQ(gc->valueCount(), 1u);
+
+    gc->collect();
+    EXPECT_EQ(gc->valueCount(), 0u);
+}

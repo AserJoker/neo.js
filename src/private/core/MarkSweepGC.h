@@ -26,7 +26,16 @@ public:
     explicit MarkSweepGC(infra::IAllocator* alloc);
     ~MarkSweepGC() override;  // 析构时强制回收所有残留 Value，释放内存给 IAllocator
 
+    const GCStats& stats() const override { return stats_; }
+
     Value* createValue(IType* type, IData* data) override;
+    Value* allocUnowned(IType* type, IData* data) override;
+    void   freeUnowned(Value* v) override;
+    void   adopt(Value* v) override;
+    size_t cppOwnedCount() const override { return cppOwnedCount_; }
+    void   ref(Value* v) override;
+    void   unref(Value* v) override;
+    Value* copyForNative(Value* source) override;
     void   collect() override;
     void   setRootScope(Scope* scope) override;
     void   addRootProvider(IGCRootProvider* provider) override;
@@ -45,6 +54,8 @@ protected:
     void* rawAlloc(size_t bytes) override;
 
 private:
+    // 分配 native-owned Value，不做 leaf 检查（allocUnowned/copyForNative 共用）。
+    Value* allocUnownedRaw(IType* type, IData* data);
     // 检查是否需触发 GC（双重阈值），返回 true 表示已触发一次 collect
     bool maybeCollect();
 
@@ -54,7 +65,9 @@ private:
     // GC 图之外的活跃根（VM 操作数栈等），非拥有。
     std::vector<IGCRootProvider*> rootProviders_;
     size_t collectedCount_ = 0;  // 累计回收数
+    size_t cppOwnedCount_ = 0;   // 仍由 C++ 拥有、未 adopt/free 的 Value 数
     uint64_t markEpoch_ = 0;     // 当前标记代数（每轮 collect 递增，Value 记录最近标记代数）
+    GCStats stats_;              // 诊断统计（P0）
 
     double memThreshold_   = 0.8;     // 内存阈值（used/limit，limit==SIZE_MAX 时不生效）
     // Value 数量阈值（无限额时兜底自动 GC）。必须显著高于 bootstrap 后的

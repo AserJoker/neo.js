@@ -123,7 +123,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     // 3. 预分配 OOM 哨兵（ADR-031）：最早分配，挂 global 使其存活于 Context 生命周期。
     //    连哨兵都分配不出说明系统不可用，直接 abort。
     auto* oomData = gc_->allocData<FatalData>("out of memory");
-    oomValue_ = oomData != nullptr ? gc_->createValue(getFatalType(), oomData) : nullptr;
+    oomValue_ =
+        oomData != nullptr ? createValueRaw(getFatalType(), oomData) : nullptr;
     if (oomValue_ == nullptr) {
         std::abort();
     }
@@ -164,7 +165,8 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         auto which = static_cast<WellKnownSymbol>(i);
         std::string desc = std::string("Symbol.") + wellKnownSymbolName(which);
         auto* data = gc_->allocData<SymbolData>(desc);
-        Value* v = data != nullptr ? gc_->createValue(getSymbolType(), data) : nullptr;
+        Value* v =
+            data != nullptr ? createValueRaw(getSymbolType(), data) : nullptr;
         if (v == nullptr) {
             std::abort();
         }
@@ -352,6 +354,20 @@ Context::~Context() {
     // 0b. 清空模块表（Module 只借用作用域/导出对象，不拥有它们）。
     //     先于 GC 销毁，避免留下悬垂指针。
     modules_.clear();
+    // 0c. 解除立即数化 primitive 单例的永久根，使 GC 能回收它们。
+    for (Value** slot : {&trueValue_, &falseValue_, &undefinedValue_,
+                         &nullValue_}) {
+        if (*slot != nullptr) {
+            (*slot)->pinRefDec();
+            *slot = nullptr;
+        }
+    }
+    for (Value*& slot : smallInts_) {
+        if (slot != nullptr) {
+            slot->pinRefDec();
+            slot = nullptr;
+        }
+    }
     // 1. 销毁 GC（unique_ptr 析构）。global 作用域树的所有权已移交 GC（ADR-044）：
     //    ~MarkSweepGC 先销毁根作用域树，再 collect 回收全部残留 Value
     //    （此时根树已空，所有 Value 不可达），最后若有残留则 panic 报告泄漏。
@@ -490,12 +506,18 @@ void Context::assertOwnerThread() const {
            "MessageQueue");
 }
 
+Value* Context::createValueRaw(IType* type, IData* data) {
+    ++creationStats_.byKind[static_cast<size_t>(type->kind())];
+    return gc_->createValue(type, data);
+}
+
 // 创建 Value 并跟踪：data 已由调用方 allocData 分配。
 // 失败时回收游离 data 并返回 OOM 哨兵（ADR-031）。
 Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
     assertOwnerThread();
+    ++creationStats_.tracked;
     if (data == nullptr) return oomValue_;
-    Value* v = gc_->createValue(type, data);
+    Value* v = createValueRaw(type, data);
     if (v == nullptr) {
         // data 已分配但 Value 创建失败，回收游离 data
         gc_->releaseData(data);
@@ -507,8 +529,9 @@ Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
 
 Value* Context::createEphemeral(IType* type, IData* data) {
     assertOwnerThread();
+    ++creationStats_.ephemeral;
     if (data == nullptr) return oomValue_;
-    Value* v = gc_->createValue(type, data);
+    Value* v = createValueRaw(type, data);
     if (v == nullptr) {
         gc_->releaseData(data);
         return oomValue_;
@@ -517,19 +540,67 @@ Value* Context::createEphemeral(IType* type, IData* data) {
 }
 
 Value* Context::createEphemeralUndefined() {
-    return createEphemeral(getUndefinedType(), gc_->allocData<UndefinedData>());
+    if (undefinedValue_ != nullptr) {
+        assert(undefinedValue_->type()->kind() == TypeKind::Undefined &&
+               "ephemeral undefined singleton was mutated");
+        return undefinedValue_;
+    }
+    IData* data = gc_->allocData<UndefinedData>();
+    if (data == nullptr) return oomValue_;
+    Value* v = createValueRaw(getUndefinedType(), data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    v->pinRefInc();
+    undefinedValue_ = v;
+    return v;
 }
 
 Value* Context::createEphemeralNull() {
-    return createEphemeral(getNullType(), gc_->allocData<NullData>());
+    if (nullValue_ != nullptr) return nullValue_;
+    IData* data = gc_->allocData<NullData>();
+    if (data == nullptr) return oomValue_;
+    Value* v = createValueRaw(getNullType(), data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    v->pinRefInc();
+    nullValue_ = v;
+    return v;
 }
 
 Value* Context::createEphemeralBoolean(bool b) {
-    return createEphemeral(getBooleanType(), gc_->allocData<BooleanData>(b));
+    return createBoolean(b);
 }
 
 Value* Context::createEphemeralNumber(double n) {
+    if (Value* v = internSmallInt(n)) return v;
     return createEphemeral(getNumberType(), gc_->allocData<NumberData>(n));
+}
+
+Value* Context::internSmallInt(double n) {
+    if (!(n >= static_cast<double>(kSmallIntMin) &&
+          n <= static_cast<double>(kSmallIntMax)) ||
+        n != std::floor(n)) {
+        return nullptr;
+    }
+    // -0.0 与 +0.0 在 Object.is / 1/x 下可区分，不能共享同一 Value。
+    if (n == 0.0 && std::signbit(n)) return nullptr;
+    const size_t idx = static_cast<size_t>(static_cast<int>(n) - kSmallIntMin);
+    Value*& slot = smallInts_[idx];
+    if (slot != nullptr) return slot;
+    IData* data = gc_->allocData<NumberData>(n);
+    if (data == nullptr) return oomValue_;
+    Value* v = createValueRaw(getNumberType(), data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    v->pinRefInc();  // 永久根
+    slot = v;
+    return v;
 }
 
 Value* Context::createEphemeralBigInt(const neo::bigint::BigInt& value) {
@@ -541,7 +612,17 @@ Value* Context::createEphemeralString(std::string_view s) {
 }
 
 Value* Context::createUndefined(std::string_view name) {
-    return createTracked(getUndefinedType(), gc_->allocData<UndefinedData>(), name);
+    // 具名创建是绑定槽（会被 replaceMeta 原地改写），必须新建。
+    if (!name.empty()) {
+        return createTracked(getUndefinedType(), gc_->allocData<UndefinedData>(), name);
+    }
+    // 匿名 undefined 不可变且从不作为可变绑定槽位（declareVar 用
+    // createMutableUndefined），故与表达式临时值共享同一单例。
+    return createEphemeralUndefined();
+}
+
+Value* Context::createMutableUndefined() {
+    return createTracked(getUndefinedType(), gc_->allocData<UndefinedData>(), {});
 }
 
 Value* Context::createUninitialized() {
@@ -549,14 +630,36 @@ Value* Context::createUninitialized() {
 }
 
 Value* Context::createNull(std::string_view name) {
-    return createTracked(getNullType(), gc_->allocData<NullData>(), name);
+    if (!name.empty()) {
+        return createTracked(getNullType(), gc_->allocData<NullData>(), name);
+    }
+    return createEphemeralNull();
 }
 
 Value* Context::createBoolean(bool b, std::string_view name) {
-    return createTracked(getBooleanType(), gc_->allocData<BooleanData>(b), name);
+    // 具名创建是绑定槽（会被 replaceMeta 原地改写），必须新建。
+    if (!name.empty()) {
+        return createTracked(getBooleanType(), gc_->allocData<BooleanData>(b), name);
+    }
+    // 匿名布尔不可变，也从不作为绑定槽位，故 true/false 共享单例。
+    Value*& slot = b ? trueValue_ : falseValue_;
+    if (slot != nullptr) return slot;
+    IData* data = gc_->allocData<BooleanData>(b);
+    if (data == nullptr) return oomValue_;
+    Value* v = createValueRaw(getBooleanType(), data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    v->pinRefInc();  // 永久根
+    slot = v;
+    return v;
 }
 
 Value* Context::createNumber(double n, std::string_view name) {
+    // 不做小整数单例：createNumber 的结果可能被 Scope::bind/define 直接收编为
+    // 可变绑定槽（赋值走 replaceMeta），共享会互相串改。VM 字面量走
+    // createEphemeralNumber 才使用小整数缓存。
     return createTracked(getNumberType(), gc_->allocData<NumberData>(n), name);
 }
 
@@ -1867,7 +1970,7 @@ Value* Context::cloneValue(Value* source) {
 Value* Context::copyForStorage(Value* source) {
     if (source == nullptr) return nullptr;
     // data-owned 副本：与源共享 data，不进入当前作用域（ADR-065 §4）。
-    Value* copy = gc_->createValue(source->type(), source->data());
+    Value* copy = createValueRaw(source->type(), source->data());
     if (copy == nullptr) return oomValue_;
     return copy;
 }
@@ -3495,7 +3598,7 @@ Value* Context::defineCloned(Scope* scope, std::string_view name, Value* source,
                              bool varBinding) {
     IData* cloned = cloneForNewValue(source);
     if (cloned == nullptr) return oomValue_;
-    Value* slot = gc_->createValue(source->type(), cloned);
+    Value* slot = createValueRaw(source->type(), cloned);
     if (slot == nullptr) {
         gc_->releaseData(cloned);
         return oomValue_;
@@ -3702,7 +3805,7 @@ Value* Context::declareVar(std::string_view name) {
     // 全局变量环境是对象记录：var 声明落到 global object 属性上，
     // 已存在的属性（如内建 Math）不重复定义（§9.1.1.4.16 CreateGlobalVarBinding）。
     if (target == global_) return declareGlobalVar(name, true);
-    Value* value = createUndefined();
+    Value* value = createMutableUndefined();
     if (value == oomValue_) return value;
     if (!target->define(name, value, true, true, true)) {
         std::string msg =

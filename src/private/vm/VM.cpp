@@ -20,6 +20,7 @@
 
 #include "bigint/BigInt.h"
 
+#include <cassert>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -267,21 +268,56 @@ VM::VM(IContext* ctx, const Code* code)
     : ctx_(ctx),
       code_(code),
       entryScope_(ctx->current()),
-      rootScope_(ctx->root()) {
-    ctx_->gc()->addRootProvider(this);
-}
+      rootScope_(ctx->root()) {}
 
 VM::~VM() {
+#ifndef NDEBUG
+    auditDiscarded(0, "~VM");
+#endif
     releaseBorrowed();
-    ctx_->gc()->removeRootProvider(this);
+    releaseStack();
 }
 
-void VM::visitRoots(neo::core::IGCVisitor* visitor) {
-    if (visitor == nullptr) return;
-    for (Value* v : stack_) {
-        if (v != nullptr) visitor->visit(v);
+#ifndef NDEBUG
+namespace {
+// 统计 data 的直接子 Value 数：native-owned 栈值只允许 leaf。
+class StackChildCounter final : public neo::core::IGCVisitor {
+public:
+    size_t count = 0;
+    void visit(Value*) override { ++count; }
+    void visitScope(Scope*) override {}
+};
+}  // namespace
+
+void VM::auditStack(const char* where) const {
+    (void)where;
+    for (size_t i = 0; i < stack_.size(); ++i) {
+        Value* v = stack_[i];
+        assert(v != nullptr && "VM stack holds null value");
+        if (v == nullptr) continue;
+        assert(!v->dead() && "VM stack holds dead value");
+        assert(v->pinRef() > 0 && "VM stack value missing its stack ref");
+        if (!v->gcOwned()) {
+            StackChildCounter counter;
+            v->data()->enumerateChildren(&counter);
+            assert(counter.count == 0 &&
+                   "VM stack holds native-owned complex value (use copyForNative)");
+        }
     }
 }
+
+void VM::auditDiscarded(size_t from, const char* where) const {
+    (void)where;
+    for (size_t i = from; i < stack_.size(); ++i) {
+        Value* v = stack_[i];
+        assert(v != nullptr && "VM is discarding a null stack value");
+        if (v == nullptr) continue;
+        assert(v->pinRef() > 0 && "VM is discarding a value without its stack ref");
+        assert(v->gcOwned() &&
+               "VM is discarding a native-owned stack value (freeUnowned first)");
+    }
+}
+#endif
 
 const VM::Handler* VM::handlers() {
     static const Handler table[kOpCodeCount] = {
@@ -494,7 +530,12 @@ Value* VM::badBytecode(const char* message) {
 }
 
 void VM::restoreFrame(const TryFrame& frame) {
-    if (stack_.size() > frame.stackDepth) stack_.resize(frame.stackDepth);
+#ifndef NDEBUG
+    if (stack_.size() > frame.stackDepth) {
+        auditDiscarded(frame.stackDepth, "restoreFrame");
+    }
+#endif
+    if (stack_.size() > frame.stackDepth) truncateStack(frame.stackDepth);
     if (labelStack_.size() > frame.labelDepth) {
         labelStack_.resize(frame.labelDepth);
     }
@@ -660,7 +701,16 @@ VmState VM::snapshot() const {
 void VM::restore(const VmState& state) {
     pc_ = state.pc;
     instructionPc_ = state.pc;
+#ifndef NDEBUG
+    auditDiscarded(0, "restore");
+#endif
+    // 归还当前栈引用，再从快照重建并取得新的栈引用。
+    // VmState 不持有 pinRef：挂起期间其栈值由协程对象 visitVmState 标记。
+    releaseStack();
     stack_ = state.stack;
+    for (Value* v : stack_) {
+        if (v != nullptr) v->pinRefInc();
+    }
     labelStack_ = state.labelStack;
     tryStack_ = state.tryStack;
     entryScope_ = state.entryScope;
@@ -740,6 +790,9 @@ Value* VM::execute() {
     if (pc_ > bytes.size()) {
         return badBytecode("run: entry pc out of range");
     }
+#ifndef NDEBUG
+    auditStack("execute");
+#endif
 
     const Handler* table = handlers();
     while (pc_ < bytes.size()) {
@@ -943,8 +996,8 @@ Value* VM::opDup2() {
     if (stack_.size() < 2) return badBytecode("dup2: operand stack underflow");
     Value* a = stack_[stack_.size() - 2];
     Value* b = stack_[stack_.size() - 1];
-    stack_.push_back(a);
-    stack_.push_back(b);
+    push(a);
+    push(b);
     return nullptr;
 }
 
@@ -1119,9 +1172,10 @@ Value* VM::opDefineIfMissing() {
     Scope* scope = ctx_->current();
     if (scope == nullptr) return badBytecode("define_if_missing: no scope");
     if (scope->bindingKind(*name) != Scope::BindingKind::None) return nullptr;
-    if (!scope->define(*name, value)) {
-        return badBytecode("define_if_missing: define failed");
-    }
+    // 绑定槽必须拥有独立的 Value：栈上的值可能是共享单例或借用值，
+    // 直接 adopt 会让后续赋值原地改写它。走 define 克隆 data 建新槽。
+    Value* result = ctx_->define(*name, value, true, true, false);
+    if (detail::isErrorValue(result)) return fail(result);
     return nullptr;
 }
 
@@ -2421,7 +2475,12 @@ Value* VM::handleLabelInterrupt(Value* interrupt) {
     while (ctx_->current() != nullptr && ctx_->current() != target.scope) {
         ctx_->popScope();
     }
-    if (stack_.size() > target.stackDepth) stack_.resize(target.stackDepth);
+#ifndef NDEBUG
+    if (stack_.size() > target.stackDepth) {
+        auditDiscarded(target.stackDepth, "handleLabelInterrupt");
+    }
+#endif
+    if (stack_.size() > target.stackDepth) truncateStack(target.stackDepth);
 
     if (isBreak) {
         if (completionMode_) {
@@ -4221,7 +4280,10 @@ Value* VM::opRestArgs() {
         Value* result = ctx_->arrayAppend(array, stack_[i - 1]);
         if (detail::isErrorValue(result)) return fail(result);
     }
-    stack_.clear();
+#ifndef NDEBUG
+    auditDiscarded(0, "restArgs");
+#endif
+    releaseStack();
     push(array);
     return nullptr;
 }

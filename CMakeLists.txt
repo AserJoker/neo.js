@@ -35,6 +35,7 @@ option(NEO_ENABLE_ICU "Enable ICU Unicode subsystem (default OFF, M1+)" OFF)
 option(NEO_ENABLE_TESTS "Build tests (default ON)" ON)
 option(NEO_BUILD_HELLO "Build HelloWorld executable (default ON)" ON)
 option(NEO_BUILD_TEST262 "Build Test262 runner (default ON)" ON)
+option(NEO_BUILD_GC_PROBE "Build GC probe tool (P0 instrumentation, default ON)" ON)
 option(NEO_ENABLE_COVERAGE "Enable llvm-cov source-based coverage (ADR-027)" OFF)
 option(NEO_BUILD_FUZZERS "Build libFuzzer targets (Clang only, ADR-062)" OFF)
 
@@ -299,6 +300,18 @@ if(NEO_BUILD_TEST262)
     )
     target_link_libraries(neo_test262 PRIVATE neojs)
     set_target_properties(neo_test262 PROPERTIES OUTPUT_NAME neo_test262)
+endif()
+
+# ---------------------------------------------------------------------------
+# GC 探针（P0 重构评估，内部工具，直接使用 private 头文件）
+# ---------------------------------------------------------------------------
+if(NEO_BUILD_GC_PROBE)
+    add_executable(neo_gc_probe tools/gcprobe/main.cpp)
+    target_include_directories(neo_gc_probe PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/private
+    )
+    target_link_libraries(neo_gc_probe PRIVATE neojs)
+    set_target_properties(neo_gc_probe PROPERTIES OUTPUT_NAME neo_gc_probe)
 endif()
 
 # ---------------------------------------------------------------------------

@@ -17,6 +17,7 @@
 #include "core/Scope.h"
 #include "core/Value.h"
 
+#include <array>
 #include <atomic>
 #include <deque>
 #include <functional>
@@ -36,6 +37,16 @@ struct Code;
 
 namespace neo::core {
 
+// Value 创建路径统计（P0 GC 重构评估用，只读）。direct = GC 总分配数 -
+// tracked - ephemeral，由探针计算。
+struct ValueCreationStats {
+    uint64_t tracked = 0;    // createTracked（登记到 current scope）
+    uint64_t ephemeral = 0;  // createEphemeral（不登记 scope，但仍注册进 GC）
+    // 按 TypeKind 的分配数。只在 Context 的真实创建路径统计，避免读取
+    // 测试用占位 IType（reinterpret_cast）的 kind()。
+    std::array<uint64_t, kTypeKindCount> byKind{};
+};
+
 class Context : public IContext {
     // 线程亲和（多线程模型）：Context/Scope/Value/GC 只允许在创建线程访问。
     // 跨线程只允许经过 MessageQueue 传递序列化消息。
@@ -46,6 +57,7 @@ class Context : public IContext {
     std::atomic<bool> stopRequested_ {false};
     infra::IAllocator* alloc_;              // 注入，无所有权
     std::unique_ptr<IGCEngine> gc_;         // Context 持有所有权
+    ValueCreationStats creationStats_;      // 诊断统计（P0）
     infra::Console* console_;              // 注入，无所有权
     infra::IClock* clock_;                 // 注入，无所有权（事件循环时间源）
 
@@ -73,6 +85,20 @@ class Context : public IContext {
     // 不应在 OOM 时因 Engine 配额耗尽而无法记录。
     std::vector<CallFrame> callStack_;
     Value* oomValue_ = nullptr;            // OOM 哨兵（预分配 Fatal，挂 global，ADR-031）
+    // 立即数化 primitive 单例（不可变，pinRef 作永久根，Context 析构前解除）：
+    // 布尔/undefined/null 的 Value+data 不再逐次分配。它们从不作为可变绑定槽位
+    // （declareVar 用 createMutableUndefined 新建，赋值走 replaceMeta），
+    // 因此共享单例不会被原地改写。
+    Value* trueValue_ = nullptr;
+    Value* falseValue_ = nullptr;
+    Value* undefinedValue_ = nullptr;
+    Value* nullValue_ = nullptr;
+    // 小整数立即数缓存（含 -0 排除）：[-1, 256] 的整数值共享 Value。
+    static constexpr int kSmallIntMin = -1;
+    static constexpr int kSmallIntMax = 256;
+    static constexpr size_t kSmallIntCount =
+        static_cast<size_t>(kSmallIntMax - kSmallIntMin + 1);
+    Value* smallInts_[kSmallIntCount] = {};
     // %ThrowTypeError%（unmapped arguments 的 callee 访问器），惰性创建并挂 global。
     Value* throwTypeError_ = nullptr;
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
@@ -189,6 +215,8 @@ public:
 
     infra::IAllocator* allocator() const override { return alloc_; }
     IGCEngine* gc() const override { return gc_.get(); }
+    // 诊断统计（P0）：Value 创建路径计数。
+    const ValueCreationStats& creationStats() const { return creationStats_; }
     infra::Console* console() const override { return console_; }
     const NJS_IntlBackend* intlBackend() const override { return intlBackend_; }
     void setIntlNumberFormatPrototype(Value* proto) override {
@@ -813,8 +841,14 @@ private:
     // 执行一个已取出的任务（含循环重入队、Fatal 判定、根引用释放）。
     Value* executeTask(const Task& task);
 
+    // 创建 Value 的底层入口：登记诊断统计后交给 GC。type 必须是真实 IType。
+    Value* createValueRaw(IType* type, IData* data);
     // 创建 Value 并跟踪（data 已分配）。失败返回 OOM 哨兵，回收游离 data（ADR-031）。
     Value* createTracked(IType* type, IData* data, std::string_view name);
+    // 可变绑定槽专用：每次新建 undefined（槽位会被 replaceMeta 原地改写）。
+    Value* createMutableUndefined();
+    // 命中 [-1,256] 的整数值时返回共享单例；不适用返回 nullptr（-0 不缓存）。
+    Value* internSmallInt(double n);
     // 创建 Value 但不登记到 current scope（表达式临时值，ADR-065 §6）。
     // data 已分配；失败返回 OOM 哨兵并回收游离 data。
     Value* createEphemeral(IType* type, IData* data);

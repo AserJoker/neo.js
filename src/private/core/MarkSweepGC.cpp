@@ -17,6 +17,8 @@
 #include "core/Value.h"
 
 #include <algorithm>
+#include <cassert>
+#include <chrono>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -62,6 +64,25 @@ private:
     std::unordered_set<Scope*> visitedScopes_;
 };
 
+#ifndef NDEBUG
+// 统计 data 的子 Value 数：allocUnowned 只允许 leaf data（无子节点）。
+class ChildCounter final : public IGCVisitor {
+public:
+    size_t count = 0;
+    void visit(Value*) override { ++count; }
+    void visitScope(Scope*) override {}
+};
+#endif
+
+// 统计作用域树快照（P0）：values_ 中命名绑定的占比可近似「匿名临时值」比例。
+void snapshotScopes(Scope* scope, GCStats& stats) {
+    if (scope == nullptr) return;
+    ++stats.lastScopeCount;
+    stats.lastScopeValues += scope->valueCount();
+    stats.lastNamedBindings += scope->namedCount();
+    for (Scope* child : scope->children()) snapshotScopes(child, stats);
+}
+
 }  // namespace
 
 MarkSweepGC::MarkSweepGC(infra::IAllocator* alloc) : alloc_(alloc) {}
@@ -88,6 +109,13 @@ MarkSweepGC::~MarkSweepGC() {
         rootScope_->destroySelf();
         rootScope_ = nullptr;
     }
+    // C++ 拥有的 Value 不在 values_ 中，GC 无法回收；析构时仍未移交即泄漏。
+    if (cppOwnedCount_ != 0) {
+        std::fprintf(stderr,
+                     "MarkSweepGC leak: %zu C++-owned value(s) not adopted/freed\n",
+                     cppOwnedCount_);
+        std::abort();
+    }
     // 收敛后仍有 Value 存活 = 内存泄漏（scope 未销毁，或 GC 标记/回收逻辑错误）。
     if (!values_.empty()) {
         // 不直接 abort()，先 fprintf 让错误信息可见，再 abort。
@@ -99,7 +127,9 @@ MarkSweepGC::~MarkSweepGC() {
 }
 
 void* MarkSweepGC::rawAlloc(size_t bytes) {
-    return alloc_->alloc(bytes);
+    void* p = alloc_->alloc(bytes);
+    if (p != nullptr) ++stats_.dataAllocations;
+    return p;
 }
 
 bool MarkSweepGC::maybeCollect() {
@@ -125,12 +155,111 @@ Value* MarkSweepGC::createValue(IType* type, IData* data) {
     void* p = alloc_->alloc(sizeof(Value));
     if (p == nullptr) return nullptr;  // OOM
     Value* v = new (p) Value(type, data);  // placement new，Value 构造内 data->ref++
+    v->markGcOwned();
     values_.push_back(v);
+    ++stats_.valueAllocations;
+    if (values_.size() > stats_.maxValueCount) {
+        stats_.maxValueCount = values_.size();
+    }
     return v;
+}
+
+Value* MarkSweepGC::allocUnownedRaw(IType* type, IData* data) {
+    // C++ 拥有的 Value 不进入 values_，因此不参与 GC 标记/清除，也不触发
+    // 基于 values_ 数量的 collect。内存压力仍由调用方/上层决定。
+    void* p = alloc_->alloc(sizeof(Value));
+    if (p == nullptr) return nullptr;
+    Value* v = new (p) Value(type, data);
+    ++cppOwnedCount_;
+    ++stats_.cppOwnedAllocations;
+    return v;
+}
+
+Value* MarkSweepGC::allocUnowned(IType* type, IData* data) {
+#ifndef NDEBUG
+    // 复杂 data 禁止由 native 从零构造：其子 Value 不会被 native 递归析构，
+    // 会泄漏。复杂对象必须用 copyForNative 从 GC 侧复制（共享 data）。
+    if (data != nullptr) {
+        ChildCounter counter;
+        data->enumerateChildren(&counter);
+        assert(counter.count == 0 &&
+               "allocUnowned: complex data must use copyForNative");
+    }
+#endif
+    Value* v = allocUnownedRaw(type, data);
+    if (v != nullptr) v->pinRefInc();  // 创建者持有 1 个 ref
+    return v;
+}
+
+void MarkSweepGC::ref(Value* v) {
+    if (v == nullptr || v->dead()) return;
+    v->pinRefInc();
+}
+
+void MarkSweepGC::unref(Value* v) {
+    if (v == nullptr || v->dead()) return;
+    if (v->pinRef() <= 0) return;  // 不平衡的 unref：忽略（debug 由 verifier 报）
+    v->pinRefDec();
+    // native-owned 归 0：销毁；GC-owned 归 0：只移除根，等待 GC 回收。
+    if (v->pinRef() == 0 && !v->gcOwned()) {
+        freeUnowned(v);
+    }
+}
+
+Value* MarkSweepGC::copyForNative(Value* source) {
+    if (source == nullptr) return nullptr;
+    assert(source->gcOwned() &&
+           "copyForNative: source must be a GC-owned value");
+    Value* copy = allocUnownedRaw(source->type(), source->data());
+    if (copy == nullptr) return nullptr;
+    copy->pinRefInc();  // 创建者持有 1 个 ref
+    return copy;
+}
+
+void MarkSweepGC::freeUnowned(Value* v) {
+    if (v == nullptr) return;
+    assert(!v->gcOwned() && "freeUnowned called on GC-owned value");
+    IData* d = v->data();
+    v->~Value();
+    alloc_->free(v);
+    if (d->ref() == 0) {
+        d->~IData();
+        alloc_->free(d);
+    }
+    if (cppOwnedCount_ > 0) --cppOwnedCount_;
+}
+
+void MarkSweepGC::adopt(Value* v) {
+    if (v == nullptr || v->dead() || v->gcOwned()) return;
+    v->markGcOwned();
+    values_.push_back(v);
+    ++stats_.adoptedValues;
+    if (values_.size() > stats_.maxValueCount) {
+        stats_.maxValueCount = values_.size();
+    }
+    // 转移语义：消费创建者的那 1 个 ref。若调用方还想保留 native 引用，
+    // 应在 adopt 前自行 ref；剩余 ref 继续作为额外 GC 根。
+    if (v->pinRef() > 0) v->pinRefDec();
+    if (cppOwnedCount_ > 0) --cppOwnedCount_;
 }
 
 void MarkSweepGC::collect() {
     if (values_.empty()) return;
+
+    const auto collectStart = std::chrono::steady_clock::now();
+    ++stats_.collections;
+
+    // 作用域快照（标记前，作用域树仍完整）。
+    stats_.lastScopeCount = 0;
+    stats_.lastScopeValues = 0;
+    stats_.lastNamedBindings = 0;
+    snapshotScopes(rootScope_, stats_);
+    if (stats_.lastScopeCount > stats_.maxScopeCount) {
+        stats_.maxScopeCount = stats_.lastScopeCount;
+    }
+    if (stats_.lastScopeValues > stats_.maxScopeValues) {
+        stats_.maxScopeValues = stats_.lastScopeValues;
+    }
 
     // —— 标记阶段 ——
     // 每轮用新的单调递增 epoch，无需遍历 values_ 重置标记：
@@ -182,6 +311,13 @@ void MarkSweepGC::collect() {
     // 若仅在 size >= threshold 时抬高，下一轮又立刻触发，退化为逐次全量 GC。
     const size_t target = values_.size() + values_.size() / 2 + 1024;
     if (target > countThreshold_) countThreshold_ = target;
+
+    stats_.collectedValues = collectedCount_;
+    const auto collectEnd = std::chrono::steady_clock::now();
+    stats_.collectNanos += static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(collectEnd -
+                                                             collectStart)
+            .count());
 }
 
 void MarkSweepGC::setRootScope(Scope* scope) {

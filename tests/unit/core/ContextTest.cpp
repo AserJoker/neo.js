@@ -216,7 +216,9 @@ TEST(ContextTest, CreateUndefinedHasCorrectType) {
     auto* v = ctx->createUndefined();
     ASSERT_NE(v, nullptr);
     EXPECT_EQ(v->type()->kind(), TypeKind::Undefined);
-    EXPECT_EQ(ctx->current()->valueCount(), before + 1);  // 已加入 current scope 跟踪
+    // undefined 是立即数化单例：不登记 scope，重复创建返回同一 Value。
+    EXPECT_EQ(ctx->createUndefined(), v);
+    EXPECT_EQ(ctx->current()->valueCount(), before);
 }
 
 TEST(ContextTest, CreateNullHasCorrectType) {
@@ -243,8 +245,10 @@ TEST(ContextTest, CreateBooleanHasCorrectTypeAndValue) {
     ASSERT_NE(f, nullptr);
     EXPECT_EQ(t->type()->kind(), TypeKind::Boolean);
     EXPECT_EQ(f->type()->kind(), TypeKind::Boolean);
-    // 两个 Value 都加入 current scope
-    EXPECT_EQ(ctx->current()->valueCount(), before + 2);
+    // 布尔是立即数化单例：不登记 scope，重复创建返回同一 Value。
+    EXPECT_EQ(ctx->createBoolean(true), t);
+    EXPECT_EQ(ctx->createBoolean(false), f);
+    EXPECT_EQ(ctx->current()->valueCount(), before);
 }
 
 TEST(ContextTest, CreateNumberHasCorrectType) {
@@ -395,9 +399,11 @@ TEST(OomTest, CreateStringReturnsOomWhenExhausted) {
 
     alloc->setLimit(alloc->used());
     EXPECT_EQ(ctx->createString("x"), ctx->oomValue());
-    EXPECT_EQ(ctx->createUndefined(), ctx->oomValue());
-    EXPECT_EQ(ctx->createNull(), ctx->oomValue());
-    EXPECT_EQ(ctx->createBoolean(true), ctx->oomValue());
+    // undefined/null/boolean 已立即数化为单例（bootstrap 期间已创建），
+    // 耗尽配额后仍返回缓存值，不再走分配路径，因此不产生 OOM 哨兵。
+    EXPECT_EQ(ctx->createUndefined()->type()->kind(), TypeKind::Undefined);
+    EXPECT_EQ(ctx->createNull()->type()->kind(), TypeKind::Null);
+    EXPECT_EQ(ctx->createBoolean(true)->type()->kind(), TypeKind::Boolean);
 }
 
 TEST(OomTest, OomSentinelIsSingleton) {

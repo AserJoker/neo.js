@@ -41,6 +41,8 @@ public:
 
 // 测试用 Type 占位（本阶段 Type 体系未实现，用空类占位）
 // 返回 neo::core::IType* 所需的占位实例（reinterpret_cast，仅测试用）
+// 注意：占位对象不是真实 IType，任何读取其成员（如 kind()）的行为都是 UB；
+// GC 诊断统计因此不在 createValue 内读取 type->kind()。
 class DummyType {};
 inline IType* dummyType() {
     static DummyType inst{};

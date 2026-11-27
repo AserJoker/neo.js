@@ -11,8 +11,9 @@
 //   - nullptr：正常执行完，继续下一条；
 //   - 非空：执行信号（ret 的值 / Exception / Fatal / Interrupt），主循环立即返回。
 //
-// 操作数栈不 pin Value：栈上元素都是 Engine 已创建、由当前作用域跟踪的值，
-// VM 只借用指针，不增加 GC 根，也不负责生命周期。
+// 操作数栈不是 GC 根：GC 只从 Engine 图（scope/data）与 pinRef 标记。
+// 栈为每个元素持有一个 pinRef（「栈引用」），push 加、pop 转移给借用期、
+// 截断/析构释放。栈值本身仍由 Engine 创建，VM 不负责其 data 生命周期。
 //
 // 关联 ADR: 004（执行模型）、006（异常即值）、022（函数调用）、
 //          024（字节码指令集）、037（调用栈）、060（VM 框架）
@@ -38,15 +39,12 @@ class Scope;
 
 namespace neo::vm {
 
-class VM : public neo::core::IGCRootProvider {
+class VM {
 public:
     // ctx 借用；code 借用（生命周期由 Module / script Function 持有）。
     // 入口作用域取 ctx->current()，root 取 ctx->root()。
     VM(neo::core::IContext* ctx, const Code* code);
-    ~VM() override;
-
-    // GC 根：操作数栈上的 Value 不在作用域树上，由本 VM 主动标记。
-    void visitRoots(neo::core::IGCVisitor* visitor) override;
+    ~VM();
 
     // 从 entryPc 执行到 ret/hlt/失败，返回执行结果值。
     // 函数调用即「借用同一份 Code + 从函数地址（entryPc）开始执行」，
@@ -77,7 +75,11 @@ public:
     const std::vector<neo::core::Value*>& stack() const { return stack_; }
 
     // 供 Function::invoke 在启动 VM 前压入形参与 self（ADR-022）。
-    void push(neo::core::Value* value) { stack_.push_back(value); }
+    // 栈持有每个元素一个 pinRef（「栈引用」）：GC 不感知栈，栈值靠 pinRef 存活。
+    void push(neo::core::Value* value) {
+        if (value != nullptr) value->pinRefInc();
+        stack_.push_back(value);
+    }
 
 private:
     // 指令处理函数：自行读取操作数并推进 pc。
@@ -87,18 +89,33 @@ private:
     // 分派表（OpCode → 成员函数指针）。
     static const Handler* handlers();
 
-    // pop 把值从 GC 根（操作数栈）摘下。后续调用可能触发分配/GC，故 pop 时
-    // 自动 pin 住，并在下一条指令开始时统一解除（ADR-065 §6）。
+    // pop 把值从操作数栈摘下：栈引用转移给 borrowed_，下一条指令开始时统一解除。
+    // 借用期 pin 保证后续可能触发分配/GC 的调用期间值存活（ADR-065 §6）。
     neo::core::Value* pop() {
         neo::core::Value* value = stack_.back();
         stack_.pop_back();
-        value->pinRefInc();
         borrowed_.push_back(value);
         return value;
     }
     void releaseBorrowed() {
-        for (neo::core::Value* v : borrowed_) v->pinRefDec();
+        for (neo::core::Value* v : borrowed_) {
+            if (v != nullptr) v->pinRefDec();
+        }
         borrowed_.clear();
+    }
+    // 截断到 depth：被丢弃的栈元素逐个解除栈引用。
+    void truncateStack(size_t depth) {
+        for (size_t i = depth; i < stack_.size(); ++i) {
+            if (stack_[i] != nullptr) stack_[i]->pinRefDec();
+        }
+        stack_.resize(depth);
+    }
+    // 清空栈并解除全部栈引用。
+    void releaseStack() {
+        for (neo::core::Value* v : stack_) {
+            if (v != nullptr) v->pinRefDec();
+        }
+        stack_.clear();
     }
     neo::core::Value* top() const { return stack_.back(); }
 
@@ -132,6 +149,15 @@ private:
 
     // 取 Code::strings[index]；越界返回 nullptr。
     const std::string* stringOperand(uint32_t index) const;
+
+#ifndef NDEBUG
+    // P2a 调试审计（不改变语义）：校验操作数栈的所有权不变式。
+    // 栈值必须非空、未析构；native-owned 值必须是 leaf（复杂值须 copyForNative）。
+    void auditStack(const char* where) const;
+    // 截断/清空/析构前校验 [from, size) 将被丢弃的栈值全部为 GC-owned：
+    // native-owned 值必须由生产方显式 freeUnowned，静默丢弃即泄漏。
+    void auditDiscarded(size_t from, const char* where) const;
+#endif
 
     // 二元运算公共实现（算术/关系处理函数委托到此）。
     neo::core::Value* binary(neo::core::BinaryOperator op);

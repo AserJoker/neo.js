@@ -2,8 +2,10 @@
 //
 // Value 是 GC 管理的单元（ADR-012/015）：meta=IType* 描述类型，data=IData* 持数据负载。
 // 可达性由 GC 从 global 作用域树出发标记（ADR-044），**不**由 scope 跟踪计数决定。
-// pinRef 是手工钉住计数（默认 0）：>0 时该 Value 作为额外根被标记，用于调度器
-// 临时持有（Task::entity、待上报的未兑现 Promise）等 GC 图之外的强引用。
+// pinRef 是统一的 native 引用计数（默认 0），语义按所有权区分：
+//   - GC-owned：>0 时该 Value 作为额外根被标记（调度器、借用期 pin 等）；
+//   - native-owned：即生命周期计数，归 0 时由 GC 引擎销毁。
+// C++ 多位置共享/传递 Value 直接走 IGCEngine::ref/unref，无需外层 shared_ptr。
 // Value 构造 data->ref++，析构 data->ref--（不销毁 data；data 由 GC sweep 在 ref 归 0 时释放）。
 // Value 内存走 IAllocator + placement new（GC 负责分配/释放，ADR-029 §7）。
 //
@@ -54,17 +56,25 @@ public:
 
     // 作用域登记计数（ADR-065）：Scope::add 递增、remove 递减。
     // 最高位借作 dead 标记（popScope 已析构、等待 GC 释放内存），
+    // 次高位借作 gcOwned 标记（所有权已转移给 GC；未标记 = C++ 拥有），
     // 使 Value 保持 32 字节布局。
     static constexpr uint32_t kDeadBit = 0x80000000u;
+    static constexpr uint32_t kGcOwnedBit = 0x40000000u;
+    static constexpr uint32_t kFlagMask = kDeadBit | kGcOwnedBit;
     bool dead() const { return (scopeRef_ & kDeadBit) != 0; }
     void markDead() { scopeRef_ |= kDeadBit; }
-    uint32_t scopeRef() const { return scopeRef_ & ~kDeadBit; }
+    // 所有权：true = 已登记进 GC（GC 负责回收）；false = C++ 拥有。
+    bool gcOwned() const { return (scopeRef_ & kGcOwnedBit) != 0; }
+    void markGcOwned() { scopeRef_ |= kGcOwnedBit; }
+    uint32_t scopeRef() const { return scopeRef_ & ~kFlagMask; }
     void scopeRefInc() {
-        if (!dead()) ++scopeRef_;
+        if (!dead()) {
+            scopeRef_ = (scopeRef_ & kFlagMask) | (scopeRef() + 1);
+        }
     }
     void scopeRefDec() {
         uint32_t n = scopeRef();
-        if (n > 0) scopeRef_ = (scopeRef_ & kDeadBit) | (n - 1);
+        if (n > 0) scopeRef_ = (scopeRef_ & kFlagMask) | (n - 1);
     }
 
     // 替换 meta+data（赋值语义，ADR-030 阶段 5）：
