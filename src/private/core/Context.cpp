@@ -1967,6 +1967,13 @@ Value* Context::cloneValue(Value* source) {
     return createTracked(source->type(), cloned, {});
 }
 
+Value* Context::cloneValueEphemeral(Value* source) {
+    if (source == nullptr) return createEphemeralUndefined();
+    IData* cloned = cloneForNewValue(source);
+    if (cloned == nullptr) return oomValue_;
+    return createEphemeral(source->type(), cloned);
+}
+
 Value* Context::copyForStorage(Value* source) {
     if (source == nullptr) return nullptr;
     // data-owned 副本：与源共享 data，不进入当前作用域（ADR-065 §4）。

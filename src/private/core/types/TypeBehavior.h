@@ -546,7 +546,8 @@ inline Value* addValues(IContext* ctx, Value* l, Value* r) {
         std::string joined;
         unicode::appendCanonical(joined, valueToString(ls));
         unicode::appendCanonical(joined, valueToString(rs));
-        return ctx->createString(joined);
+        // 运算符结果：不登记 scope，由 VM 立即压栈（栈引用保活）。
+        return ctx->createEphemeralString(joined);
     }
     // 数值相加：两侧 ToNumeric（Symbol 在此抛 TypeError，ES2024 §7.1.4）
     Value* ln = toNumericValue(ctx, lp);
@@ -562,8 +563,9 @@ inline Value* addValues(IContext* ctx, Value* l, Value* r) {
         }
         return createBigIntValue(ctx, bigIntValue(ln) + bigIntValue(rn));
     }
-    return ctx->createNumber(static_cast<NumberData*>(ln->data())->value +
-                             static_cast<NumberData*>(rn->data())->value);
+    return ctx->createEphemeralNumber(
+        static_cast<NumberData*>(ln->data())->value +
+        static_cast<NumberData*>(rn->data())->value);
 }
 
 // 数值二元运算（- * /，ES2024 §13.15.4 / §6.1.6.2）：
@@ -598,9 +600,9 @@ inline Value* numericOp(IContext* ctx, char op, Value* l, Value* r) {
     double a = static_cast<NumberData*>(ln->data())->value;
     double b = static_cast<NumberData*>(rn->data())->value;
     switch (op) {
-        case '-': return ctx->createNumber(a - b);
-        case '*': return ctx->createNumber(a * b);
-        default:  return ctx->createNumber(a / b);
+        case '-': return ctx->createEphemeralNumber(a - b);
+        case '*': return ctx->createEphemeralNumber(a * b);
+        default:  return ctx->createEphemeralNumber(a / b);
     }
 }
 

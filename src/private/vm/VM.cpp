@@ -980,7 +980,7 @@ Value* VM::opDup() {
 
 Value* VM::opClone() {
     if (stack_.empty()) return badBytecode("clone: operand stack underflow");
-    Value* copy = ctx_->cloneValue(top());
+    Value* copy = ctx_->cloneValueEphemeral(top());
     if (copy == ctx_->oomValue()) return copy;
     push(copy);
     return nullptr;
@@ -1126,7 +1126,7 @@ Value* VM::opLoad() {
     if (detail::isErrorValue(result)) return fail(result);
     // 绑定槽位是活引用（赋值原地 replaceMeta），表达式读取须取快照，
     // 否则值被存入对象/数组后会被后续赋值改写。
-    Value* snapshot = ctx_->cloneValue(result);
+    Value* snapshot = ctx_->cloneValueEphemeral(result);
     if (snapshot == ctx_->oomValue()) return fail(snapshot);
     push(snapshot);
     return nullptr;
@@ -1147,7 +1147,7 @@ Value* VM::opLoadSoft() {
 
     Value* result = ctx_->loadSoft(*name);
     if (detail::isErrorValue(result)) return fail(result);
-    Value* snapshot = ctx_->cloneValue(result);
+    Value* snapshot = ctx_->cloneValueEphemeral(result);
     if (snapshot == ctx_->oomValue()) return fail(snapshot);
     push(snapshot);
     return nullptr;

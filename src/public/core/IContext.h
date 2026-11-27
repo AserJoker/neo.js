@@ -1097,6 +1097,10 @@ public:
     // 用于需要快照旧值的场景（如后缀 ++/--：绑定槽会被原地改写）。
     virtual Value* cloneValue(Value* source) = 0;
 
+    // cloneValueEphemeral: 同 cloneValue，但不登记当前作用域。
+    // 仅用于结果会被立即压栈/消费的表达式快照（VM load/clone）。
+    virtual Value* cloneValueEphemeral(Value* source) = 0;
+
     // copyForStorage: 创建 data-owned 副本（新 Value 共享同一 data，不登记当前
     // 作用域），用于 scope→data 跨域存储（对象属性/数组元素/绑定实参等）。
     // 两域所有权见 ADR-065 §4：跨域必须复制 Value，避免作用域释放后悬垂。

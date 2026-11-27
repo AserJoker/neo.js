@@ -24,8 +24,9 @@ inline const neo::bigint::BigInt& bigIntValue(Value* v) {
     return static_cast<BigIntData*>(v->data())->value;
 }
 
+// 运算符结果：不登记 scope，由 VM 立即压栈（栈引用保活）。
 inline Value* createBigIntValue(IContext* ctx, const neo::bigint::BigInt& value) {
-    return ctx->createBigInt(value);
+    return ctx->createEphemeralBigInt(value);
 }
 
 // StringToBigInt（ES2024 §7.1.13）：StringIntegerLiteral 文法。

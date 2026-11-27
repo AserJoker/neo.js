@@ -339,31 +339,31 @@ inline Value* bitwiseOp(IContext* ctx, BinaryOperator op, Value* a, Value* b) {
 
     switch (op) {
         case BinaryOperator::BitAnd:
-            return ctx->createNumber(
+            return ctx->createEphemeralNumber(
                 static_cast<double>(toInt32(x) & toInt32(y)));
         case BinaryOperator::BitOr:
-            return ctx->createNumber(
+            return ctx->createEphemeralNumber(
                 static_cast<double>(toInt32(x) | toInt32(y)));
         case BinaryOperator::BitXor:
-            return ctx->createNumber(
+            return ctx->createEphemeralNumber(
                 static_cast<double>(toInt32(x) ^ toInt32(y)));
         case BinaryOperator::ShiftLeft: {
             uint32_t shift = toUint32(y) & 31u;
             uint32_t r = static_cast<uint32_t>(toInt32(x)) << shift;
-            return ctx->createNumber(static_cast<double>(fromUint32(r)));
+            return ctx->createEphemeralNumber(static_cast<double>(fromUint32(r)));
         }
         case BinaryOperator::ShiftRight: {
             uint32_t shift = toUint32(y) & 31u;
-            return ctx->createNumber(
+            return ctx->createEphemeralNumber(
                 static_cast<double>(arithmeticShiftRight(toInt32(x), shift)));
         }
         case BinaryOperator::UnsignedShiftRight: {
             uint32_t shift = toUint32(y) & 31u;
-            return ctx->createNumber(
+            return ctx->createEphemeralNumber(
                 static_cast<double>(toUint32(x) >> shift));
         }
         default:
-            return ctx->createNumber(0);
+            return ctx->createEphemeralNumber(0);
     }
 }
 
@@ -429,7 +429,7 @@ inline Value* binaryOpValues(IContext* ctx, BinaryOperator op, Value* a,
             }
             double x = static_cast<NumberData*>(an->data())->value;
             double y = static_cast<NumberData*>(bn->data())->value;
-            return ctx->createNumber(std::fmod(x, y));
+            return ctx->createEphemeralNumber(std::fmod(x, y));
         }
         case BinaryOperator::Exp: {
             Value* an = toNumericValue(ctx, a);
@@ -459,9 +459,9 @@ inline Value* binaryOpValues(IContext* ctx, BinaryOperator op, Value* a,
             // std::pow 对 1^NaN / (-1)^±Infinity 返回 1，规范要求 NaN
             // （§6.1.6.1.3 Number::exponentiate）。
             if (std::isnan(y) || ((x == 1.0 || x == -1.0) && std::isinf(y))) {
-                return ctx->createNumber(std::numeric_limits<double>::quiet_NaN());
+                return ctx->createEphemeralNumber(std::numeric_limits<double>::quiet_NaN());
             }
-            return ctx->createNumber(std::pow(x, y));
+            return ctx->createEphemeralNumber(std::pow(x, y));
         }
         case BinaryOperator::StrictEqual:
             return ctx->createBoolean(strictEquals(a, b));
@@ -505,7 +505,7 @@ inline Value* unaryOpValues(IContext* ctx, UnaryOperator op, Value* v) {
             if (n->type()->kind() == TypeKind::BigInt) {
                 return createBigIntValue(ctx, -bigIntValue(n));
             }
-            return ctx->createNumber(-static_cast<NumberData*>(n->data())->value);
+            return ctx->createEphemeralNumber(-static_cast<NumberData*>(n->data())->value);
         }
         case UnaryOperator::LogicalNot:
             return ctx->createBoolean(!toBoolean(v));
@@ -517,10 +517,10 @@ inline Value* unaryOpValues(IContext* ctx, UnaryOperator op, Value* v) {
             }
             uint32_t u = static_cast<uint32_t>(
                 toInt32(static_cast<NumberData*>(n->data())->value));
-            return ctx->createNumber(static_cast<double>(fromUint32(~u)));
+            return ctx->createEphemeralNumber(static_cast<double>(fromUint32(~u)));
         }
         case UnaryOperator::TypeOf:
-            return ctx->createString(typeofName(v));
+            return ctx->createEphemeralString(typeofName(v));
         case UnaryOperator::Void:
             return ctx->createUndefined();
     }
