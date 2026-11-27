@@ -241,6 +241,43 @@ TEST(LexerTest, Hashbang) {
     EXPECT_EQ(tokens[0].text, "a");
 }
 
+TEST(LexerTest, HtmlOpenCommentInScript) {
+    // Annex B.1.2：`<!--` 在 Script 代码任意位置开始单行注释。
+    const auto tokens = lexAll("a <!-- b\nc");
+    ASSERT_EQ(tokens.size(), 3u);
+    EXPECT_EQ(tokens[0].text, "a");
+    EXPECT_EQ(tokens[1].text, "c");
+}
+
+TEST(LexerTest, HtmlCloseCommentAtLineStart) {
+    // Annex B.1.3：行首 `-->` 开始单行注释；首行同样允许。
+    const auto firstLine = lexAll("--> b\nc");
+    ASSERT_EQ(firstLine.size(), 2u);
+    EXPECT_EQ(firstLine[0].text, "c");
+
+    const auto afterTerminator = lexAll("a\n  --> b\nc");
+    ASSERT_EQ(afterTerminator.size(), 3u);
+    EXPECT_EQ(afterTerminator[0].text, "a");
+    EXPECT_EQ(afterTerminator[1].text, "c");
+}
+
+TEST(LexerTest, HtmlCloseCommentNotAtLineStartIsNotComment) {
+    const auto tokens = lexAll("a --> b");
+    ASSERT_EQ(tokens.size(), 5u);
+    EXPECT_EQ(tokens[0].text, "a");
+    EXPECT_EQ(tokens[1].kind, TokenKind::MinusMinus);
+    EXPECT_EQ(tokens[2].kind, TokenKind::GreaterThan);
+    EXPECT_EQ(tokens[3].text, "b");
+}
+
+TEST(LexerTest, HtmlCommentsDisallowedInModule) {
+    Lexer open("<!-- x\na", false);
+    EXPECT_EQ(open.next().kind, TokenKind::LessThan);
+
+    Lexer close("--> x\na", false);
+    EXPECT_EQ(close.next().kind, TokenKind::MinusMinus);
+}
+
 TEST(LexerTest, UnterminatedCommentIsIllegal) {
     Token token = lexOne("/* abc");
     EXPECT_EQ(token.kind, TokenKind::Illegal);

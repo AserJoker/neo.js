@@ -42,18 +42,25 @@ struct LexicalContext {
 
 struct LexerState {
     CharStreamState stream;
+    bool atLineStart = true;
 };
 
 class Lexer {
 public:
-    explicit Lexer(std::string_view source) : stream_(source) {}
+    // allowHtmlComments：Script 代码允许 Annex B 的 `<!--` / 行首 `-->`
+    // 单行注释；Module 代码不允许。
+    explicit Lexer(std::string_view source, bool allowHtmlComments = true)
+        : stream_(source), allowHtmlComments_(allowHtmlComments) {}
 
     Token next(const LexicalContext& context = {});
 
     const CharStream& stream() const { return stream_; }
 
-    LexerState save() const { return {stream_.save()}; }
-    void restore(const LexerState& state) { stream_.restore(state.stream); }
+    LexerState save() const { return {stream_.save(), atLineStart_}; }
+    void restore(const LexerState& state) {
+        stream_.restore(state.stream);
+        atLineStart_ = state.atLineStart;
+    }
 
 private:
     Token makeIllegal(SourceLocation start, std::string message);
@@ -78,6 +85,10 @@ private:
     CharStream stream_;
     // 最近一次扫描失败的原因；next() 用它构造 Illegal token。
     std::string error_;
+    bool allowHtmlComments_ = true;
+    // 当前位置之前自上一个行终止符（或输入起点）起是否只有空白/单行块注释。
+    // 行首 `-->` 注释的识别依赖它。
+    bool atLineStart_ = true;
 };
 
 }  // namespace neo::frontend

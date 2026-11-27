@@ -122,6 +122,9 @@ Token Lexer::next(const LexicalContext& context) {
     token.start = stream_.location();
     token.precededByLineTerminator = sawLineTerminator;
 
+    // 非空白 token 从这里开始，后续的 `-->` 不再处于行首。
+    if (!stream_.atEnd()) atLineStart_ = false;
+
     if (stream_.atEnd()) {
         token.kind = TokenKind::EndOfInput;
         finish(token);
@@ -202,7 +205,37 @@ bool Lexer::skipTrivia(bool& sawLineTerminator, SourceLocation& errorStart,
         }
         if (unicode::isLineTerminator(cp)) {
             sawLineTerminator = true;
+            atLineStart_ = true;
             stream_.advance();
+            continue;
+        }
+
+        // Annex B.1.2：Script 代码中的 `<!--` 单行注释（可出现在任意位置）。
+        if (allowHtmlComments_ && cp == '<' && stream_.peek(1) == '!' &&
+            stream_.peek(2) == '-' && stream_.peek(3) == '-') {
+            stream_.advance();
+            stream_.advance();
+            stream_.advance();
+            stream_.advance();
+            while (!stream_.atEnd() &&
+                   !unicode::isLineTerminator(stream_.peek())) {
+                stream_.advance();
+            }
+            atLineStart_ = false;
+            continue;
+        }
+
+        // Annex B.1.3：Script 代码中行首的 `-->` 单行注释。
+        if (allowHtmlComments_ && atLineStart_ && cp == '-' &&
+            stream_.peek(1) == '-' && stream_.peek(2) == '>') {
+            stream_.advance();
+            stream_.advance();
+            stream_.advance();
+            while (!stream_.atEnd() &&
+                   !unicode::isLineTerminator(stream_.peek())) {
+                stream_.advance();
+            }
+            atLineStart_ = false;
             continue;
         }
 
@@ -221,6 +254,7 @@ bool Lexer::skipTrivia(bool& sawLineTerminator, SourceLocation& errorStart,
             stream_.advance();
             stream_.advance();
             bool closed = false;
+            bool hadLineTerminator = false;
             while (!stream_.atEnd()) {
                 const uint32_t inner = stream_.peek();
                 if (inner == '*' && stream_.peek(1) == '/') {
@@ -229,13 +263,18 @@ bool Lexer::skipTrivia(bool& sawLineTerminator, SourceLocation& errorStart,
                     closed = true;
                     break;
                 }
-                if (unicode::isLineTerminator(inner)) sawLineTerminator = true;
+                if (unicode::isLineTerminator(inner)) {
+                    sawLineTerminator = true;
+                    hadLineTerminator = true;
+                }
                 stream_.advance();
             }
             if (!closed) {
                 error = "Unterminated comment";
                 return false;
             }
+            // 块注释内含行终止符时，其后的 `-->` 处于行首。
+            if (hadLineTerminator) atLineStart_ = true;
             continue;
         }
 

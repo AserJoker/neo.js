@@ -295,7 +295,8 @@ bool unaryOperator(TokenKind kind, UnaryOperator& op) {
 }  // namespace
 
 Parser::Parser(std::string_view source, ParserOptions options)
-    : lexer_(source), options_(options) {
+    : lexer_(source, options.sourceType == SourceType::Script),
+      options_(options) {
     // 程序起始位置是表达式起始位置，`/` 应优先按正则扫描。
     advance(LexicalGoal::RegExp);
 }
