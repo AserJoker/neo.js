@@ -266,6 +266,10 @@ public:
     virtual Value* createBigInt(const neo::bigint::BigInt& value,
                                 std::string_view name = {}) = 0;
     virtual Value* createString(std::string_view s, std::string_view name = {}) = 0;
+    // createIndexString: 创建数组索引键字符串（"0"、"1"、…）。
+    // 小索引（0..1023）共享不可变 StringData，省去逐次字符串堆分配；仍返回
+    // 独立的 Value（索引键只作属性键读取，从不作为可变绑定槽位）。
+    virtual Value* createIndexString(uint32_t index) = 0;
 
     // —— 表达式级临时值（ADR-065 §6）——
     // 与 create* 相同，但**不登记到 current scope**：产物只由调用方持有的

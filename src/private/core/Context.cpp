@@ -368,6 +368,12 @@ Context::~Context() {
             slot = nullptr;
         }
     }
+    for (Value*& slot : indexStringValues_) {
+        if (slot != nullptr) {
+            slot->pinRefDec();
+            slot = nullptr;
+        }
+    }
     // 1. 销毁 GC（unique_ptr 析构）。global 作用域树的所有权已移交 GC（ADR-044）：
     //    ~MarkSweepGC 先销毁根作用域树，再 collect 回收全部残留 Value
     //    （此时根树已空，所有 Value 不可达），最后若有残留则 panic 报告泄漏。
@@ -670,6 +676,32 @@ Value* Context::createBigInt(const neo::bigint::BigInt& value,
 
 Value* Context::createString(std::string_view s, std::string_view name) {
     return createTracked(getStringType(), gc_->allocData<StringData>(s), name);
+}
+
+Value* Context::createIndexString(uint32_t index) {
+    assertOwnerThread();
+    if (index > kIndexStringCacheMax) {
+        return createString(std::to_string(index));
+    }
+    Value*& slot = indexStringValues_[index];
+    if (slot == nullptr) {
+        IData* data = gc_->allocData<StringData>(std::to_string(index));
+        if (data == nullptr) return oomValue_;
+        Value* v = createValueRaw(getStringType(), data);
+        if (v == nullptr) {
+            gc_->releaseData(data);
+            return oomValue_;
+        }
+        v->pinRefInc();  // 永久根：仅其不可变 data 被复用
+        slot = v;
+    }
+    // 新建 Value 共享缓存的 data（Value 构造已 ref++）。索引键只作属性键读取，
+    // 从不作为可变绑定槽位，故不能直接复用缓存 Value，但 data 可安全共享。
+    Value* v = createValueRaw(getStringType(), slot->data());
+    if (v == nullptr) return oomValue_;
+    ++creationStats_.tracked;
+    trackValue(current(), v, {});
+    return v;
 }
 
 Value* Context::createSymbol(std::string_view description, std::string_view name,

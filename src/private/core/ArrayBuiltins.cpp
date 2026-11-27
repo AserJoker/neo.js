@@ -89,11 +89,16 @@ Value* lengthOfArrayLikeFull(IContext* ctx, Value* obj, double& out) {
 }
 
 Value* indexKey(IContext* ctx, uint32_t index) {
-    return ctx->createString(std::to_string(index));
+    return ctx->createIndexString(index);
 }
 
 // 索引键（支持到 2^53-1）：splice 的数组类对象长度可超过 2^32-1。
 Value* indexKeyFromDouble(IContext* ctx, double index) {
+    // [0, 2^32-1] 的整数索引走缓存路径（小索引共享 StringData）；
+    // 其余（含非整数/超大值）仍按 numberToString 生成。
+    if (index >= 0.0 && index <= 4294967295.0 && std::floor(index) == index) {
+        return ctx->createIndexString(static_cast<uint32_t>(index));
+    }
     return ctx->createString(detail::numberToString(index));
 }
 

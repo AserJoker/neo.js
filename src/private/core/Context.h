@@ -99,6 +99,11 @@ class Context : public IContext {
     static constexpr size_t kSmallIntCount =
         static_cast<size_t>(kSmallIntMax - kSmallIntMin + 1);
     Value* smallInts_[kSmallIntCount] = {};
+    // 小索引字符串 data 缓存：数组索引键（"0".."1023"）在 builtin 中极高频。
+    // 缓存 Value 仅作 data 宿主（pinRef 永久根）；createIndexString 每次新建
+    // Value 共享该不可变 data，避免索引键 Value 被 replaceMeta 原地改写。
+    static constexpr uint32_t kIndexStringCacheMax = 1023;
+    Value* indexStringValues_[kIndexStringCacheMax + 1] = {};
     // %ThrowTypeError%（unmapped arguments 的 callee 访问器），惰性创建并挂 global。
     Value* throwTypeError_ = nullptr;
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
@@ -469,6 +474,7 @@ public:
     void bindFunctionThis(Value* fn, Value* thisValue) override;
     Value* cloneValue(Value* source) override;
     Value* cloneValueEphemeral(Value* source) override;
+    Value* createIndexString(uint32_t index) override;
     Value* copyForStorage(Value* source) override;
     Value* setClosure(Value* fn, std::string_view name) override;
     Value* captureValue(Value* fn, std::string_view name, Value* value) override;

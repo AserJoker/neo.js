@@ -30,6 +30,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -294,6 +295,22 @@ struct Workload {
     const char* source;
 };
 
+std::string envVar(const char* name) {
+#ifdef _WIN32
+    char* value = nullptr;
+    size_t length = 0;
+    if (_dupenv_s(&value, &length, name) == 0 && value != nullptr) {
+        std::string out(value);
+        std::free(value);
+        return out;
+    }
+    return {};
+#else
+    const char* value = std::getenv(name);
+    return value != nullptr ? value : "";
+#endif
+}
+
 }  // namespace
 
 int main() {
@@ -382,6 +399,17 @@ int main() {
         Console console(&sink);
         std::unique_ptr<IContext> ctx =
             neo::core::createContext(alloc.get(), &console);
+
+        // 允许通过环境变量覆盖 GC 数量阈值，便于测量不同阈值下的
+        // wall 时间 / collect 占比 / 峰值内存。
+        const std::string threshold = envVar("NEO_GC_THRESHOLD");
+        if (!threshold.empty()) {
+            char* end = nullptr;
+            const unsigned long long n = std::strtoull(threshold.c_str(), &end, 10);
+            if (end != threshold.c_str() && n > 0) {
+                ctx->gc()->setCountThreshold(static_cast<size_t>(n));
+            }
+        }
 
         if (!printedBootstrap) {
             std::printf("bootstrap: values=%llu data=%llu used=%zu bytes\n",
