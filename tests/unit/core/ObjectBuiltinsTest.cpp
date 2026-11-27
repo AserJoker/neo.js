@@ -1872,13 +1872,35 @@ TEST(ObjectBuiltinsTest, ObjectStaticsOomPaths) {
     ctx->setProperty(obj, "a", ctx->createNumber(1));
     Value* args[1] = {obj};
 
-    // 配额耗尽：结果数组分配失败 → 返回 OOM 哨兵（ADR-031）
-    alloc->setLimit(alloc->used());
-    EXPECT_EQ(callObjectStatic(ctx.get(), "keys", 1, args), ctx->oomValue());
-    EXPECT_EQ(callObjectStatic(ctx.get(), "values", 1, args), ctx->oomValue());
-    EXPECT_EQ(callObjectStatic(ctx.get(), "entries", 1, args), ctx->oomValue());
-    EXPECT_EQ(callObjectStatic(ctx.get(), "getOwnPropertyNames", 1, args),
-              ctx->oomValue());
+    // 先在配额充足时取出四个静态方法的 native 函数指针。
+    // 注意：setLimit(used()) 不再可靠——createValue 内的 maybeCollect 因
+    // used/limit == 1.0 触发一次 GC，回收约 30KB 临时内存使 used 回落到
+    // limit 之下，结果数组分配反而成功（字符串池化后临时内存更多，问题被放大）。
+    Value* objFn = globalOf(ctx.get(), "Object");
+    auto nativeOf = [&](const char* name) -> neo::core::NativeFn {
+        Value* fn = ctx->getProperty(objFn, name);
+        return static_cast<neo::core::FunctionData*>(fn->data())->native;
+    };
+    neo::core::NativeFn keysFn = nativeOf("keys");
+    neo::core::NativeFn valuesFn = nativeOf("values");
+    neo::core::NativeFn entriesFn = nativeOf("entries");
+    neo::core::NativeFn namesFn = nativeOf("getOwnPropertyNames");
+
+    // 配额压到 0：used() 恒 > 0，任何分配都必然失败，且不受调用路径中途 GC
+    // 释放临时内存的影响，从而确定性地命中各内建 createArray 的 OOM 分支。
+    // 直接调用 native 绕过 invokeNative 的临时 execScope 分配（该分配会先于
+    // 结果数组失败，掩盖各内建自身的 OOM 处理）。
+    size_t savedLimit = alloc->limit();
+    alloc->setLimit(0);
+
+    // 结果数组分配失败 → 返回 OOM 哨兵（ADR-031）
+    EXPECT_EQ(keysFn(ctx.get(), objFn, 1, args), ctx->oomValue());
+    EXPECT_EQ(valuesFn(ctx.get(), objFn, 1, args), ctx->oomValue());
+    EXPECT_EQ(entriesFn(ctx.get(), objFn, 1, args), ctx->oomValue());
+    EXPECT_EQ(namesFn(ctx.get(), objFn, 1, args), ctx->oomValue());
+
+    // 恢复配额，避免后续 Context 析构路径受 0 配额影响。
+    alloc->setLimit(savedLimit);
 }
 
 TEST(ObjectBuiltinsTest, FunctionHasLengthProperty) {

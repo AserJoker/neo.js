@@ -31,6 +31,7 @@ class IData {
     // 其子 value 只需枚举一次（否则副本数 × 子数 会让标记退化为 O(n²)）。
     uint64_t markEpoch_ = 0;
     friend class Value;  // Value 构造/析构操作 ref_
+    friend class MarkSweepGC;  // createValue 在 maybeCollect 前后临时持引用
 
 public:
     virtual ~IData() = default;

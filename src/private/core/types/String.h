@@ -16,8 +16,16 @@
 #include <new>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace neo::core {
+
+class StringData;
+
+// 字符串池：内容 -> StringData*。键是 StringData::value 的 string_view（不可变、
+// 堆稳定），池本身不持有引用；StringData 在构造时注册、析构（ref 归 0）时移除。
+// 因此池中只含存活 data，最后一个引用者消失即自动消失。
+using StringPool = std::unordered_map<std::string_view, StringData*>;
 
 class StringType : public IType {
 public:
@@ -51,13 +59,32 @@ public:
 class StringData : public IData {
 public:
     std::string value;
-    explicit StringData(std::string v) : value(std::move(v)) {}
-    explicit StringData(std::string_view v) : value(v) {}
+    // 所属字符串池（可空：测试/独立构造不注册）。构造时注册，析构时移除。
+    StringPool* pool_ = nullptr;
+
+    explicit StringData(std::string v, StringPool* pool = nullptr)
+        : value(std::move(v)), pool_(pool) {
+        registerSelf();
+    }
+    explicit StringData(std::string_view v, StringPool* pool = nullptr)
+        : value(v), pool_(pool) {
+        registerSelf();
+    }
+    // 最后一个 Value 释放后由 GC sweep 析构：先移除池项，再销毁 value。
+    ~StringData() override {
+        if (pool_ != nullptr) pool_->erase(std::string_view(value));
+    }
+
     // clone：不可变类型共享 data（ADR-019 §4）——ref++ 后返回 this，不复制字符串。
     IData* clone(neo::infra::IAllocator* /*alloc*/) const override {
         auto* self = const_cast<StringData*>(this);
         self->refInc();
         return self;
+    }
+
+private:
+    void registerSelf() {
+        if (pool_ != nullptr) pool_->emplace(std::string_view(value), this);
     }
 };
 

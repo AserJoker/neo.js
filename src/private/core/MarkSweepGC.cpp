@@ -150,11 +150,19 @@ bool MarkSweepGC::maybeCollect() {
 }
 
 Value* MarkSweepGC::createValue(IType* type, IData* data) {
+    // 先持有一个临时引用，防止 maybeCollect 在本函数内回收 data。
+    // 池化/共享后 data 可能仅被一个不可达 Value 持有（ref==1），此时 collect
+    // 会析构该 Value 并把 data 一并释放，使下面的构造对已释放内存 ref++。
+    if (data != nullptr) data->refInc();
     maybeCollect();
 
     void* p = alloc_->alloc(sizeof(Value));
-    if (p == nullptr) return nullptr;  // OOM
+    if (p == nullptr) {  // OOM
+        if (data != nullptr) data->refDec();
+        return nullptr;
+    }
     Value* v = new (p) Value(type, data);  // placement new，Value 构造内 data->ref++
+    if (data != nullptr) data->refDec();   // 归还临时引用
     v->markGcOwned();
     values_.push_back(v);
     ++stats_.valueAllocations;

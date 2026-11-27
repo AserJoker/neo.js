@@ -16,6 +16,7 @@
 #include "core/ModuleEntry.h"
 #include "core/Scope.h"
 #include "core/Value.h"
+#include "core/types/String.h"
 
 #include <array>
 #include <atomic>
@@ -67,6 +68,9 @@ class Context : public IContext {
     // VM 停止标记：跨线程写入（worker terminate / 调试器），VM 每条指令后读取。
     std::atomic<bool> stopRequested_ {false};
     infra::IAllocator* alloc_;              // 注入，无所有权
+    // 字符串池（内容 -> 存活 StringData）。声明在 gc_ 之前，保证 GC 析构
+    // （销毁 StringData 时回调 erase）期间池仍存活。
+    StringPool stringPool_;
     std::unique_ptr<IGCEngine> gc_;         // Context 持有所有权
     ValueCreationStats creationStats_;      // 诊断统计（P0）
     infra::Console* console_;              // 注入，无所有权
@@ -876,6 +880,8 @@ private:
     Value* createMutableUndefined();
     // 命中 [-1,256] 的整数值时返回共享单例；不适用返回 nullptr（-0 不缓存）。
     Value* internSmallInt(double n);
+    // 字符串池：命中返回存活 StringData，未命中创建并注册；OOM 返回 nullptr。
+    IData* internStringData(std::string_view s);
     // 字面量字符串索引：命中返回共享只读 Value，未命中创建并 pin；OOM 返回哨兵。
     Value* internLiteralString(std::string_view s);
     // 创建 Value 但不登记到 current scope（表达式临时值，ADR-065 §6）。

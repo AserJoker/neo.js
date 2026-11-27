@@ -617,8 +617,14 @@ Value* Context::createEphemeralBigInt(const neo::bigint::BigInt& value) {
     return createEphemeral(getBigIntType(), gc_->allocData<BigIntData>(value));
 }
 
+IData* Context::internStringData(std::string_view s) {
+    auto it = stringPool_.find(s);
+    if (it != stringPool_.end()) return it->second;
+    return gc_->allocData<StringData>(s, &stringPool_);
+}
+
 Value* Context::createEphemeralString(std::string_view s) {
-    return createEphemeral(getStringType(), gc_->allocData<StringData>(s));
+    return createEphemeral(getStringType(), internStringData(s));
 }
 
 Value* Context::createUndefined(std::string_view name) {
@@ -679,7 +685,7 @@ Value* Context::createBigInt(const neo::bigint::BigInt& value,
 }
 
 Value* Context::createString(std::string_view s, std::string_view name) {
-    return createTracked(getStringType(), gc_->allocData<StringData>(s), name);
+    return createTracked(getStringType(), internStringData(s), name);
 }
 
 Value* Context::createIndexString(uint32_t index) {
@@ -689,7 +695,7 @@ Value* Context::createIndexString(uint32_t index) {
     }
     Value*& slot = indexStringValues_[index];
     if (slot == nullptr) {
-        IData* data = gc_->allocData<StringData>(std::to_string(index));
+        IData* data = internStringData(std::to_string(index));
         if (data == nullptr) return oomValue_;
         Value* v = createValueRaw(getStringType(), data);
         if (v == nullptr) {
@@ -711,7 +717,7 @@ Value* Context::createIndexString(uint32_t index) {
 Value* Context::internLiteralString(std::string_view s) {
     auto it = literalStrings_.find(s);
     if (it != literalStrings_.end()) return it->second;
-    IData* data = gc_->allocData<StringData>(s);
+    IData* data = internStringData(s);
     if (data == nullptr) return oomValue_;
     Value* v = createValueRaw(getStringType(), data);
     if (v == nullptr) {
@@ -731,14 +737,9 @@ Value* Context::createKeyString(std::string_view s) {
 
 Value* Context::createLiteralString(std::string_view s) {
     assertOwnerThread();
-    Value* interned = internLiteralString(s);
-    if (interned == oomValue_) return interned;
-    // 复用不可变 data，但每次新建 Value：字面量可能进入可变绑定槽，
+    // 池化共享不可变 data，但每次新建 Value：字面量可能进入可变绑定槽，
     // 共享 Value 会被 replaceMeta 原地改写。
-    Value* v = createValueRaw(getStringType(), interned->data());
-    if (v == nullptr) return oomValue_;
-    ++creationStats_.ephemeral;
-    return v;
+    return createEphemeral(getStringType(), internStringData(s));
 }
 
 Value* Context::createSymbol(std::string_view description, std::string_view name,
