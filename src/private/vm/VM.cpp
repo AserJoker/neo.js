@@ -83,6 +83,7 @@ const char* opCodeName(OpCode op) {
         case OpCode::PushFalse:     return "push_false";
         case OpCode::PushNumber:    return "push_number";
         case OpCode::PushString:    return "push_string";
+        case OpCode::PushKey:       return "push_key";
         case OpCode::PushBigInt:    return "push_bigint";
         case OpCode::Pop:           return "pop";
         case OpCode::Dup:           return "dup";
@@ -328,6 +329,7 @@ const VM::Handler* VM::handlers() {
         &VM::opPushFalse,
         &VM::opPushNumber,
         &VM::opPushString,
+        &VM::opPushKey,
         &VM::opPushBigInt,
         &VM::opPop,
         &VM::opDup,
@@ -908,7 +910,24 @@ Value* VM::opPushString() {
     if (value == nullptr) {
         return badBytecode("push_string: constant index out of range");
     }
-    push(ctx_->createEphemeralString(*value));
+    // 字面量共享不可变 StringData（内容索引），每次新建 Value。
+    push(ctx_->createLiteralString(*value));
+    return nullptr;
+}
+
+Value* VM::opPushKey() {
+    const std::vector<uint8_t>& bytes = code_->bytecode;
+    if (bytes.size() - pc_ < 4) {
+        return badBytecode("push_key: truncated operand");
+    }
+    uint32_t index = readU32(bytes.data() + pc_);
+    pc_ += 4;
+    const std::string* value = stringOperand(index);
+    if (value == nullptr) {
+        return badBytecode("push_key: constant index out of range");
+    }
+    // 属性键只作键读取，复用内容索引中的共享只读 Value。
+    push(ctx_->createKeyString(*value));
     return nullptr;
 }
 

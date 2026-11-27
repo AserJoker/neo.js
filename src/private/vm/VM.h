@@ -170,6 +170,7 @@ private:
     neo::core::Value* opPushFalse();
     neo::core::Value* opPushNumber();
     neo::core::Value* opPushString();
+    neo::core::Value* opPushKey();
     neo::core::Value* opPushBigInt();
     neo::core::Value* opPushRegExp();
     neo::core::Value* opDeclareVar();

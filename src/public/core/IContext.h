@@ -270,6 +270,13 @@ public:
     // 小索引（0..1023）共享不可变 StringData，省去逐次字符串堆分配；仍返回
     // 独立的 Value（索引键只作属性键读取，从不作为可变绑定槽位）。
     virtual Value* createIndexString(uint32_t index) = 0;
+    // createKeyString: 创建/复用属性键字符串（非计算成员键、字面量键）。
+    // 键只作属性键读取，从不进入绑定槽位，故按内容索引并直接返回共享只读
+    // Value（pinRef 永久根；字面量数量有界）。
+    virtual Value* createKeyString(std::string_view s) = 0;
+    // createLiteralString: 创建字符串字面量。相同字面量全程序共享同一
+    // StringData（内容索引），但每次返回独立 Value（可安全进入可变绑定槽）。
+    virtual Value* createLiteralString(std::string_view s) = 0;
 
     // —— 表达式级临时值（ADR-065 §6）——
     // 与 create* 相同，但**不登记到 current scope**：产物只由调用方持有的

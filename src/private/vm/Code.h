@@ -160,6 +160,12 @@ struct Code {
         emitU32(addString(std::string(value)));
         return pc;
     }
+    // 属性键：与 push 相同但走共享只读键 Value（见 OpCode::PushKey）。
+    uint32_t pushKey(std::string_view value) {
+        uint32_t pc = emitOp(OpCode::PushKey);
+        emitU32(addString(std::string(value)));
+        return pc;
+    }
     // BigInt 字面量：digits 不含前缀，radix 为 2/8/10/16。
     uint32_t pushBigInt(std::string_view digits, uint32_t radix) {
         uint32_t pc = emitOp(OpCode::PushBigInt);

@@ -106,6 +106,10 @@ enum class OpCode : uint16_t {
     PushFalse,
     PushNumber,   // u32 Code::numbers 下标
     PushString,   // u32 Code::strings 下标
+    // 属性键（非计算成员/字面量键）：u32 Code::strings 下标。
+    // 与 PushString 不同，返回按内容缓存的共享只读 Value——键只作属性键读取，
+    // 从不进入绑定槽位，可安全复用，省去逐次分配。
+    PushKey,
     PushBigInt,   // u32 Code::strings 下标（digits），u32 radix
 
     Pop,

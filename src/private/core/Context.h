@@ -47,6 +47,17 @@ struct ValueCreationStats {
     std::array<uint64_t, kTypeKindCount> byKind{};
 };
 
+// 透明哈希：字面量字符串索引可直接用 string_view 查找，避免每次构造临时 string。
+struct TransparentStringHash {
+    using is_transparent = void;
+    size_t operator()(std::string_view s) const noexcept {
+        return std::hash<std::string_view>{}(s);
+    }
+    size_t operator()(const std::string& s) const noexcept {
+        return std::hash<std::string_view>{}(s);
+    }
+};
+
 class Context : public IContext {
     // 线程亲和（多线程模型）：Context/Scope/Value/GC 只允许在创建线程访问。
     // 跨线程只允许经过 MessageQueue 传递序列化消息。
@@ -104,6 +115,13 @@ class Context : public IContext {
     // Value 共享该不可变 data，避免索引键 Value 被 replaceMeta 原地改写。
     static constexpr uint32_t kIndexStringCacheMax = 1023;
     Value* indexStringValues_[kIndexStringCacheMax + 1] = {};
+    // 字面量字符串索引：内容 -> 共享只读 Value（pinRef 永久根）。
+    // 键数量有界（编译器常量池），故用内容寻址表而非淘汰缓存。同一字面量
+    // 全程序只保留一份 StringData；属性键直接复用该 Value，普通字面量复用其
+    // 不可变 data、每次新建 Value（避免进入可变绑定槽被 replaceMeta 改写）。
+    std::unordered_map<std::string, Value*, TransparentStringHash,
+                       std::equal_to<>>
+        literalStrings_;
     // %ThrowTypeError%（unmapped arguments 的 callee 访问器），惰性创建并挂 global。
     Value* throwTypeError_ = nullptr;
     Value* wellKnownSymbols_[kWellKnownSymbolCount] = {};  // well-known symbols（挂 global）
@@ -475,6 +493,8 @@ public:
     Value* cloneValue(Value* source) override;
     Value* cloneValueEphemeral(Value* source) override;
     Value* createIndexString(uint32_t index) override;
+    Value* createKeyString(std::string_view s) override;
+    Value* createLiteralString(std::string_view s) override;
     Value* copyForStorage(Value* source) override;
     Value* setClosure(Value* fn, std::string_view name) override;
     Value* captureValue(Value* fn, std::string_view name, Value* value) override;
@@ -856,6 +876,8 @@ private:
     Value* createMutableUndefined();
     // 命中 [-1,256] 的整数值时返回共享单例；不适用返回 nullptr（-0 不缓存）。
     Value* internSmallInt(double n);
+    // 字面量字符串索引：命中返回共享只读 Value，未命中创建并 pin；OOM 返回哨兵。
+    Value* internLiteralString(std::string_view s);
     // 创建 Value 但不登记到 current scope（表达式临时值，ADR-065 §6）。
     // data 已分配；失败返回 OOM 哨兵并回收游离 data。
     Value* createEphemeral(IType* type, IData* data);

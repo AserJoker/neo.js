@@ -2834,7 +2834,7 @@ void Compiler::compileMemberKey(const frontend::MemberExpression& node) {
         code_->pushUndefined();
         return;
     }
-    code_->push(
+    code_->pushKey(
         static_cast<const frontend::Identifier&>(*node.property).name);
 }
 
@@ -3047,11 +3047,11 @@ void Compiler::compilePropertyKey(const frontend::Property& node) {
     }
     switch (node.key->kind()) {
         case NodeKind::Identifier:
-            code_->push(
+            code_->pushKey(
                 static_cast<const frontend::Identifier&>(*node.key).name);
             break;
         case NodeKind::StringLiteral:
-            code_->push(
+            code_->pushKey(
                 static_cast<const frontend::StringLiteral&>(*node.key).value);
             break;
         case NodeKind::NumericLiteral:

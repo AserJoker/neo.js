@@ -374,6 +374,10 @@ Context::~Context() {
             slot = nullptr;
         }
     }
+    for (auto& entry : literalStrings_) {
+        if (entry.second != nullptr) entry.second->pinRefDec();
+    }
+    literalStrings_.clear();
     // 1. 销毁 GC（unique_ptr 析构）。global 作用域树的所有权已移交 GC（ADR-044）：
     //    ~MarkSweepGC 先销毁根作用域树，再 collect 回收全部残留 Value
     //    （此时根树已空，所有 Value 不可达），最后若有残留则 panic 报告泄漏。
@@ -701,6 +705,39 @@ Value* Context::createIndexString(uint32_t index) {
     if (v == nullptr) return oomValue_;
     ++creationStats_.tracked;
     trackValue(current(), v, {});
+    return v;
+}
+
+Value* Context::internLiteralString(std::string_view s) {
+    auto it = literalStrings_.find(s);
+    if (it != literalStrings_.end()) return it->second;
+    IData* data = gc_->allocData<StringData>(s);
+    if (data == nullptr) return oomValue_;
+    Value* v = createValueRaw(getStringType(), data);
+    if (v == nullptr) {
+        gc_->releaseData(data);
+        return oomValue_;
+    }
+    v->pinRefInc();  // 永久根：字面量全程序共享
+    literalStrings_.emplace(std::string(s), v);
+    return v;
+}
+
+Value* Context::createKeyString(std::string_view s) {
+    assertOwnerThread();
+    // 键只作属性键读取，直接复用共享只读 Value。
+    return internLiteralString(s);
+}
+
+Value* Context::createLiteralString(std::string_view s) {
+    assertOwnerThread();
+    Value* interned = internLiteralString(s);
+    if (interned == oomValue_) return interned;
+    // 复用不可变 data，但每次新建 Value：字面量可能进入可变绑定槽，
+    // 共享 Value 会被 replaceMeta 原地改写。
+    Value* v = createValueRaw(getStringType(), interned->data());
+    if (v == nullptr) return oomValue_;
+    ++creationStats_.ephemeral;
     return v;
 }
 
