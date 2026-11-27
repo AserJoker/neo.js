@@ -20,6 +20,9 @@ struct FunctionInfo final : IMeta {
     bool isDerivedConstructor = false;
     bool isStaticBlock = false;
     bool hasDirectEval = false;
+    // 函数体（含默认参数与嵌套箭头）静态引用了 arguments 绑定。Compiler
+    // 据此按需创建 arguments 对象，未引用时省去每次调用的一次分配。
+    bool usesArguments = false;
     // 箭头函数处于派生构造器的词法上下文：其 super() 需绑定外层构造器
     // 的函数环境，故必须捕获定义点运行时环境链（§14.2.16）。
     bool lexicalSuperCall = false;

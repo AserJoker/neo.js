@@ -4354,8 +4354,17 @@ void Compiler::compileClassConstructor(const frontend::ClassBody& body,
 
     uint32_t flags = isDerived ? vm::kClassDerived : 0;
     if (hasRest) flags |= vm::kFunctionHasRest;
-    // class 构造器是严格代码：创建 arguments 但不建立形参映射。
-    flags |= vm::kFunctionHasArguments;
+    // class 构造器是严格代码：不建立形参映射。arguments 对象同样按需创建
+    // （默认构造器不引用 arguments，无需创建）。
+    bool needsArguments = false;
+    if (constructor != nullptr && constructor->value) {
+        const sema::FunctionInfo* constructorInfo =
+            sema_.annotations.get<sema::FunctionInfo>(constructor->value->id());
+        needsArguments = constructorInfo == nullptr ||
+                         constructorInfo->usesArguments ||
+                         constructorInfo->hasDirectEval;
+    }
+    if (needsArguments) flags |= vm::kFunctionHasArguments;
     code_->pushClass(entryPc, paramCount, flags);
     if (lengthCount != paramCount) code_->setFunctionLength(lengthCount);
     if (!name.empty()) code_->setFuncName(name);
@@ -5008,7 +5017,13 @@ void Compiler::compileFunctionObject(const Node& node,
     if (arrow && info != nullptr && info->lexicalSuperCall) {
         flags |= vm::kFunctionLexicalSuper;
     }
-    if (!arrow && !hasArgumentsParam) flags |= vm::kFunctionHasArguments;
+    // arguments 对象按需创建：仅当函数体（含默认参数与嵌套箭头）静态引用
+    // arguments，或含直接 eval（动态读取）时才需要。info 缺失时保守创建。
+    const bool needsArguments =
+        info == nullptr || info->usesArguments || info->hasDirectEval;
+    if (!arrow && !hasArgumentsParam && needsArguments) {
+        flags |= vm::kFunctionHasArguments;
+    }
     if (arrow && inFieldInitializer_) flags |= vm::kFunctionInFieldInitializer;
     if (mapped) flags |= vm::kFunctionArgumentsMapped;
     if (method) {

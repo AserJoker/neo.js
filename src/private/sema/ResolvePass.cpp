@@ -355,6 +355,11 @@ private:
         assert(!ownerStack_.empty());
         annotations_.emplace<FunctionInfo>(ownerStack_.back()).hasDirectEval =
             true;
+        // eval 可能动态读取任意外层函数的 arguments；静态无法判定，保守地
+        // 让所有外层函数都创建 arguments 对象。箭头不创建，标记无副作用。
+        for (const NodeId owner : ownerStack_) {
+            annotations_.emplace<FunctionInfo>(owner).usesArguments = true;
+        }
     }
 
     void resolve(Identifier& identifier) {
@@ -409,6 +414,26 @@ private:
 
         annotations_.emplace<IdentifierBinding>(identifier.id(), found,
                                                 &binding, location);
+
+        if (binding.kind == ShadowBindingKind::Arguments) {
+            annotations_.emplace<FunctionInfo>(bindingOwner).usesArguments =
+                true;
+        } else if (identifier.name == "arguments" &&
+                   (binding.kind == ShadowBindingKind::Var ||
+                    binding.kind == ShadowBindingKind::Function)) {
+            // 函数内的 var/function arguments 声明是 no-op（§10.2.1.2），
+            // 运行时仍指向隐式 arguments 绑定；向上找到该绑定并标记。
+            for (ShadowScope* current = found; current != nullptr;
+                 current = current->parent) {
+                const auto it = current->bindings.find("arguments");
+                if (it != current->bindings.end() &&
+                    it->second.kind == ShadowBindingKind::Arguments) {
+                    annotations_.emplace<FunctionInfo>(scopeOwner(current))
+                        .usesArguments = true;
+                    break;
+                }
+            }
+        }
 
         if (location == BindingLocation::Captured) {
             registerCaptures(identifier.name, bindingOwner);
