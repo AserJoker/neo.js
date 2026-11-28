@@ -191,11 +191,13 @@ TEST(ArrayPipelineTest, ElementsSurviveGcAndScopePopCollects) {
     for (int i = 0; i < 10; ++i) {
         ctx->setProperty(arr, std::to_string(i), ctx->createNumber(i));
     }
+    neo::core::PinGuard pinArr(arr);
     ctx->gc()->collect();
     EXPECT_EQ(numOf(ctx->getProperty(arr, "9")), 9.0);
 
     // push 大量元素触发稀疏迁移，GC 后仍可读
     Value* big = ctx->createArray();
+    neo::core::PinGuard pinBig(big);
     for (int i = 0; i < 200; ++i) {
         Value* arg[1] = {ctx->createNumber(i)};
         callMethod(ctx.get(), big, "push", 1, arg);

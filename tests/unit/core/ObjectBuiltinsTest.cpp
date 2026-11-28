@@ -1870,6 +1870,8 @@ TEST(ObjectBuiltinsTest, ObjectStaticsOomPaths) {
 
     Value* obj = ctx->createObject();
     ctx->setProperty(obj, "a", ctx->createNumber(1));
+    // P4：setLimit(0) 后 native 调用可能触发 GC，C++ 持有的 obj 须 pin。
+    neo::core::PinGuard pinObj(obj);
     Value* args[1] = {obj};
 
     // 先在配额充足时取出四个静态方法的 native 函数指针。

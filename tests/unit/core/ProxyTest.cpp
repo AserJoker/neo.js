@@ -946,6 +946,7 @@ TEST(ProxyTest, RevokedAndGcStress) {
     defineNative(ctx, handler, "get", getTen);
     Value* proxy = ctx->createProxy(target, handler);
     revokeProxy(proxy);
+    neo::core::PinGuard pinProxy(proxy);
     ctx->gc()->collect();
     EXPECT_EQ(ctx->getProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
     EXPECT_EQ(ctx->hasProperty(proxy, "x")->type()->kind(), TypeKind::Exception);
@@ -957,6 +958,7 @@ TEST(ProxyTest, RevokedAndGcStress) {
         Value* h = ctx->createObject();
         defineNative(ctx, h, "get", getTen);
         Value* p = ctx->createProxy(t, h);
+        neo::core::PinGuard pinP(p);
         EXPECT_EQ(numOf(ctx->getProperty(p, "x")), 10.0);
     }
     ctx->gc()->collect();
@@ -964,6 +966,8 @@ TEST(ProxyTest, RevokedAndGcStress) {
     // proxy 套 proxy：内层撤销后外层读取透传 TypeError。
     Value* inner = ctx->createProxy(makeTargetWithX(ctx), ctx->createObject());
     Value* outer = ctx->createProxy(inner, ctx->createObject());
+    neo::core::PinGuard pinInner(inner);
+    neo::core::PinGuard pinOuter(outer);
     EXPECT_EQ(numOf(ctx->getProperty(outer, "x")), 1.0);
     revokeProxy(inner);
     EXPECT_EQ(ctx->getProperty(outer, "x")->type()->kind(), TypeKind::Exception);
@@ -980,6 +984,7 @@ TEST(ProxyTest, SurvivesGcAndKeepsTargetAlive) {
         defineNative(ctx, handler, "get", getTen);
         proxy = ctx->createProxy(target, handler);
     }
+    neo::core::PinGuard pinProxy(proxy);
     ctx->gc()->collect();
     ASSERT_NE(proxy, nullptr);
     EXPECT_EQ(numOf(ctx->getProperty(proxy, "x")), 10.0);

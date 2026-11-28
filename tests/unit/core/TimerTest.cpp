@@ -65,6 +65,8 @@ const std::string& strOf(Value* v) { return static_cast<StringData*>(v->data())-
 
 // 把 global 槽位绑进函数闭包（native 无捕获；定时器以 undefined 为 this 调用）
 Value* bindSlot(IContext* ctx, Value* fn, const char* name, Value* value) {
+    // P4：bind 不改变可达性；C++ 持有的槽位值须显式登记为根。
+    ctx->global()->add(value);
     ctx->global()->bind(name, value);
     ctx->setClosure(fn, name);
     return fn;

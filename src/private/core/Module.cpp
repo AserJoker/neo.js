@@ -225,6 +225,9 @@ ModuleInfo Context::getModule(std::string_view id) {
     Value* moduleThis = createUndefined();
     Value* exports = createModuleNamespace();
     current_ = savedCurrent;
+    // P4：createTracked 不再登记匿名值；导出对象由模块 scope 显式锚定，
+    // 否则模块注册表（C++ 借用）会在下一次 GC 后悬垂。
+    if (exports != oomValue_) scope->add(exports);
 
     if (moduleThis == oomValue_ || exports == oomValue_) {
         // 创建失败：销毁刚建的作用域（从 global_ 摘除并释放内存）。
@@ -959,6 +962,8 @@ Value* Context::importMeta() {
         current_ = savedCurrent;
         return meta;
     }
+    // P4：import.meta 对象由模块 scope 显式锚定（Module::importMeta 为借用）。
+    mod->scope->add(meta);
     Value* url = createString(mod->id);
     if (url == oomValue_) {
         current_ = savedCurrent;

@@ -182,6 +182,7 @@ TEST(ToPrimitivePipelineTest, ConversionsUnderGc) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* amount = makeAmount(ctx.get(), 7);
+    neo::core::PinGuard pinAmount(amount);
     for (int i = 0; i < 300; ++i) {
         Value* obj = ctx->createObject();
         Value* vo = ctx->createNativeFunction(

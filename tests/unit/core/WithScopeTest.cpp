@@ -277,6 +277,8 @@ TEST(WithScopeTest, ClosureCapturesWithBinding) {
     f.ctx->setProperty(obj, f.ctx->createString("x"), f.ctx->createNumber(2));
     auto* d = static_cast<FunctionData*>(fn->data());
     EXPECT_EQ(d->closureScope->bindingKind("x"), Scope::BindingKind::With);
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinFn(fn);
     f.ctx->gc()->collect();
     EXPECT_EQ(numOf(d->closureScope->lookup("x")), 2.0);
 

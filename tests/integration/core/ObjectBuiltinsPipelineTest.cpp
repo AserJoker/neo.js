@@ -238,6 +238,8 @@ TEST(ObjectBuiltinsPipelineTest, BuiltinsSurviveGc) {
         }, 0);
     Value* bindArgs[1] = {obj};
     Value* bound = ctx->call(bindFn, getKept, 1, bindArgs);
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinBound(bound);
 
     // 制造大量垃圾触发回收
     for (int i = 0; i < 300; ++i) {

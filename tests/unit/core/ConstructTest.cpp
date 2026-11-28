@@ -384,8 +384,10 @@ TEST(ConstructTest, FunctionAndPrototypeSurviveGc) {
     Value* fn = ctx->createNativeFunction(recordThisFn, 0);
     Value* proto = ctx->getProperty(fn, "prototype");
 
+    neo::core::PinGuard pinFn(fn);
+    neo::core::PinGuard pinProto(proto);
     ctx->gc()->collect();
-    // fn 在 scope → 遍历属性 prototype → proto 保活；proto 的 constructor → fn 保活
+    // fn 被 pin → 遍历属性 prototype → proto 保活；proto 的 constructor → fn 保活
     EXPECT_EQ(ctx->getProperty(fn, "prototype"), proto);
     EXPECT_EQ((ctx->getProperty(proto, "constructor"))->data(), (fn)->data());
 }

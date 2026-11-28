@@ -306,6 +306,7 @@ TEST(PrivateNameTest, NameSurvivesClassCollectionViaInstanceSlot) {
 
     // 释放调用方引用：此后 PrivateName 只由实例槽持有。
     ctx->releasePrivateName(x);
+    neo::core::PinGuard pinInst(inst);
     ctx->gc()->collect();
 
     // class 已不可达，但实例槽仍持有一份引用，私有字段可继续访问。

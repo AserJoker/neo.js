@@ -416,6 +416,7 @@ TEST(AccessorTest, GetterSurvivesGcWhileObjectAlive) {
     Value* obj = ctx->createObject();
     ctx->defineAccessor(obj, "x", ctx->createNativeFunction(getter42, 0), nullptr);
 
+    neo::core::PinGuard pinObj(obj);
     ctx->gc()->collect();
     // getter 只被对象持有，靠 enumerateChildren 保活
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, "x")), 42.0);
@@ -431,6 +432,8 @@ TEST(AccessorTest, SymbolKeyAccessorSurvivesGc) {
     Value* sym = ctx->createSymbol("k");
     ctx->defineAccessor(obj, sym, ctx->createNativeFunction(getter42, 0), nullptr);
 
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinSym(sym);
     ctx->gc()->collect();
     EXPECT_DOUBLE_EQ(numOf(ctx->getProperty(obj, sym)), 42.0);
 }

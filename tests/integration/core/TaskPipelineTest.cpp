@@ -59,6 +59,8 @@ const std::string& strOf(Value* v) { return static_cast<StringData*>(v->data())-
 
 // 把 global 槽位绑进函数闭包作用域（native 无捕获，任务执行器 this=undefined）
 Value* bindSlot(IContext* ctx, Value* fn, const char* name, Value* value) {
+    // P4：bind 不改变可达性；C++ 持有的槽位值须显式登记为根。
+    ctx->global()->add(value);
     ctx->global()->bind(name, value);
     ctx->setClosure(fn, name);
     return fn;
@@ -212,10 +214,16 @@ TEST(TaskPipelineTest, UncaughtExceptionDoesNotStopEventLoop) {
 TEST(TaskPipelineTest, QueuedTasksSurviveGcAndAreCollectedAfterRun) {
     Fixture f;
     Value* order = f.ctx->createArray();
+    // P4：bind 不改变可达性；C++ 持有的数组须显式登记为根。
+    f.ctx->global()->add(order);
     f.ctx->global()->bind("__order", order);
 
     Value* fn = orderFn(f.ctx.get(), order, "x");
-    f.ctx->gc()->collect();  // 清除 bootstrap 期不可达副本，稳定基线
+    {
+        // P4：fn 尚未入队（无任务根），collect 前须显式钉住。
+        neo::core::PinGuard pinFn(fn);
+        f.ctx->gc()->collect();  // 清除 bootstrap 期不可达副本，稳定基线
+    }
     size_t valuesBefore = f.ctx->gc()->valueCount();
     f.ctx->postTask(fn, 10);
 

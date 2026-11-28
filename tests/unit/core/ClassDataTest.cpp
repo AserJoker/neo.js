@@ -178,6 +178,8 @@ TEST(ClassDataTest, HomeObjectSurvivesGc) {
     FunctionCreateOptions opts;
     opts.homeObject = home;
     Value* fn = f.ctx->createNativeFunction(noop, 0, {}, opts);
+    neo::core::PinGuard pinFn(fn);
+    neo::core::PinGuard pinHome(home);
     f.ctx->gc()->collect();
 
     auto* d = static_cast<FunctionData*>(fn->data());
@@ -207,6 +209,7 @@ TEST(ClassDataTest, SuperConstructorAndFieldsSurviveGc) {
     field.initializer = initializer;
     cd->instanceElements.push_back(field);
 
+    neo::core::PinGuard pinCls(cls);
     f.ctx->gc()->collect();
 
     EXPECT_EQ(cd->superConstructor, superCtor);

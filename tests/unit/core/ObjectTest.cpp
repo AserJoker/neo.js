@@ -397,8 +397,11 @@ TEST(ObjectTest, PropertyValuesSurviveGcWhileObjectAlive) {
     Value* val = ctx->createNumber(42);
     ctx->setProperty(obj, "x", val);
 
+    // P4：C++ 局部持有的匿名值跨 GC 须显式 pin。
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinVal(val);
     ctx->gc()->collect();
-    // obj 在 scope 中 → 被标记 → 遍历到属性 value → val 保活
+    // obj 被 pin → 标记 → 遍历到属性 value → val 保活
     EXPECT_EQ((ctx->getProperty(obj, "x"))->data(), (val)->data());
     EXPECT_DOUBLE_EQ(static_cast<NumberData*>(val->data())->value, 42.0);
 }
@@ -676,8 +679,10 @@ TEST(ObjectTest, PrototypeSurvivesGcWhileObjectAlive) {
     ctx->setProperty(proto, "x", ctx->createNumber(5));
     ctx->setPrototype(obj, proto);
 
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinProto(proto);
     ctx->gc()->collect();
-    // obj 在 scope → 标记 → 遍历 prototype → proto 保活 → 其属性值也保活
+    // obj 被 pin → 标记 → 遍历 prototype → proto 保活 → 其属性值也保活
     EXPECT_EQ((ctx->getPrototype(obj))->data(), (proto)->data());
     EXPECT_EQ(ctx->getProperty(obj, "x")->type()->kind(), TypeKind::Number);
 }
@@ -845,6 +850,9 @@ TEST(ObjectTest, SymbolKeySurvivesGc) {
     ctx->setProperty(obj, sym, val);
 
     // symbol 键只被对象持有（未绑定 scope），靠 enumerateChildren 保活
+    neo::core::PinGuard pinObj(obj);
+    neo::core::PinGuard pinSym(sym);
+    neo::core::PinGuard pinVal(val);
     ctx->gc()->collect();
     EXPECT_EQ((ctx->getProperty(obj, sym))->data(), (val)->data());
     EXPECT_EQ(static_cast<NumberData*>(val->data())->value, 5.0);

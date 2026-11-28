@@ -329,6 +329,7 @@ TEST(CoroutineTest, ReachableCoroutineKeepsExecScope) {
     Value* co = f.ctx->createCoroutine(fn, nullptr, 0, nullptr);
     (void)f.ctx->resumeCoroutine(co, nullptr);
 
+    neo::core::PinGuard pinCo(co);
     gc->collect();
     CoroutineData* d = asCoroutine(co);
     ASSERT_NE(d, nullptr);

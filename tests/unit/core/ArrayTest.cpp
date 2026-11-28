@@ -778,6 +778,7 @@ TEST(ArrayTest, ElementsAliveThroughArrayDuringGc) {
     Value* elem = ctx->createNumber(42);  // 仅被数组持有
     ctx->setProperty(arr, "0", elem);
 
+    neo::core::PinGuard pinArr(arr);
     ctx->gc()->collect();
     EXPECT_EQ(numOf(ctx->getProperty(arr, "0")), 42.0);
 }

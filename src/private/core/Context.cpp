@@ -333,6 +333,9 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
     if (!registerAsyncGeneratorBuiltins(this)) {
         std::abort();
     }
+
+    // bootstrap 结束：此后匿名值不再登记为作用域根（P4）。
+    bootstrapping_ = false;
 }
 
 Context::~Context() {
@@ -485,35 +488,19 @@ void linkEnvironmentCapture(FunctionData* d, Scope* env) {
     d->capturesEnvironment = true;
 }
 
-// 匿名叶原始值：无子节点、无对象布局。它们只可能被 VM 栈（pinRef）、命名
-// 绑定或对象图引用，不需要作用域额外锚定。
-// 注意排除 Exception/Fatal：它们虽无对象布局，但携带规范 Error 对象等子值，
-// 且常在 C++ 错误通道中跨分配持有。
-bool isAnonymousLeafPrimitive(TypeKind kind) {
-    switch (kind) {
-        case TypeKind::Undefined:
-        case TypeKind::Null:
-        case TypeKind::Boolean:
-        case TypeKind::Number:
-        case TypeKind::BigInt:
-        case TypeKind::String:
-        case TypeKind::Symbol:
-        case TypeKind::Uninitialized:
-            return true;
-        default:
-            return false;
-    }
-}
-
 // 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
-// P4：匿名叶原始值不再登记为作用域根；长寿命作用域不应把临时原始值一直
-// 锚定到下一次 GC。复杂值暂仍登记：其 C++ 局部持有面尚未完成根审计（P6）。
-void trackValue(Scope* scope, Value* v, std::string_view name) {
-    if (name.empty() && isAnonymousLeafPrimitive(v->type()->kind())) return;
-    scope->add(v);
-    if (!name.empty()) {
-        scope->bind(name, v);
+// P4：匿名值不再登记为作用域根。它们只可能被 VM 栈（pinRef）、命名绑定
+// 或对象图引用；长寿命作用域不应把临时值一直锚定到下一次 GC。
+// bootstrap 期例外：此时内建原型/构造器只由 Context 的 C++ 成员持有，
+// 尚无命名绑定或对象图引用，仍须登记为根（rootAnonymous）。
+void trackValue(Scope* scope, Value* v, std::string_view name,
+                bool rootAnonymous) {
+    if (name.empty()) {
+        if (rootAnonymous) scope->add(v);
+        return;
     }
+    scope->add(v);
+    scope->bind(name, v);
 }
 
 }  // namespace
@@ -556,7 +543,7 @@ Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
         gc_->releaseData(data);
         return oomValue_;
     }
-    trackValue(current(), v, name);
+    trackValue(current(), v, name, bootstrapping_);
     return v;
 }
 
@@ -1468,6 +1455,7 @@ Value* Context::registerClass(const NativeClassDef& def) {
 
     Value* proto = createObject();
     if (proto == oomValue_) return proto;
+    PinGuard pinProto(proto);
 
     FunctionCreateOptions opts;
     opts.isClassConstructor = true;
@@ -1478,6 +1466,7 @@ Value* Context::registerClass(const NativeClassDef& def) {
     NativeFn body = def.constructor != nullptr ? def.constructor : defaultNativeClassCtor;
     Value* ctor = createNativeFunction(body, def.length, {}, opts);
     if (ctor == oomValue_) return ctor;
+    PinGuard pinCtor(ctor);
     static_cast<FunctionData*>(ctor->data())->ownerClass = ctor;
 
     Value* r = defineProperty(ctor, "prototype", proto, false, false, false);
@@ -1811,6 +1800,9 @@ Value* Context::createNativeFunction(NativeFn fn, size_t minArgc, std::string_vi
     // bindName 仅用于变量绑定（与函数名无关）
     Value* fnValue = createTracked(getFunctionType(), d, bindName);
     if (fnValue == oomValue_) return fnValue;
+    // P4：匿名函数值不再被作用域根锚定；后续 createNumber/createString/
+    // createObject 可能触发 GC，须在构造窗口内显式钉住。
+    PinGuard pinFn(fnValue);
     // 记录定义点作用域中创建的函数，供直接 eval 引入 var 后回溯链接闭包环境。
     // 全局作用域不记录：其 var 走对象记录，且子树含大量内建。
     if (current_ != nullptr && current_ != global_) current_->addClosure(fnValue);
@@ -1883,6 +1875,8 @@ Value* Context::createScriptFunction(const vm::Code* code, uint32_t entryPc,
     opts.hasPrototypeProperty = hasPrototypeProperty;
     Value* fn = createNativeFunction(&scriptFunctionPlaceholder, 0, bindName, opts);
     if (fn == oomValue_) return fn;
+    // P4：createNativeFunction 返回的匿名值在调用方继续分配时须显式钉住。
+    PinGuard pinFn(fn);
 
     auto* d = static_cast<FunctionData*>(fn->data());
     d->isScript = true;
@@ -1908,6 +1902,7 @@ Value* Context::createScriptClassConstructor(const vm::Code* code,
                                              std::string_view name) {
     Value* proto = createObject();
     if (proto == oomValue_) return proto;
+    PinGuard pinProto(proto);
 
     FunctionCreateOptions opts;
     opts.isClassConstructor = true;
@@ -1917,6 +1912,7 @@ Value* Context::createScriptClassConstructor(const vm::Code* code,
     opts.homeObject = proto;
     Value* ctor = createNativeFunction(&scriptFunctionPlaceholder, 0, {}, opts);
     if (ctor == oomValue_) return ctor;
+    PinGuard pinCtor(ctor);
 
     auto* d = static_cast<FunctionData*>(ctor->data());
     d->isScript = true;
@@ -2302,6 +2298,7 @@ Value* Context::createBoundFunction(Value* target, Value* boundThis, size_t argc
     // 避免副本在挂入 boundThis/boundArgs 前被回收（ADR-065 §4 分配窗口）。
     Value* fnValue = createTracked(getFunctionType(), d, {});
     if (fnValue == oomValue_) return fnValue;
+    PinGuard pinFn(fnValue);
     // scope→data 跨域：绑定 this/实参存 data-owned 副本（ADR-065 §4）。
     d->boundThis = boundThis != nullptr ? copyForStorage(boundThis)
                                         : createUndefined();
@@ -2416,6 +2413,7 @@ Value* Context::createModuleNamespace(std::string_view bindName) {
     Value* ns = createTracked(getModuleNamespaceType(), gc_->allocData<ModuleNamespaceData>(),
                               bindName);
     if (ns == oomValue_) return ns;
+    PinGuard pinNs(ns);
     // @@toStringTag = "Module"（不可写/不可枚举/可配置）
     Value* tag = createString("Module");
     if (tag == oomValue_) return tag;
@@ -2469,6 +2467,7 @@ Value* Context::createArgumentsObject(Value* callee, size_t argc, Value* argv[],
 
     Value* obj = createTracked(getArgumentsType(), d, {});
     if (obj == oomValue_) return obj;
+    PinGuard pinObj(obj);
     static_cast<ObjectData*>(obj->data())->prototype = objectPrototype_;
 
     // length 是普通数据属性（writable/enumerable=false/configurable=true），
@@ -2784,6 +2783,7 @@ Value* Context::createRegExp(
 
     Value* regexp = createTracked(getRegExpType(), d, bindName);
     if (regexp == oomValue_) return regexp;
+    PinGuard pinRegexp(regexp);
     if (regexpPrototype_ != nullptr) {
         static_cast<ObjectData*>(regexp->data())->prototype = regexpPrototype_;
     }
@@ -3229,6 +3229,7 @@ Value* Context::createError(std::string_view message, std::string_view name,
     if (d == nullptr) return oomValue_;
     Value* err = createTracked(getErrorType(), d, bindName);
     if (err == oomValue_) return err;
+    PinGuard pinErr(err);
 
     // 原型：%Error.prototype%（bootstrap 期间尚未建立，跳过）
     if (errorPrototype_ != nullptr) {
@@ -3252,19 +3253,31 @@ Value* Context::createError(std::string_view message, std::string_view name,
     return err;
 }
 
+// P4：属性操作内部可能分配并触发 GC。调用方常传入刚创建的匿名临时值
+// （如 setProperty(obj, "length", createNumber(n))），这些值不在作用域根上，
+// 必须在操作期间显式钉住，否则会在中途被回收成悬垂指针。
 Value* Context::getProperty(Value* obj, Value* key) {
+    PinGuard pinObj(obj);
+    PinGuard pinKey(key);
     return obj->type()->getProperty(this, obj, key);
 }
 
 Value* Context::setProperty(Value* obj, Value* key, Value* value) {
+    PinGuard pinObj(obj);
+    PinGuard pinKey(key);
+    PinGuard pinValue(value);
     return obj->type()->setProperty(this, obj, key, value);
 }
 
 Value* Context::hasProperty(Value* obj, Value* key) {
+    PinGuard pinObj(obj);
+    PinGuard pinKey(key);
     return obj->type()->hasProperty(this, obj, key);
 }
 
 Value* Context::deleteProperty(Value* obj, Value* key) {
+    PinGuard pinObj(obj);
+    PinGuard pinKey(key);
     return obj->type()->deleteProperty(this, obj, key);
 }
 
@@ -3300,6 +3313,9 @@ Value* Context::deleteIdentifier(std::string_view name) {
 // false 表示操作失败，公共 API 按规范转为 TypeError；Exception 原样透传。
 Value* Context::defineProperty(Value* obj, Value* key, Value* value,
                                bool writable, bool enumerable, bool configurable) {
+    PinGuard pinObj(obj);
+    PinGuard pinKey(key);
+    PinGuard pinValue(value);
     Value* r = obj->type()->defineProperty(this, obj, key, value, writable, enumerable,
                                            configurable);
     if (detail::isErrorValue(r)) return r;
@@ -3623,6 +3639,7 @@ Value* Context::createAsyncGenerator(Value* target, Value* receiver, size_t argc
 
     Value* gen = createTracked(getAsyncGeneratorType(), d, bindName);
     if (gen == oomValue_) return gen;
+    PinGuard pinGen(gen);
     Value* proto = getProperty(target, "prototype");
     if (detail::isObjectKind(proto->type()->kind())) {
         static_cast<ObjectData*>(gen->data())->prototype = proto;
@@ -3689,6 +3706,7 @@ Value* Context::createErrorException(ErrorKind kind, std::string_view message,
     const char* name = errorKindName(kind);
     Value* err = createError(message, name, position);
     if (err == oomValue_) return err;
+    PinGuard pinErr(err);
 
     if (kind != ErrorKind::Error) {
         Value* ctor = global()->lookup(name);

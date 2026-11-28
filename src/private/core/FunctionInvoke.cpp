@@ -61,6 +61,8 @@ Value* bindArgumentsObject(IContext* ctx, Scope* execScope, Value* fn,
                            size_t argc, Value* argv[], bool mapped) {
     Value* args = ctx->createArgumentsObject(fn, argc, argv, mapped);
     if (detail::isErrorValue(args)) return args;
+    // P4：createTracked 不再登记匿名值；arguments 对象由执行作用域锚定。
+    execScope->add(args);
     execScope->bind("arguments", args);
     return nullptr;
 }

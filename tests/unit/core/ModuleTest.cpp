@@ -636,6 +636,8 @@ TEST(ModuleTest, ClosureCapturesImportBindingForLateExport) {
     f.ctx->setModuleLoader("/impClosureLate.js", loaderImporterClosureLate);
 
     f.ctx->importModule("/expClosureLate.js");
+    // P4：g_closure 是测试 C++ 全局持有的匿名函数，跨 GC 须显式 pin。
+    neo::core::PinGuard pinClosure(g_closure);
     f.ctx->gc()->collect();
 
     ASSERT_NE(g_closure, nullptr);

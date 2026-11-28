@@ -65,6 +65,10 @@ class Context : public IContext {
     std::thread::id ownerThread_;
     // true = Worker 线程内创建的上下文（宿主策略用，如 Atomics.wait）。
     bool isWorkerContext_ = false;
+    // true = 内建 bootstrap 期：此时作用域仍登记匿名值作为 GC 根。
+    // bootstrap 期间创建的原型/构造器由 Context 成员持有（C++ 侧），
+    // 尚无命名绑定或对象图引用；P4 去根后必须继续锚定，否则首次 collect 即悬垂。
+    bool bootstrapping_ = true;
     // VM 停止标记：跨线程写入（worker terminate / 调试器），VM 每条指令后读取。
     std::atomic<bool> stopRequested_ {false};
     infra::IAllocator* alloc_;              // 注入，无所有权

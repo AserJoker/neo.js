@@ -965,6 +965,7 @@ TEST(PrimitiveWrapperTest, PrimitiveValueAliveThroughWrapperDuringGc) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* w = ctx->createPrimitiveWrapper(ctx->createString("keep"));
+    neo::core::PinGuard pinW(w);
     ctx->gc()->collect();
     EXPECT_EQ(strOf(wrapperPrimitiveValue(w)), "keep");
 }
