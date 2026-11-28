@@ -334,8 +334,43 @@ Context::Context(infra::IAllocator* alloc, infra::Console* console,
         std::abort();
     }
 
-    // bootstrap 结束：此后匿名值不再登记为作用域根（P4）。
-    bootstrapping_ = false;
+    // bootstrap 结束：Context 直接持有的内建原型/构造器成为显式 GC 根。
+    pinBootstrapMembers();
+}
+
+void Context::pinMemberRoot(Value*& slot, Value* value) {
+    if (slot == value) return;
+    if (slot != nullptr) slot->pinRefDec();
+    slot = value;
+    if (value != nullptr) value->pinRefInc();
+}
+
+void Context::pinBootstrapMembers() {
+    // 生成器族原型由 pinMemberRoot 在 setter 中已 pin，此处排除。
+    // 立即数单例/小整数/字符串池各自有独立 pin 管理，也排除。
+    for (Value** slot : {
+             &globalObject_, &evalFunction_, &throwTypeError_,
+             &objectPrototype_, &weakRefPrototype_, &functionPrototype_,
+             &arrayPrototype_, &booleanPrototype_, &numberPrototype_,
+             &stringPrototype_, &symbolPrototype_, &bigIntPrototype_,
+             &iteratorPrototype_, &iteratorCtor_, &arrayIteratorPrototype_,
+             &stringIteratorPrototype_, &iteratorWrapperPrototype_,
+             &iteratorHelperPrototype_, &mapPrototype_, &setPrototype_,
+             &weakMapPrototype_, &weakSetPrototype_, &mapIteratorPrototype_,
+             &setIteratorPrototype_, &datePrototype_, &arrayBufferPrototype_,
+             &sharedArrayBufferPrototype_, &dataViewPrototype_,
+             &intlNumberFormatPrototype_, &intlDateTimeFormatPrototype_,
+             &intlCollatorPrototype_, &intlPluralRulesPrototype_,
+             &intlRelativeTimeFormatPrototype_, &intlListFormatPrototype_,
+             &intlDisplayNamesPrototype_, &intlSegmenterPrototype_,
+             &intlSegmentsPrototype_, &intlLocalePrototype_,
+             &workerPrototype_, &messagePortPrototype_, &errorPrototype_,
+             &promisePrototype_, &promiseCtor_, &regexpPrototype_,
+             &regexpCtor_}) {
+        if (*slot == nullptr) continue;
+        (*slot)->pinRefInc();
+        memberRoots_.push_back(*slot);
+    }
 }
 
 Context::~Context() {
@@ -360,6 +395,20 @@ Context::~Context() {
     // 0c. 解除立即数化 primitive 单例的永久根，使 GC 能回收它们。
     for (Value** slot : {&trueValue_, &falseValue_, &undefinedValue_,
                          &nullValue_}) {
+        if (*slot != nullptr) {
+            (*slot)->pinRefDec();
+            *slot = nullptr;
+        }
+    }
+    // Context 直接持有的内建原型/构造器：归还 bootstrap 期登记的永久根。
+    for (Value* v : memberRoots_) {
+        if (v != nullptr) v->pinRefDec();
+    }
+    memberRoots_.clear();
+    // 生成器族原型不属于任何全局绑定，只由 Context 成员持有：归还永久根。
+    for (Value** slot : {&generatorPrototype_, &generatorFunctionPrototype_,
+                         &asyncGeneratorFunctionPrototype_,
+                         &asyncIteratorPrototype_, &asyncGeneratorPrototype_}) {
         if (*slot != nullptr) {
             (*slot)->pinRefDec();
             *slot = nullptr;
@@ -488,17 +537,11 @@ void linkEnvironmentCapture(FunctionData* d, Scope* env) {
     d->capturesEnvironment = true;
 }
 
-// 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
-// P4：匿名值不再登记为作用域根。它们只可能被 VM 栈（pinRef）、命名绑定
-// 或对象图引用；长寿命作用域不应把临时值一直锚定到下一次 GC。
-// bootstrap 期例外：此时内建原型/构造器只由 Context 的 C++ 成员持有，
-// 尚无命名绑定或对象图引用，仍须登记为根（rootAnonymous）。
-void trackValue(Scope* scope, Value* v, std::string_view name,
-                bool rootAnonymous) {
-    if (name.empty()) {
-        if (rootAnonymous) scope->add(v);
-        return;
-    }
+// 命名绑定：add 跟踪 + bind。匿名值不登记为作用域根（P4）：它们只可能被
+// VM 栈（pinRef）、命名绑定或对象图引用；Context 的 C++ 成员根由
+// pinMemberRoot 显式 pin。
+void trackValue(Scope* scope, Value* v, std::string_view name) {
+    if (name.empty()) return;
     scope->add(v);
     scope->bind(name, v);
 }
@@ -543,7 +586,7 @@ Value* Context::createTracked(IType* type, IData* data, std::string_view name) {
         gc_->releaseData(data);
         return oomValue_;
     }
-    trackValue(current(), v, name, bootstrapping_);
+    trackValue(current(), v, name);
     return v;
 }
 

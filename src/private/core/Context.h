@@ -65,10 +65,6 @@ class Context : public IContext {
     std::thread::id ownerThread_;
     // true = Worker 线程内创建的上下文（宿主策略用，如 Atomics.wait）。
     bool isWorkerContext_ = false;
-    // true = 内建 bootstrap 期：此时作用域仍登记匿名值作为 GC 根。
-    // bootstrap 期间创建的原型/构造器由 Context 成员持有（C++ 侧），
-    // 尚无命名绑定或对象图引用；P4 去根后必须继续锚定，否则首次 collect 即悬垂。
-    bool bootstrapping_ = true;
     // VM 停止标记：跨线程写入（worker terminate / 调试器），VM 每条指令后读取。
     std::atomic<bool> stopRequested_ {false};
     infra::IAllocator* alloc_;              // 注入，无所有权
@@ -737,26 +733,28 @@ public:
     Value* typedArrayPrototype(TypedArrayKind kind) const override {
         return typedArrayPrototypes_[static_cast<size_t>(kind)];
     }
-    void setGeneratorPrototype(Value* proto) override { generatorPrototype_ = proto; }
+    void setGeneratorPrototype(Value* proto) override {
+        pinMemberRoot(generatorPrototype_, proto);
+    }
     Value* generatorPrototype() const override { return generatorPrototype_; }
     void setGeneratorFunctionPrototype(Value* proto) override {
-        generatorFunctionPrototype_ = proto;
+        pinMemberRoot(generatorFunctionPrototype_, proto);
     }
     Value* generatorFunctionPrototype() const override {
         return generatorFunctionPrototype_;
     }
     void setAsyncGeneratorFunctionPrototype(Value* proto) override {
-        asyncGeneratorFunctionPrototype_ = proto;
+        pinMemberRoot(asyncGeneratorFunctionPrototype_, proto);
     }
     Value* asyncGeneratorFunctionPrototype() const override {
         return asyncGeneratorFunctionPrototype_;
     }
     void setAsyncIteratorPrototype(Value* proto) override {
-        asyncIteratorPrototype_ = proto;
+        pinMemberRoot(asyncIteratorPrototype_, proto);
     }
     Value* asyncIteratorPrototype() const override { return asyncIteratorPrototype_; }
     void setAsyncGeneratorPrototype(Value* proto) override {
-        asyncGeneratorPrototype_ = proto;
+        pinMemberRoot(asyncGeneratorPrototype_, proto);
     }
     Value* asyncGeneratorPrototype() const override { return asyncGeneratorPrototype_; }
     Value* getProperty(Value* obj, Value* key) override;
@@ -858,6 +856,14 @@ public:
     void reportUnhandledRejections() override;
 
 private:
+    // Context 的 C++ 成员是 GC 根：无 JS 绑定/对象图引用的内建原型须显式
+    // pin（生成器族原型不属于任何全局绑定）。替换时归还旧根的 pinRef。
+    void pinMemberRoot(Value*& slot, Value* value);
+    // bootstrap 结束后把 Context 直接持有的内建原型/构造器登记为永久根。
+    // 这些值不保证能从 global 对象图到达（如 %AsyncGeneratorFunction.prototype%），
+    // P4 去根后必须由 C++ 侧显式锚定。析构时统一归还。
+    void pinBootstrapMembers();
+    std::vector<Value*> memberRoots_;
     // 直接 eval 在变量环境新增 var 后，回溯把该作用域子树中已创建、尚未
     // 捕获环境的闭包挂到定义点环境链，使其能看到后加入的绑定。
     void captureClosuresInScopeTree(Scope* scope);

@@ -296,6 +296,8 @@ private:
 
     // 取 export 声明内层声明（无则 nullptr）。
     static const frontend::Node* declarationOf(const frontend::Node& node);
+    // 块内是否有直接词法声明（let/const/class/函数声明）。无则块作用域可省略。
+    static bool blockNeedsOwnScope(const frontend::NodeList& body);
     // export default 是否使用隐藏槽位（匿名函数/类或表达式）。
     static bool usesDefaultSlot(const frontend::ExportDefaultDeclaration& node);
     static constexpr std::string_view kDefaultSlot = "*default*";

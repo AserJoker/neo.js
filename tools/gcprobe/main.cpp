@@ -18,6 +18,7 @@
 #include "core/IGCEngine.h"
 #include "core/IType.h"
 #include "core/Value.h"
+#include "core/types/Exception.h"
 #include "core/types/String.h"
 #include "core/types/TypeBehavior.h"
 #include "frontend/Parser.h"
@@ -208,8 +209,15 @@ bool runScript(IContext* ctx, const std::string& source,
     VM machine(ctx, code);
     Value* result = machine.run();
     if (neo::core::detail::isErrorValue(result)) {
-        Value* errorName = ctx->getProperty(result, "name");
-        Value* message = ctx->getProperty(result, "message");
+        // 错误值匿名且不登记作用域根；后续 getProperty 可能触发 GC。
+        neo::core::PinGuard pinResult(result);
+        Value* errorObject =
+            static_cast<neo::core::ExceptionData*>(result->data())->child;
+        neo::core::PinGuard pinError(errorObject);
+        Value* errorName = ctx->getProperty(errorObject, "name");
+        neo::core::PinGuard pinName(errorName);
+        Value* message = ctx->getProperty(errorObject, "message");
+        neo::core::PinGuard pinMessage(message);
         std::fprintf(stderr, "[%s] runtime error: %s: %s\n", name.c_str(),
                      errorName != nullptr &&
                              errorName->type()->kind() == TypeKind::String

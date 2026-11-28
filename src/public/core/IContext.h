@@ -1025,25 +1025,32 @@ public:
     // 字符串键便捷重载：内部创建临时键 Value 后走上面的 Value* 版本。
     // 键只在该调用内使用（属性操作会复制键内容），故用共享 data 的 ephemeral
     // 键 + 调用期 PinGuard，避免每次访问都登记一个 tracked 键值。
+    // 创建键 Value 本身可能分配并触发 GC：入参 obj/value/getter/setter 若为
+    // 匿名临时值，必须在创建键之前 pin 住（P4 分配窗口）。
     Value* getProperty(Value* obj, std::string_view key) {
+        PinGuard pinObj(obj);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
         return getProperty(obj, k);
     }
     Value* setProperty(Value* obj, std::string_view key, Value* value) {
+        PinGuard pinObj(obj);
+        PinGuard pinValue(value);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
         return setProperty(obj, k, value);
     }
     Value* hasProperty(Value* obj, std::string_view key) {
+        PinGuard pinObj(obj);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
         return hasProperty(obj, k);
     }
     Value* deleteProperty(Value* obj, std::string_view key) {
+        PinGuard pinObj(obj);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
@@ -1052,6 +1059,8 @@ public:
     Value* defineProperty(Value* obj, std::string_view key, Value* value,
                           bool writable = true, bool enumerable = true,
                           bool configurable = true) {
+        PinGuard pinObj(obj);
+        PinGuard pinValue(value);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
@@ -1059,6 +1068,9 @@ public:
     }
     Value* defineAccessor(Value* obj, std::string_view key, Value* getter, Value* setter,
                           bool enumerable = false, bool configurable = true) {
+        PinGuard pinObj(obj);
+        PinGuard pinGetter(getter);
+        PinGuard pinSetter(setter);
         Value* k = createLiteralString(key);
         if (k == oomValue()) return k;
         PinGuard pin(k);
