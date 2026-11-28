@@ -5,6 +5,7 @@
 //   1. 重置所有 Value 的 marked；
 //   2. 从 rootScope_（Context 的 global）出发，沿「scope.values + scope.children」
 //      递归标记；孤立闭包作用域由 FunctionData 在标记时主动 visitScope 递归进来；
+//      （P4：values_ 已不含匿名叶原始值，它们只由栈 pin/绑定/对象图保活）
 //   3. pinRef > 0 的 Value 作为额外根（调度器手工钉住，ADR-044）；
 //   4. 未标记的 Value 析构（data->ref--），data ref 归 0 则 free(data) + free(value)。
 //

@@ -83,7 +83,9 @@ private:
     infra::IAllocator* allocator_ = nullptr;                // 借用，用于释放子 Scope 内存
     IContext* context_ = nullptr;                           // 借用，解析间接绑定用
     std::unordered_set<Scope*> children_;                  // 子作用域（无序、去重，析构时递归释放）
-    std::vector<Value*> values_;                           // 跟踪的 value（含匿名临时值）
+    // 跟踪的 value（命名绑定 + 复杂值）。P4：匿名叶原始值不登记——它们由
+    // VM 栈 pin、命名绑定或对象图保活，不再被长寿命作用域锚定。
+    std::vector<Value*> values_;
     // 在本作用域创建的函数对象（非拥有，已在 values_ 中保活）。直接 eval
     // 引入 var 时据此回溯链接闭包环境，使其看到后加入的绑定。
     std::vector<Value*> closures_;

@@ -282,7 +282,10 @@ TEST(SymbolTest, SymbolSurvivesGcWhileScoped) {
     auto ctx = createContext(alloc.get(), &console);
 
     Value* sym = ctx->createSymbol("s");
+    // P4：匿名原始值不再由作用域锚定；跨 GC 存活须显式 pin。
+    ctx->gc()->ref(sym);
     ctx->gc()->collect();
     EXPECT_EQ(sym->type()->kind(), TypeKind::Symbol);
     EXPECT_EQ(symOf(sym)->description, "s");
+    ctx->gc()->unref(sym);
 }

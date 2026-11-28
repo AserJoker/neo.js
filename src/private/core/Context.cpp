@@ -485,8 +485,31 @@ void linkEnvironmentCapture(FunctionData* d, Scope* env) {
     d->capturesEnvironment = true;
 }
 
+// 匿名叶原始值：无子节点、无对象布局。它们只可能被 VM 栈（pinRef）、命名
+// 绑定或对象图引用，不需要作用域额外锚定。
+// 注意排除 Exception/Fatal：它们虽无对象布局，但携带规范 Error 对象等子值，
+// 且常在 C++ 错误通道中跨分配持有。
+bool isAnonymousLeafPrimitive(TypeKind kind) {
+    switch (kind) {
+        case TypeKind::Undefined:
+        case TypeKind::Null:
+        case TypeKind::Boolean:
+        case TypeKind::Number:
+        case TypeKind::BigInt:
+        case TypeKind::String:
+        case TypeKind::Symbol:
+        case TypeKind::Uninitialized:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // 把 Value 加入 current scope：add 跟踪 + 可选 bind 命名绑定。
+// P4：匿名叶原始值不再登记为作用域根；长寿命作用域不应把临时原始值一直
+// 锚定到下一次 GC。复杂值暂仍登记：其 C++ 局部持有面尚未完成根审计（P6）。
 void trackValue(Scope* scope, Value* v, std::string_view name) {
+    if (name.empty() && isAnonymousLeafPrimitive(v->type()->kind())) return;
     scope->add(v);
     if (!name.empty()) {
         scope->bind(name, v);

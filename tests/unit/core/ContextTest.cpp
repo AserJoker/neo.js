@@ -296,8 +296,8 @@ TEST(ContextTest, CreateWithoutNameDoesNotBind) {
     size_t before = ctx->current()->valueCount();
     auto* v = ctx->createNumber(42.0);
     ASSERT_NE(v, nullptr);
-    // Value 仍被 current scope 登记（可达性由 GC 标记）
-    EXPECT_EQ(ctx->current()->valueCount(), before + 1);
+    // P4：匿名原始值不再登记为作用域根（可达性由栈 pin / 绑定 / 对象图决定）
+    EXPECT_EQ(ctx->current()->valueCount(), before);
     // 无名字，lookup 返回 nullptr（GlobalScope 回退会临时创建键字符串）
     EXPECT_EQ(ctx->current()->lookup("x"), nullptr);
     EXPECT_EQ(v->pinRef(), 0);
